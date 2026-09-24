@@ -674,7 +674,7 @@ return function(deps)
 				d.BorderSizePixel = 0
 				d.BackgroundColor3 = Theme.color.grid
 				-- Крупные ярче: у звёзд величина и блеск идут вместе.
-				d.BackgroundTransparency = star.size == 4 and 0.35 or star.size == 3 and 0.55 or 0.7
+				d.BackgroundTransparency = star.size == 4 and 0.15 or star.size == 3 and 0.35 or 0.5
 				d.Size = UDim2.fromOffset(star.size, star.size)
 				d.Position = UDim2.fromOffset(star.x - star.size / 2, star.y - star.size / 2)
 				d.ZIndex = layer.ZIndex
