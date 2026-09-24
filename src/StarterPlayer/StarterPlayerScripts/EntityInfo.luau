@@ -126,7 +126,7 @@ EntityInfo.RATE_WORDS = {
 	{ upTo = math.huge, word = "безумно быстрая" },
 }
 
--- Множитель урона снаряда к урону его цены (damageMultiplier; нет поля — 1).
+-- ДПС снаряда относительно урона его цены: damageMultiplier (нет поля — 1) × темп стрельбы.
 EntityInfo.DAMAGE_WORDS = {
 	{ upTo = 0, word = "нет" },
 	{ upTo = 0.45, word = "очень слабый" },
@@ -137,7 +137,7 @@ EntityInfo.DAMAGE_WORDS = {
 	{ upTo = math.huge, word = "огромный" },
 }
 
--- Урон по времени, в секунду (damagePerSecond).
+-- ДПС эффекта — урон по времени в секунду (damagePerSecond).
 EntityInfo.DOT_WORDS = {
 	{ upTo = 5, word = "слабый" },
 	{ upTo = 10, word = "нормальный" },
@@ -184,10 +184,20 @@ EntityInfo.SLOW_WORDS = {
 	{ upTo = math.huge, word = "очень сильное" },
 }
 
--- Оглушение — секунды (stun.duration).
+-- Длительность оглушения — секунды (stun.duration).
 EntityInfo.STUN_WORDS = {
-	{ upTo = 0.35, word = "короткое" },
-	{ upTo = math.huge, word = "долгое" },
+	{ upTo = 0.15, word = "мгновенная" },
+	{ upTo = 0.35, word = "короткая" },
+	{ upTo = math.huge, word = "долгая" },
+}
+
+-- Длительность замедления и урона по времени — секунды (slowDuration, duration).
+EntityInfo.DURATION_WORDS = {
+	{ upTo = 2, word = "короткая" },
+	{ upTo = 4, word = "средняя" },
+	{ upTo = 6, word = "долгая" },
+	{ upTo = 1e9, word = "очень долгая" },
+	{ upTo = math.huge, word = "до смерти жука" },
 }
 
 function EntityInfo.Word(scale, value)
@@ -231,8 +241,9 @@ local function plural(n, one, few, many)
 	return many
 end
 
--- Строки характеристик элемента: { label, value }. Скорострельность и урон — всегда,
--- остальное — только если у элемента это есть.
+-- Строки характеристик элемента: { label, value }. Скорострельность и ДПС снаряда — всегда,
+-- остальное — только если у элемента это есть. ДПС, а не урон попадания (просьба автора):
+-- так видно, быстро ли элемент наносит урон, а не только сколько за раз.
 function EntityInfo.ElementStats(elementKey, element)
 	local rows = {}
 	local function add(label, value)
@@ -244,40 +255,44 @@ function EntityInfo.ElementStats(elementKey, element)
 
 	if EntityInfo.MYSTERY[elementKey] then
 		add("скорострельность", "???")
-		add("урон снаряда", "???")
+		add("дпс снаряда", "???")
 		return rows
 	end
 
 	local ramp = element.fireRateRamp
-	add("скорострельность", EntityInfo.Word(EntityInfo.RATE_WORDS,
-		ramp and (ramp.base or 1) or (1 + (element.fireRateBonus or 0))))
+	local rate = ramp and (ramp.base or 1) or (1 + (element.fireRateBonus or 0))
+	add("скорострельность", EntityInfo.Word(EntityInfo.RATE_WORDS, rate))
 
+	local function dps(multiplier)
+		return EntityInfo.Word(EntityInfo.DAMAGE_WORDS, multiplier * rate)
+	end
 	if element.damageRandom then
-		add("урон снаряда", ("случайный: от «%s» до «%s»"):format(
-			EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageRandom.min),
-			EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageRandom.max)
-		))
+		add("дпс снаряда", ("случайный: от «%s» до «%s»"):format(
+			dps(element.damageRandom.min), dps(element.damageRandom.max)))
 	elseif element.damageSpeedScale then
-		add("урон снаряда", ("по скорости цели: от «%s» до «%s»"):format(
-			EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageSpeedScale.min),
-			EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageSpeedScale.max)
-		))
+		add("дпс снаряда", ("по скорости цели: от «%s» до «%s»"):format(
+			dps(element.damageSpeedScale.min), dps(element.damageSpeedScale.max)))
 	elseif element.damageRamp then
-		add("урон снаряда", "растёт с каждым попаданием подряд")
+		add("дпс снаряда", "растёт с каждым попаданием подряд")
 	else
-		add("урон снаряда", EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageMultiplier or 1))
+		add("дпс снаряда", dps(element.damageMultiplier or 1))
 	end
 
 	if element.damagePerSecond then
-		add("урон по времени", EntityInfo.Word(EntityInfo.DOT_WORDS, element.damagePerSecond))
+		add("дпс эффекта", EntityInfo.Word(EntityInfo.DOT_WORDS, element.damagePerSecond))
+		if element.duration then
+			add("длительность эффекта", EntityInfo.Word(EntityInfo.DURATION_WORDS, element.duration))
+		end
 	end
-	if element.armorPierce then
-		-- Кислота (и её зона у Кислотного дождя) не пробивает броню сразу, а разъедает её до нуля —
-		-- «неограниченное»; «максимальное» — сразу и полностью, как у Алмаза.
-		local corrodes = (element.debuff and element.debuff.armorShred)
-			or (element.killZone and element.killZone.spreadElement == "Acid")
-		add("пробитие брони", corrodes and "неограниченное"
-			or EntityInfo.Word(EntityInfo.PIERCE_WORDS, element.armorPierce))
+	-- Кислота не пробивает броню попаданием, а разъедает её эффектом, пока не снимет совсем —
+	-- «неограниченное» (у Кислотного дождя — через кислотную зону); «максимальное» — сразу
+	-- и полностью, как у Алмаза.
+	local corrodes = (element.debuff and element.debuff.armorShred)
+		or (element.killZone and element.killZone.spreadElement == "Acid")
+	if corrodes then
+		add("пробитие брони", "неограниченное")
+	elseif element.armorPierce then
+		add("пробитие брони", EntityInfo.Word(EntityInfo.PIERCE_WORDS, element.armorPierce))
 	end
 	if element.knockback then
 		local word = EntityInfo.Word(EntityInfo.PUSH_WORDS, element.knockback.distance)
@@ -289,9 +304,15 @@ function EntityInfo.ElementStats(elementKey, element)
 	end
 	if element.slowPercent and element.slowPercent > 0 then
 		add("замедление", EntityInfo.Word(EntityInfo.SLOW_WORDS, element.slowPercent))
+		if element.slowDuration then
+			add("длительность замедления", EntityInfo.Word(EntityInfo.DURATION_WORDS, element.slowDuration))
+		end
 	end
 	if element.stun then
-		add("оглушение", EntityInfo.Word(EntityInfo.STUN_WORDS, element.stun.duration))
+		-- Название — то же, что в строке «эффект»: у Вспышки ослепление, у Льда заморозка.
+		local name = elementKey == "Ice" and "заморозки"
+			or (element.stun.duration <= 0.1 and "ослепления" or "оглушения")
+		add("длительность " .. name, EntityInfo.Word(EntityInfo.STUN_WORDS, element.stun.duration))
 	end
 	return rows
 end
@@ -325,7 +346,7 @@ EntityInfo.ZONE_NAMES = {
 	Hurricane = "зона урагана",
 	Hydrosphere = "потоп на всю карту",
 	Rain = "дождевая туча",
-	Snow = "зона холода",
+	Snow = "зона снежной тучи",
 	Star = "рождение звезды",
 }
 
@@ -371,7 +392,7 @@ EntityInfo.ELEMENT_EFFECTS = {
 	-- здесь — чем элемент отличается от Холода.
 	{ field = "attackSlowPercent", label = function(_, element)
 		if (element.slowPercent or 0) <= 0 then
-			return "охлаждает, но не замедляет ход"
+			return "охлаждает · не замедляет движение"
 		elseif element.slowDuration == math.huge then
 			return "охлаждает навсегда"
 		end
@@ -418,6 +439,16 @@ EntityInfo.ELEMENT_EFFECTS = {
 		return not element.healer and "лечащие плоды" or nil
 	end },
 	{ field = "killBarrier", label = "преграда при смерти" },
+}
+
+-- Элементы, чья механика из вики в коде сделана не целиком и требует большой доработки:
+-- карточка показывает яркую пометку «в разработке» и что именно не готово.
+EntityInfo.IN_DEVELOPMENT = {
+	Soap = "очищение пока не работает — Мыло просто бьёт",
+	Life = "лечение построек пока не работает — турель стреляет как обычная",
+	Clay = "керамическая статуя пока не появляется",
+	Star = "взрыв зоны и белый карлик пока не появляются",
+	Plant = "растение из трупа пока не вырастает — плоды лечат сразу",
 }
 
 -- Загадка для игрока (вики): вместо характеристик — вопросы.

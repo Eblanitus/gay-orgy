@@ -415,6 +415,11 @@ function Detail.Element(scroll, key, ctx)
 	-- «Описание»: шапка на узоре — от имени до «показать на карте», под ней текст.
 	local head = patternHead(scroll, 20, key)
 	title(head, 10, element.name, Theme.Legible(element.color))
+	local unfinished = EntityInfo.IN_DEVELOPMENT[key]
+	if unfinished then
+		text(head, 11, ("<b>%s</b>  %s"):format(Theme.Caps("● в разработке:"), unfinished),
+			SMALL, Theme.color.danger, Theme.font.strong)
+	end
 
 	if recipe then
 		reading(head, 20, "рецепт", Theme.Caps(("%s + %s"):format(Elements[recipe.a].name, Elements[recipe.b].name)))
