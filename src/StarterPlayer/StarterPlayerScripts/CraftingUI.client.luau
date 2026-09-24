@@ -17,7 +17,7 @@ local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
 local Theme = require(script.Parent:WaitForChild("UITheme"))
 local Graph = require(script.Parent:WaitForChild("RecipeGraph"))
 local Settings = require(script.Parent:WaitForChild("Settings"))
--- Подписи свойств элемента для плитки покупки — те же, что в справочниках журнала.
+-- Подписи свойств элемента для плитки покупки — те же, что в справочнике лаборатории.
 local EntityInfo = require(script.Parent:WaitForChild("EntityInfo"))
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
@@ -404,7 +404,7 @@ local CraftingProducerExports = require(script.Parent:WaitForChild("CraftingProd
 local CraftingCraftTabExports = require(script.Parent:WaitForChild("CraftingCraftTab"))({body = body, tabFrames = tabFrames, MobileUI = MobileUI, Theme = Theme, Elements = Elements, Recipes = Recipes, knownRecipes = knownRecipes, inventory = inventory, root = root, RequestCraft = RequestCraft})
 local refreshInventoryList = CraftingCraftTabExports.refreshInventoryList
 -- Вкладка «Справочник»: граф рецептов — рисование, кривые, перемещение и масштаб карты — в модуле CraftingReference.
-local CraftingReferenceExports = require(script.Parent:WaitForChild("CraftingReference"))({Theme = Theme, body = body, tabFrames = tabFrames, MobileUI = MobileUI, chromeButton = chromeButton, Elements = Elements, knownRecipes = knownRecipes, Graph = Graph, TweenService = TweenService, Recipes = Recipes, gui = gui, UserInputService = UserInputService, RunService = RunService})
+local CraftingReferenceExports = require(script.Parent:WaitForChild("CraftingReference"))({Theme = Theme, body = body, tabFrames = tabFrames, MobileUI = MobileUI, chromeButton = chromeButton, Elements = Elements, knownRecipes = knownRecipes, Graph = Graph, TweenService = TweenService, Recipes = Recipes, gui = gui, UserInputService = UserInputService, RunService = RunService, inventory = inventory, Remotes = Remotes, statusLabel = statusLabel})
 local getGraph = CraftingReferenceExports.getGraph
 local drawGraph = CraftingReferenceExports.drawGraph
 local refreshBook = CraftingReferenceExports.refreshBook
@@ -418,6 +418,7 @@ InventoryChanged.OnClientEvent:Connect(function(counts)
 	CraftingBuyTabExports.setInventory(counts)
 	CraftingProducerExports.setInventory(counts)
 	CraftingCraftTabExports.setInventory(counts)
+	CraftingReferenceExports.setInventory(counts)
 	for key, label in buyCountLabels do
 		label.Text = tostring(inventory[key] or 0)
 	end

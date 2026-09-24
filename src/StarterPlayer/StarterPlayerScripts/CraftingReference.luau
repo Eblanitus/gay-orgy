@@ -16,6 +16,13 @@ return function(deps)
 	local gui = deps.gui
 	local UserInputService = deps.UserInputService
 	local RunService = deps.RunService
+	local inventory = deps.inventory
+	local Remotes = deps.Remotes
+	local statusLabel = deps.statusLabel
+
+	local Detail = require(script.Parent:WaitForChild("ReferenceDetail"))
+	local EntityInfo = require(script.Parent:WaitForChild("EntityInfo"))
+	local Pages = require(script.Parent:WaitForChild("ReferencePages"))
 
 	-- ============ Вкладка "Справочник" ============
 	-- Граф рецептов: узел на каждый элемент, стрелка на каждый ингредиент. Где что стоит
@@ -152,6 +159,18 @@ return function(deps)
 	bookFrame.Parent = body
 	tabFrames["Справочник"] = bookFrame
 
+	-- Три раздела справочника — жуки, карта рецептов, элементы — переключаются пунктами
+	-- внизу, как режимы производителя (просьба автора). Карта — прежнее содержимое вкладки,
+	-- теперь на своей странице mapFrame; «Жуки» и «Элементы» собирает ReferencePages.
+	local FOOT_H = MobileUI.isMobile and MobileUI.MIN_TAP or 30
+	local PAGE_SIZE = UDim2.new(1, 0, 1, -(FOOT_H + 8))
+
+	local mapFrame = Instance.new("Frame")
+	mapFrame.Name = "MapPage"
+	mapFrame.Size = PAGE_SIZE
+	mapFrame.BackgroundTransparency = 1
+	mapFrame.Parent = bookFrame
+
 	-- Тень под картой. Крупная решётка сцены лаборатории шла под графом прямыми линиями
 	-- и на обзоре читалась как лишние связи (#130). Тень гасит её только под картой, а к
 	-- краям уходит в прозрачность по обеим осям, чтобы карта не выглядела вырезанной
@@ -172,7 +191,7 @@ return function(deps)
 	graphShade.Size = UDim2.new(1, 0, GRAPH_SHARE, 0)
 	graphShade.BackgroundTransparency = 1
 	graphShade.BorderSizePixel = 0
-	graphShade.Parent = bookFrame
+	graphShade.Parent = mapFrame
 	local shadeFill = Instance.new("Frame")
 	shadeFill.Size = UDim2.new(1, 0, 1, 0)
 	shadeFill.BackgroundColor3 = Theme.color.panel
@@ -192,7 +211,7 @@ return function(deps)
 	wire.view.Name = "Wires"
 	wire.view.BackgroundTransparency = 1
 	wire.view.BorderSizePixel = 0
-	wire.view.Parent = bookFrame
+	wire.view.Parent = mapFrame
 
 	local graphScroll = Instance.new("ScrollingFrame")
 	graphScroll.Name = "Graph"
@@ -207,7 +226,7 @@ return function(deps)
 	-- списках окна (Theme.DragScroll), только в обе стороны.
 	graphScroll.ScrollingEnabled = false
 	graphScroll.ScrollBarThickness = 0
-	graphScroll.Parent = bookFrame
+	graphScroll.Parent = mapFrame
 
 	-- Слой, который тянет масштаб. Узлы и линии лежат в нём, а не прямо в списке: UIScale
 	-- растягивает своих детей, и холст списка ему при этом не подчиняется — размер холста
@@ -313,7 +332,7 @@ return function(deps)
 	openedLabel.BackgroundTransparency = 1
 	openedLabel.FontFace = Theme.font.strong
 	openedLabel.TextSize = 11
-	openedLabel.Parent = bookFrame
+	openedLabel.Parent = mapFrame
 
 	local listScroll = Instance.new("ScrollingFrame")
 	listScroll.Size = UDim2.new(1, 0, 1 - GRAPH_SHARE, -28)
@@ -323,7 +342,7 @@ return function(deps)
 	listScroll.ScrollBarThickness = 6
 	listScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	listScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-	listScroll.Parent = bookFrame
+	listScroll.Parent = mapFrame
 
 	Theme.Scroller(listScroll)
 	Theme.DragScroll(listScroll)
@@ -348,7 +367,7 @@ return function(deps)
 		btn.TextSize = MobileUI.isMobile and 20 or 16
 		btn.Text = caption
 		btn.ZIndex = 6
-		btn.Parent = bookFrame
+		btn.Parent = mapFrame
 		chromeButton(btn, "quiet")
 		btn.MouseButton1Click:Connect(action)
 		return btn
@@ -382,7 +401,7 @@ return function(deps)
 	hintBar.TextXAlignment = Enum.TextXAlignment.Left
 	hintBar.ZIndex = 6
 	hintBar.Visible = false
-	hintBar.Parent = bookFrame
+	hintBar.Parent = mapFrame
 
 	Theme.Corner(hintBar, Theme.radius.mark)
 	Theme.Hairline(hintBar, 0.5)
@@ -406,7 +425,7 @@ return function(deps)
 	backButton.Text = "ВСЕ РЕЦЕПТЫ"
 	backButton.ZIndex = 6
 	backButton.Visible = false
-	backButton.Parent = bookFrame
+	backButton.Parent = mapFrame
 
 	chromeButton(backButton, "quiet")
 
@@ -420,7 +439,7 @@ return function(deps)
 	listButton.TextSize = 11
 	listButton.Text = "СКРЫТЬ СПИСОК"
 	listButton.ZIndex = 6
-	listButton.Parent = bookFrame
+	listButton.Parent = mapFrame
 
 	chromeButton(listButton, "quiet")
 
@@ -444,6 +463,30 @@ return function(deps)
 	-- высота считается от них, чтобы они умещались целиком и на телефоне.
 	local GRAPH_TOP = ZOOM_BTN + 8
 
+	-- Карточка выбранного элемента — слева на карте, на стеклянной плашке: что он делает,
+	-- сколько его есть, во что идёт. Слева, потому что наведение ставит выбранный элемент
+	-- справа от середины карты (spin), и карточка его не закрывает.
+	local mapCard = Instance.new("ScrollingFrame")
+	mapCard.Name = "Card"
+	mapCard.BackgroundColor3 = Theme.color.panel
+	mapCard.BackgroundTransparency = 0.12
+	mapCard.BorderSizePixel = 0
+	mapCard.ScrollBarThickness = 4
+	mapCard.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	mapCard.CanvasSize = UDim2.new(0, 0, 0, 0)
+	mapCard.ZIndex = 7
+	mapCard.Visible = false
+	mapCard.Parent = mapFrame
+	Theme.Corner(mapCard, Theme.radius.control)
+	Theme.Hairline(mapCard, 0.5)
+	Theme.Scroller(mapCard)
+	Theme.DragScroll(mapCard)
+	-- Ширина — доля карты с потолком: при сборке окна размер карты ещё нулевой, и число
+	-- в пикселях, посчитанное от него, так бы и осталось нулём.
+	local cardLimit = Instance.new("UISizeConstraint")
+	cardLimit.MaxSize = Vector2.new(MobileUI.isMobile and 250 or 330, math.huge)
+	cardLimit.Parent = mapCard
+
 	local function applyBookLayout()
 		local share = listShown and GRAPH_SHARE or 1
 		graphScroll.Position = UDim2.new(0, 0, 0, GRAPH_TOP)
@@ -456,6 +499,8 @@ return function(deps)
 		openedLabel.Visible = listShown
 		listScroll.Visible = listShown
 		listButton.Text = listShown and "СКРЫТЬ СПИСОК" or "ПОКАЗАТЬ СПИСОК"
+		mapCard.Position = UDim2.new(0, 6, 0, GRAPH_TOP + 6)
+		mapCard.Size = UDim2.new(0.45, 0, share, -(GRAPH_TOP + 40))
 	end
 
 	listButton.MouseButton1Click:Connect(function()
@@ -484,6 +529,32 @@ return function(deps)
 	local repaint
 	local selectNode
 	local focusOn
+
+	-- Открыт ли элемент: базовые — всегда (их покупают, а не открывают), остальные — по рецепту.
+	local function isKnown(key)
+		return Elements[key] ~= nil and (Elements[key].tier == 0 or knownRecipes[key] == true)
+	end
+
+	local function countOf(key)
+		return inventory[key] or 0
+	end
+
+	-- Можно ли скрафтить прямо сейчас: рецепт открыт и оба ингредиента в инвентаре
+	-- (для пары из двух одинаковых — два штуки, как проверяет сервер в Crafting).
+	-- Неоткрытый рецепт не подсвечивается: подсветка выдала бы пару.
+	local function isCraftable(key)
+		local recipe = graph and graph.producedBy[key] or EntityInfo.RecipeOf(key)
+		if not recipe or knownRecipes[key] ~= true then
+			return false
+		end
+		if recipe.a == recipe.b then
+			return countOf(recipe.a) >= 2
+		end
+		return countOf(recipe.a) >= 1 and countOf(recipe.b) >= 1
+	end
+
+	-- Совпадения поиска на карте: пока строка не пуста, горят только они.
+	local searchHits = nil
 
 	local function hintFor(key)
 		local recipe = graph.producedBy[key]
@@ -889,6 +960,19 @@ return function(deps)
 		nameLabel.Text = caption
 		nameLabel.Parent = node
 
+		-- Метка «можно скрафтить сейчас» — яркая точка в углу узла (repaint решает, видна ли).
+		local craftDot = Instance.new("Frame")
+		craftDot.Name = "Craftable"
+		craftDot.AnchorPoint = Vector2.new(0.5, 0.5)
+		craftDot.Position = UDim2.new(1, -2, 0, 2)
+		craftDot.Size = UDim2.new(0, 8, 0, 8)
+		craftDot.BackgroundColor3 = Theme.color.action
+		craftDot.BorderSizePixel = 0
+		craftDot.ZIndex = 4
+		craftDot.Visible = false
+		craftDot.Parent = node
+		Theme.Corner(craftDot, 999)
+
 		-- Строка рецепта под узлом — самая подробная ступень. Лежит не внутри узла,
 		-- а рядом: в коробку в двадцать два пикселя вторая строка не влезает. Место под неё
 		-- раскладка оставляет на орбите (RecipeGraph, DETAIL_H), а тёмная подложка по ширине
@@ -946,6 +1030,7 @@ return function(deps)
 			detail = detail,
 			detailText = detailText,
 			glow = glow,
+			craftDot = craftDot,
 			side = side,
 			stroke = stroke,
 			known = known,
@@ -1012,6 +1097,9 @@ return function(deps)
 	-- Что сейчас горит. nil — не выделено ничего, вся карта в полную силу.
 	local function litSets()
 		if not (selected or hovered) then
+			if searchHits then
+				return searchHits, {}
+			end
 			return nil, nil
 		end
 
@@ -1122,8 +1210,17 @@ return function(deps)
 			if ui.base then
 				halo = dots and ((state == "dim") and 0.93 or 0.82) or ((state == "dim") and 0.93 or 0.82)
 			end
-			ui.glow.BackgroundColor3 = tint
-			ui.glow.BackgroundTransparency = halo
+			-- «Можно скрафтить» — ореол цвета действия вокруг узла на любом масштабе
+			-- и точка в углу, когда узел крупнее точки.
+			local craftable = isCraftable(key)
+			if craftable and state ~= "dim" then
+				ui.glow.BackgroundColor3 = Theme.color.action
+				ui.glow.BackgroundTransparency = dots and 0.35 or 0.7
+			else
+				ui.glow.BackgroundColor3 = tint
+				ui.glow.BackgroundTransparency = halo
+			end
+			ui.craftDot.Visible = craftable and not dots
 			if ui.side then
 				ui.side.TextColor3 = tint
 				ui.side.TextTransparency = (state == "dim") and 0.6 or 0
@@ -1310,6 +1407,18 @@ return function(deps)
 					table.insert(steps, { key = recipe.result, recipe = recipe })
 				end
 			end
+			-- То, что можно скрафтить прямо сейчас, — наверх списка: за этим к справочнику
+			-- и подходят посреди забега. Остальное — в прежнем порядке.
+			for index, entry in steps do
+				entry.order = index
+			end
+			table.sort(steps, function(one, two)
+				local a, b = isCraftable(one.key), isCraftable(two.key)
+				if a ~= b then
+					return a
+				end
+				return one.order < two.order
+			end)
 		end
 
 		local opened = 0
@@ -1338,9 +1447,9 @@ return function(deps)
 			label.TextSize = 13
 			label.TextXAlignment = Enum.TextXAlignment.Left
 			label.Text = known
-				and Theme.Caps(("%s + %s = %s"):format(
+				and ((isCraftable(entry.key) and "● " or "") .. Theme.Caps(("%s + %s = %s"):format(
 					Elements[entry.recipe.a].name, Elements[entry.recipe.b].name, Elements[entry.key].name
-				))
+				)))
 				or "??? + ??? = ???"
 			label.Parent = row
 
@@ -1383,7 +1492,29 @@ return function(deps)
 			local title = (ui and ui.known) and Elements[selected].name or "???"
 			Theme.Section(openedLabel, ("цепочка: %s"):format(title), ("%d из %d шагов"):format(opened, #steps))
 		else
-			Theme.Section(openedLabel, "рецепты", ("%d из %d"):format(opened, #Recipes.List))
+			local ready = 0
+			for _, entry in steps do
+				if isCraftable(entry.key) then
+					ready += 1
+				end
+			end
+			Theme.Section(openedLabel, "рецепты", ready > 0
+				and ("%d из %d · ● можно скрафтить: %d"):format(opened, #Recipes.List, ready)
+				or ("%d из %d"):format(opened, #Recipes.List))
+		end
+
+		-- Карточка выбранного элемента на карте.
+		mapCard.Visible = selected ~= nil
+		if selected then
+			Detail.Element(mapCard, selected, {
+				known = isKnown,
+				count = countOf,
+				craftable = isCraftable,
+				onPick = function(key)
+					selectNode(key)
+					focusOn(key)
+				end,
+			})
 		end
 	end
 
@@ -1420,11 +1551,18 @@ return function(deps)
 		drawGraph()
 	end
 
-	bookFrame:GetPropertyChangedSignal("Visible"):Connect(function()
-		if bookFrame.Visible then
+	-- Карта на экране — только когда открыт справочник и выбран раздел «Карта».
+	local function mapShown()
+		return gui.Enabled and bookFrame.Visible and mapFrame.Visible
+	end
+
+	local function onMapShown()
+		if bookFrame.Visible and mapFrame.Visible then
 			ensureGraph()
 		end
-	end)
+	end
+	bookFrame:GetPropertyChangedSignal("Visible"):Connect(onMapShown)
+	mapFrame:GetPropertyChangedSignal("Visible"):Connect(onMapShown)
 
 	graphScroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyZoom)
 
@@ -1435,14 +1573,22 @@ return function(deps)
 	local panning = false
 	local panLast = Vector2.new(0, 0)
 
-	local function overGraph(position)
-		if not (gui.Enabled and bookFrame.Visible) then
-			return false
-		end
-		local at = graphScroll.AbsolutePosition
-		local size = graphScroll.AbsoluteSize
+	local function inside(gui2d, position)
+		local at = gui2d.AbsolutePosition
+		local size = gui2d.AbsoluteSize
 		return position.X >= at.X and position.X <= at.X + size.X
 			and position.Y >= at.Y and position.Y <= at.Y + size.Y
+	end
+
+	local function overGraph(position)
+		if not mapShown() then
+			return false
+		end
+		-- Карточка лежит поверх карты: протяжка и колесо над ней — её собственная прокрутка.
+		if mapCard.Visible and inside(mapCard, position) then
+			return false
+		end
+		return inside(graphScroll, position)
 	end
 
 	UserInputService.InputBegan:Connect(function(input)
@@ -1499,7 +1645,7 @@ return function(deps)
 	-- открытии — ловить каждое по отдельности ненадёжно, а сверка пяти значений за кадр
 	-- ничего не стоит.
 	RunService.RenderStepped:Connect(function(dt)
-		if not (gui.Enabled and bookFrame.Visible and graph) then
+		if not (mapShown() and graph) then
 			return
 		end
 		local aim = spin.aim
@@ -1526,8 +1672,224 @@ return function(deps)
 		wire.update()
 	end)
 
+	-- ---------- разделы справочника и поиск ----------
+
+	local pagesFrame = Instance.new("Frame")
+	pagesFrame.Name = "Pages"
+	pagesFrame.Size = PAGE_SIZE
+	pagesFrame.BackgroundTransparency = 1
+	pagesFrame.Parent = bookFrame
+
+	-- Кого игрок уже убивал — из профиля (ProfileSynced, четвёртый аргумент). Первое
+	-- убийство нового жука сервер досылает сразу (Plutonium.AwardEnemyKill).
+	local killed = {}
+	local function isMet(key)
+		return killed[key] == true
+	end
+
+	local pages
+	local mode = "map"
+	local setMode
+
+	pages = Pages.Mount(pagesFrame, {
+		known = isKnown,
+		count = countOf,
+		craftable = isCraftable,
+		met = isMet,
+		showOnMap = function(key)
+			setMode("map")
+			task.defer(function()
+				ensureGraph()
+				if selected ~= key then
+					selectNode(key)
+				end
+				focusOn(key)
+			end)
+		end,
+	})
+
+	local MODES = {
+		{ id = "enemies", name = "Жуки", frame = pages.enemies.frame,
+			status = "нажмите жука — покажу, как он себя ведёт; неубитые скрыты" },
+		{ id = "map", name = "Карта", frame = mapFrame,
+			status = "● — можно скрафтить сейчас; нажмите элемент — покажу его цепочку; «+», «−», «[]» — масштаб" },
+		{ id = "elements", name = "Элементы", frame = pages.elements.frame,
+			status = "нажмите элемент — покажу, что он делает и во что идёт" },
+	}
+
+	local modeBar = Instance.new("Frame")
+	modeBar.Name = "Modes"
+	modeBar.AnchorPoint = Vector2.new(0, 1)
+	modeBar.Position = UDim2.new(0, 0, 1, 0)
+	modeBar.Size = UDim2.new(1, 0, 0, FOOT_H)
+	modeBar.BackgroundTransparency = 1
+	modeBar.Parent = bookFrame
+
+	local MODE_W = MobileUI.isMobile and 104 or 150
+	local modeButtons = {}
+	for index, m in MODES do
+		local b = Instance.new("TextButton")
+		b.Name = "Mode_" .. m.id
+		b.Size = UDim2.new(0, MODE_W, 1, 0)
+		b.Position = UDim2.new(0, (index - 1) * (MODE_W + 8), 0, 0)
+		b.FontFace = Theme.font.strong
+		b.TextSize = MobileUI.isMobile and 12 or 14
+		b.TextXAlignment = Enum.TextXAlignment.Left
+		b.Parent = modeBar
+		local pad = Instance.new("UIPadding")
+		pad.PaddingLeft = UDim.new(0, 10)
+		pad.Parent = b
+		modeButtons[m.id] = b
+		b.MouseButton1Click:Connect(function()
+			setMode(m.id)
+		end)
+	end
+
+	-- Поиск по имени — справа от разделов. Ищет только среди открытого: неоткрытое
+	-- по имени и так не найти, а подсказка «такой есть» была бы подсказкой рецепта.
+	local searchBox = Instance.new("TextBox")
+	searchBox.Name = "Search"
+	searchBox.AnchorPoint = Vector2.new(1, 0)
+	searchBox.Position = UDim2.new(1, 0, 0, 0)
+	searchBox.Size = UDim2.new(0, MobileUI.isMobile and 150 or 260, 1, 0)
+	searchBox.ClearTextOnFocus = false
+	searchBox.PlaceholderText = "поиск…"
+	searchBox.Text = ""
+	searchBox.FontFace = Theme.font.body
+	searchBox.TextSize = MobileUI.isMobile and 13 or 14
+	searchBox.TextXAlignment = Enum.TextXAlignment.Left
+	searchBox.Parent = modeBar
+	Theme.Field(searchBox)
+	local searchPad = Instance.new("UIPadding")
+	searchPad.PaddingLeft = UDim.new(0, 10)
+	searchPad.PaddingRight = UDim.new(0, 10)
+	searchPad.Parent = searchBox
+
+	-- Первое совпадение на карте — по порядку карты, чтобы Enter вёл всегда к одному и тому же.
+	local function mapSearch(text)
+		local query = Detail.Lower(text)
+		if query == "" or not graph then
+			searchHits = nil
+			return nil
+		end
+		searchHits = {}
+		local first
+		for _, key in graph.keys do
+			if isKnown(key) and string.find(Detail.Lower(Elements[key].name), query, 1, true) then
+				searchHits[key] = true
+				first = first or key
+			end
+		end
+		return first
+	end
+
+	local function applySearch()
+		local text = searchBox.Text
+		if mode == "map" then
+			mapSearch(text)
+			if graph then
+				repaint()
+			end
+			return
+		end
+		local p = mode == "elements" and pages.elements or pages.enemies
+		p.filter(text)
+	end
+
+	searchBox:GetPropertyChangedSignal("Text"):Connect(applySearch)
+	searchBox.FocusLost:Connect(function(enter)
+		if not enter or searchBox.Text == "" then
+			return
+		end
+		if mode == "map" then
+			local first = mapSearch(searchBox.Text)
+			if first then
+				if selected ~= first then
+					selectNode(first)
+				end
+				focusOn(first)
+			end
+		else
+			local p = mode == "elements" and pages.elements or pages.enemies
+			local first = p.filter(searchBox.Text)
+			if first then
+				p.show(first)
+			end
+		end
+	end)
+
+	local function modeStatus()
+		for _, m in MODES do
+			if m.id == mode then
+				return m.status
+			end
+		end
+		return ""
+	end
+
+	function setMode(id)
+		mode = id
+		for _, m in MODES do
+			local on = m.id == id
+			m.frame.Visible = on
+			chromeButton(modeButtons[m.id], on and "active" or "ghost")
+			modeButtons[m.id].Text = (on and "> " or "  ") .. Theme.Caps(m.name)
+		end
+		pagesFrame.Visible = id ~= "map"
+		applySearch()
+		if bookFrame.Visible then
+			Theme.Status(statusLabel, "Справочник", modeStatus())
+		end
+	end
+
+	-- Строку статуса вкладке ставит CraftingUI.selectTab — общей для всего раздела.
+	-- Справочник уточняет её под свой раздел, после (defer), чтобы его строка осталась.
+	bookFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+		if bookFrame.Visible then
+			task.defer(function()
+				if bookFrame.Visible then
+					Theme.Status(statusLabel, "Справочник", modeStatus())
+				end
+			end)
+		end
+	end)
+
+	setMode("map")
+
+	-- Всё, что зависит от инвентаря и открытого, перерисовывается одним вызовом.
+	local function refreshKnowledge()
+		if graph then
+			repaint()
+		end
+		refreshBook()
+		pages.elements.refresh()
+		pages.enemies.refresh()
+	end
+
+	-- Обработчики CraftingUI обновляют knownRecipes раньше или позже этого — порядок
+	-- подписчиков не закреплён, поэтому перерисовка отложена до конца кадра событий.
+	Remotes:WaitForChild("RecipeLearned").OnClientEvent:Connect(function()
+		task.defer(refreshKnowledge)
+	end)
+	Remotes:WaitForChild("ProfileSynced").OnClientEvent:Connect(function(_plutonium, _levels, _recipes, killedTypes)
+		if type(killedTypes) == "table" then
+			table.clear(killed)
+			for key, value in killedTypes do
+				killed[key] = value == true
+			end
+			task.defer(function()
+				pages.enemies.refresh()
+			end)
+		end
+	end)
 
 	return {
+		-- inventory CraftingUI заменяет целиком на каждое InventoryChanged — новая таблица
+		-- приходит сюда, и всё, что считает «можно скрафтить», перерисовывается.
+		setInventory = function(value)
+			inventory = value
+			refreshKnowledge()
+		end,
 		-- graph собирается позже (Graph.Build при первом показе) — отдаётся функцией, а не значением.
 		getGraph = function()
 			return graph

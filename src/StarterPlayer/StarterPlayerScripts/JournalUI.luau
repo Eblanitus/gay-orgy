@@ -1,20 +1,16 @@
--- Журнал главного меню: статистика и три справочника — рецепты, жуки, элементы.
+-- Журнал главного меню: статистика профиля — плутоний, открытые рецепты, встреченные
+-- жуки, уровни.
 --
--- ВСЁ содержимое берётся из таблиц игры (ReplicatedStorage.Elements / .Enemies / .Recipes /
--- .Levels) и из профиля игрока. Собственных описаний здесь нет ни одного: стоит написать
--- в справочнике хоть одну фразу от себя — и она разойдётся с тем, что реально делает
--- код, при первой же правке баланса. Названия каст — из вики (alchemy_td_enemies_v1.1.md,
--- раздел «Касты»), в самой таблице жуков у каст есть только номера.
+-- Справочники рецептов, жуков и элементов отсюда переехали в справочник лаборатории
+-- (CraftingReference: разделы «Жуки», «Карта», «Элементы») — решение автора: в меню
+-- остаётся статистика, подробные описания — у доски-справочника.
 --
--- Справочники показывают все записи сразу и помечают, что из этого игрок уже открыл
--- или встречал, а не прячут неоткрытое: правило, что именно скрывать, ни в одном
--- дизайн-документе не записано, а придуманное гаданием прятание ломает справочник
--- как справочник. Отметки открытого при этом настоящие и живут в профиле.
+-- Числа берутся из таблиц игры (ReplicatedStorage.Elements / .Enemies / .Recipes / .Levels)
+-- и из профиля игрока — своего счётчика здесь нет.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
 local Theme = require(script.Parent:WaitForChild("UITheme"))
-local EntityInfo = require(script.Parent:WaitForChild("EntityInfo"))
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
@@ -27,26 +23,12 @@ local RecipeLearnedRemote = Remotes:WaitForChild("RecipeLearned")
 
 local Journal = {}
 
--- Подписи свойств, названия каст и обратный поиск рецепта живут в общем модуле EntityInfo:
--- ровно те же таблицы нужны плитке покупки в Лаборатории, а две копии однажды разойдутся.
-local CASTE_NAME = EntityInfo.CASTE_NAME
-local ENEMY_TRAITS = EntityInfo.ENEMY_TRAITS
-local ELEMENT_TRAITS = EntityInfo.ELEMENT_TRAITS
-local traitsOf = EntityInfo.Traits
-local num = EntityInfo.Number
-
-
 -- ============ Собранные один раз списки ============
 
 
 local function elementName(key)
 	local element = Elements[key]
 	return element and element.name or tostring(key)
-end
-
-local function elementColor(key)
-	local element = Elements[key]
-	return element and element.color or Theme.color.steel
 end
 
 -- Элементы по тирам, внутри тира — по алфавиту. Собирается один раз на загрузке
@@ -143,16 +125,6 @@ RecipeLearnedRemote.OnClientEvent:Connect(function(resultKey)
 	end
 end)
 
-local function elementKnown(key)
-	-- Базовые четыре покупаются за материю и рецептом не открываются вовсе
-	-- (см. PlayerData: «базовые элементы покупаются за материю сами, это не рецепт»).
-	local element = Elements[key]
-	if element and element.tier == 0 then
-		return true
-	end
-	return profile.recipes[key] == true
-end
-
 local function countKeys(t)
 	local n = 0
 	for _ in t do
@@ -212,10 +184,6 @@ end
 -- ============ Сборщики ============
 
 local mobile = MobileUI.isMobile
-local CELL_H = mobile and 78 or 74
-local CELL_W = mobile and 260 or 330
-local NAME_SIZE = mobile and 14 or 15
-local LINE_SIZE = mobile and 11 or 12
 
 local function line(parent, y, height, size, color, align)
 	local label = Instance.new("TextLabel")
@@ -230,54 +198,6 @@ local function line(parent, y, height, size, color, align)
 	label.Text = ""
 	label.Parent = parent
 	return label
-end
-
--- Ячейка справочника: три строки на корпусе цвета самой сущности — тот же язык,
--- что у списков инвентаря и Лаборатории (Theme.ElementFill), а не свой вид для журнала.
--- Неоткрытое не прячется, а гаснет через dim — тот же признак «есть, но не взято»,
--- что и у невыбранных кнопок панели стройки.
-local function makeCell(parent, order)
-	local cell = Instance.new("TextButton")
-	cell.LayoutOrder = order
-	cell.Text = ""
-	cell.AutoButtonColor = false
-	cell.Parent = parent
-
-	local inner = Instance.new("Frame")
-	inner.Name = "Inner"
-	inner.Parent = cell
-
-	local top = mobile and 21 or 20
-	local nameLabel = line(inner, 0, top, NAME_SIZE, Theme.color.text)
-	nameLabel.FontFace = Theme.font.strong
-	nameLabel.Size = UDim2.new(1, -64, 0, top)
-
-	local markLabel = line(inner, 0, top, LINE_SIZE, Theme.color.textMute, Enum.TextXAlignment.Right)
-	markLabel.AnchorPoint = Vector2.new(1, 0)
-	markLabel.Position = UDim2.new(1, 0, 0, 2)
-	markLabel.Size = UDim2.new(0, 62, 0, top)
-
-	local statLabel = line(inner, top + 2, 17, LINE_SIZE, Theme.color.textDim)
-	local traitLabel = line(inner, top + 20, 17, LINE_SIZE, Theme.color.textMute)
-
-	return {
-		cell = cell,
-		inner = inner,
-		name = nameLabel,
-		mark = markLabel,
-		stat = statLabel,
-		trait = traitLabel,
-	}
-end
-
--- Цвет и геометрия ячейки задаются отдельно от создания: при смене профиля ячейка
--- перекрашивается, а не пересобирается: семьдесят ячеек заново на каждое начисление
--- плутония — видимый рывок на телефоне.
--- element — ключ элемента для его узора; у врагов нет. У неоткрытого узора нет.
-local function paintCell(parts, color, known, element)
-	Theme.ElementFill(parts.cell, color, { dim = not known, element = known and element or nil })
-	Theme.Inner(parts.inner)
-	parts.name.TextColor3 = known and Theme.color.text or Theme.color.textDim
 end
 
 local function makeScroll(parent, name)
@@ -302,8 +222,6 @@ end
 -- меню и журналу не принадлежит; заводить вторую внутри вкладок значило бы две подсказки
 -- одна над другой на одном экране.
 function Journal.Mount(parent, onStatus)
-	local TAB_H = mobile and 34 or 38
-
 	local page = Instance.new("Frame")
 	page.Name = "JournalPage"
 	page.Size = UDim2.new(1, 0, 1, 0)
@@ -312,38 +230,17 @@ function Journal.Mount(parent, onStatus)
 	page.Visible = false
 	page.Parent = parent
 
-	local tabsRow = Instance.new("Frame")
-	tabsRow.Name = "Tabs"
-	tabsRow.Size = UDim2.new(1, 0, 0, TAB_H)
-	tabsRow.BackgroundTransparency = 1
-	tabsRow.BorderSizePixel = 0
-	tabsRow.Parent = page
-
-	local tabsLayout = Instance.new("UIListLayout")
-	tabsLayout.FillDirection = Enum.FillDirection.Horizontal
-	tabsLayout.Padding = UDim.new(0, 6)
-	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tabsLayout.Parent = tabsRow
-
 	local content = Instance.new("Frame")
 	content.Name = "Content"
-	content.Position = UDim2.new(0, 0, 0, TAB_H + 10)
-	content.Size = UDim2.new(1, 0, 1, -(TAB_H + 10))
+	content.Size = UDim2.new(1, 0, 1, 0)
 	content.BackgroundTransparency = 1
 	content.BorderSizePixel = 0
 	content.Parent = page
 
-	-- Списки собираются при первом открытии своей вкладки, а не при сборке меню:
-	-- семьдесят один элемент плюс двадцать девять жуков плюс шестьдесят семь рецептов —
-	-- это полторы сотни ячеек в момент входа в игру, ради экрана, который могут
-	-- и не открыть.
-	local built = {}
 	local refreshers = {}
-	local grids = {}
 
-	local function addRefresher(tab, fn)
-		refreshers[tab] = refreshers[tab] or {}
-		table.insert(refreshers[tab], fn)
+	local function addRefresher(fn)
+		table.insert(refreshers, fn)
 	end
 
 	-- ---- Статистика ----
@@ -465,189 +362,40 @@ function Journal.Mount(parent, onStatus)
 			end
 		end
 
-		addRefresher("stats", refresh)
+		addRefresher(refresh)
 		refresh()
 	end
 
-	-- ---- Справочники на сетке ----
+	local STATUS = "Сводка по профилю и прогресс по уровням. Рецепты, жуки и элементы — в справочнике лаборатории"
 
-	local recipesScroll = makeScroll(content, "RecipesList")
-	local enemiesScroll = makeScroll(content, "EnemiesList")
-	local elementsScroll = makeScroll(content, "ElementsList")
+	statsScroll.Visible = true
+	buildStats()
 
-	local function buildRecipes()
-		grids.recipes = Theme.Grid(recipesScroll, CELL_H - 22, CELL_W, 8)
-		for index, recipe in recipeOrder do
-			local parts = makeCell(recipesScroll, index)
-			local result = Elements[recipe.result]
-			parts.name.Text = Theme.Caps(elementName(recipe.result))
-			parts.mark.Text = result and ("Т%d"):format(result.tier) or ""
-			parts.stat.Text = Theme.Caps(("%s + %s"):format(elementName(recipe.a), elementName(recipe.b)))
-			-- Третьей строки у рецепта нет: ячейка ниже остальных на её высоту.
-			parts.trait:Destroy()
-
-			local function refresh()
-				local known = elementKnown(recipe.result)
-				paintCell(parts, elementColor(recipe.result), known, recipe.result)
-				parts.mark.TextColor3 = known and Theme.color.accent or Theme.color.textMute
-			end
-			addRefresher("recipes", refresh)
-			refresh()
-		end
-	end
-
-	local function buildEnemies()
-		grids.enemies = Theme.Grid(enemiesScroll, CELL_H, CELL_W, 8)
-		for index, key in enemyOrder do
-			local enemy = Enemies[key]
-			local parts = makeCell(enemiesScroll, index)
-			parts.name.Text = Theme.Caps(enemy.name)
-			parts.mark.Text = "HP " .. num(enemy.hp)
-
-			local casteName = CASTE_NAME[enemy.caste] or "прочие"
-			parts.stat.Text = Theme.Caps(("%s · скор %s · материя %s"):format(
-				casteName, num(enemy.speed), num(enemy.matter)
-			))
-
-			local traits = traitsOf(enemy, ENEMY_TRAITS)
-			parts.trait.Text = #traits > 0 and Theme.Caps(table.concat(traits, " · ")) or ""
-
-			local function refresh()
-				local met = profile.killedTypes[key] == true
-				paintCell(parts, enemy.color or Theme.color.steel, met)
-				parts.mark.TextColor3 = met and Theme.color.danger or Theme.color.textMute
-			end
-			addRefresher("enemies", refresh)
-			refresh()
-		end
-	end
-
-	local function buildElements()
-		grids.elements = Theme.Grid(elementsScroll, CELL_H, CELL_W, 8)
-		for index, key in elementOrder do
-			local element = Elements[key]
-			local parts = makeCell(elementsScroll, index)
-			parts.name.Text = Theme.Caps(element.name)
-			parts.mark.Text = ("ТИР %d"):format(element.tier)
-
-			local recipe = EntityInfo.RecipeOf(key)
-			parts.stat.Text = recipe
-				and Theme.Caps(("%s + %s"):format(elementName(recipe.a), elementName(recipe.b)))
-				or Theme.Caps("базовый · покупается за материю")
-
-			local traits = traitsOf(element, ELEMENT_TRAITS)
-			parts.trait.Text = #traits > 0 and Theme.Caps(table.concat(traits, " · ")) or ""
-
-			local function refresh()
-				local known = elementKnown(key)
-				paintCell(parts, element.color, known, key)
-				parts.mark.TextColor3 = known and Theme.color.accent or Theme.color.textMute
-			end
-			addRefresher("elements", refresh)
-			refresh()
-		end
-	end
-
-	-- ---- Вкладки ----
-
-	local TABS = {
-		{ key = "stats", name = "Статистика", frame = statsScroll, build = buildStats,
-			status = "Сводка по профилю и прогресс по уровням" },
-		{ key = "recipes", name = "Рецепты", frame = recipesScroll, build = buildRecipes,
-			status = "Яркие — уже открыты, приглушённые — ещё нет" },
-		{ key = "enemies", name = "Жуки", frame = enemiesScroll, build = buildEnemies,
-			status = "Яркие — уже встречались в забегах" },
-		{ key = "elements", name = "Элементы", frame = elementsScroll, build = buildElements,
-			status = "Яркие — доступны к крафту, приглушённые — нет" },
-	}
-
-	local buttons = {}
-	local current = nil
-	local statusText = TABS[1].status
-
-	local function select(key)
-		for _, tab in TABS do
-			local on = tab.key == key
-			Theme.Button(buttons[tab.key], on and "active" or "ghost")
-			tab.frame.Visible = on
-			if on then
-				statusText = tab.status
-				if not built[key] then
-					built[key] = true
-					tab.build()
-				end
-			end
-		end
-		current = key
-		if onStatus then
-			onStatus(statusText)
-		end
-	end
-
-	for index, tab in TABS do
-		local button = Instance.new("TextButton")
-		button.Name = tab.key
-		button.LayoutOrder = index
-		-- Четыре вкладки делят ширину поровну в долях, а не в пикселях: иначе на телефоне
-		-- в портрете последняя уезжает за край экрана.
-		button.Size = UDim2.new(0.25, -5, 1, 0)
-		button.FontFace = Theme.font.strong
-		button.TextSize = mobile and 11 or 13
-		button.TextTruncate = Enum.TextTruncate.AtEnd
-		button.Text = Theme.Caps(tab.name)
-		button.Parent = tabsRow
-		Theme.Button(button, "ghost")
-		buttons[tab.key] = button
-
-		button.MouseButton1Click:Connect(function()
-			select(tab.key)
-		end)
-	end
-
-	-- Профиль поменялся — перерисовываются только те вкладки, которые уже собраны:
-	-- несобранная всё равно возьмёт свежий профиль при сборке.
+	-- Профиль поменялся — статистика перерисовывается.
 	table.insert(watchers, function()
-		for key, list in refreshers do
-			if built[key] then
-				for _, fn in list do
-					fn()
-				end
-			end
+		for _, fn in refreshers do
+			fn()
 		end
 	end)
-
-	-- Сетка пересчитывается при повороте телефона и изменении окна на ПК: число колонок
-	-- считается от фактической ширины, а она меняется.
-	MobileUI.OnViewportChanged(function()
-		for _, layout in grids do
-			Theme.GridFit(layout)
-		end
-	end)
-
-	select("stats")
 
 	return {
 		frame = page,
 		Open = function()
 			page.Visible = true
-			-- При каждом открытии сетка подгоняется заново: при первой сборке список ещё
-			-- не был показан, и AbsoluteSize у него нулевой — Theme.GridFit в таком случае
-			-- отдаёт одну колонку, и без повторного счёта так бы и осталось.
-			task.defer(function()
-				for _, layout in grids do
-					Theme.GridFit(layout)
-				end
-			end)
+			if onStatus then
+				onStatus(STATUS)
+			end
 		end,
 		Close = function()
 			page.Visible = false
 		end,
 		Status = function()
-			return statusText
+			return STATUS
 		end,
-		Select = select,
+		-- Вкладок в журнале больше нет; оставлено для прежних вызовов.
+		Select = function() end,
 		Current = function()
-			return current
+			return "stats"
 		end,
 	}
 end
