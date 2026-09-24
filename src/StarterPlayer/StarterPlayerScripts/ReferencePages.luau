@@ -331,6 +331,7 @@ function Pages.Mount(parent, ctx)
 		end,
 		-- Открытый элемент можно найти и на карте: оттуда видна вся его ветка.
 		onShowOnMap = ctx.showOnMap,
+		onMap = ctx.onMap,
 	}
 
 	elements = page(parent, "ElementsPage", {

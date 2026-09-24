@@ -522,6 +522,19 @@ return function(deps)
 		return codexRevealed or killed[key] == true
 	end
 
+	-- Орбиты карты открываются поэтапно (#273): пока видны ярусы до OPEN_DEPTH включительно,
+	-- дальние кольца, их узлы и связи не рисуются вовсе. Условия открытия следующих орбит
+	-- ещё не придуманы; CODEX открывает все. Ярус — глубина по рецептам (RecipeGraph.depth),
+	-- до сборки карты — ярус из Elements.
+	local OPEN_DEPTH = 1
+	local function orbitShown(depth)
+		return codexRevealed or depth <= OPEN_DEPTH
+	end
+	local function orbitOpen(key)
+		local depth = graph and graph.depth[key] or (Elements[key] and Elements[key].tier) or 0
+		return orbitShown(depth)
+	end
+
 	-- Счёт убийств для ступеней карточек (Mastery): приходит событием ProfileStats.
 	local elementKills, enemyKills = {}, {}
 	local function killsByElement(key)
@@ -632,7 +645,10 @@ return function(deps)
 		local ARC = 0.5523
 		local ox, oy = graph.centre[1], graph.centre[2]
 		local color = LINE_GROUND:Lerp(GUIDE, 1 - BEAD)
-		for _, ring in graph.guides do
+		for d, ring in graph.guides do
+			if not orbitShown(d) then
+				continue
+			end
 			local r = ring[1][1] - ox
 			for quarter = 0, 3 do
 				local a, b = quarter * math.pi / 2, (quarter + 1) * math.pi / 2
@@ -1342,10 +1358,14 @@ return function(deps)
 			edgesOf[key] = {}
 		end
 		for _, edge in graph.edges do
-			drawEdge(edge)
+			if orbitOpen(edge.child) and orbitOpen(edge.parent) then
+				drawEdge(edge)
+			end
 		end
 		for _, key in graph.keys do
-			drawNode(key)
+			if orbitOpen(key) then
+				drawNode(key)
+			end
 		end
 
 		-- Связи нарисованы заново, и прежние записи о них — уже мусор: цепочку пересчитываем.
@@ -1407,7 +1427,7 @@ return function(deps)
 			end)
 		else
 			for _, recipe in Recipes.List do
-				if knownRecipes[recipe.result] then
+				if knownRecipes[recipe.result] and orbitOpen(recipe.result) then
 					table.insert(steps, { key = recipe.result, recipe = recipe })
 				end
 			end
@@ -1527,6 +1547,10 @@ return function(deps)
 	-- Повторное нажатие на тот же элемент снимает выбор: карта возвращается в полную силу,
 	-- список — ко всем открытым рецептам.
 	function selectNode(key)
+		-- Узел за закрытой орбитой на карте не нарисован — и выбрать нечего.
+		if key ~= nil and not orbitOpen(key) then
+			return
+		end
 		if key ~= nil and key == selected then
 			key = nil
 		end
@@ -1694,6 +1718,7 @@ return function(deps)
 		elementKills = killsByElement,
 		enemyKills = killsOfEnemy,
 		glass = window.glass,
+		onMap = orbitOpen,
 		showOnMap = function(key)
 			setMode("map")
 			task.defer(function()
@@ -1731,7 +1756,7 @@ return function(deps)
 		searchHits = {}
 		local first
 		for _, key in graph.keys do
-			if isKnown(key) and string.find(Detail.Lower(Elements[key].name), query, 1, true) then
+			if isKnown(key) and orbitOpen(key) and string.find(Detail.Lower(Elements[key].name), query, 1, true) then
 				searchHits[key] = true
 				first = first or key
 			end
@@ -1907,13 +1932,19 @@ return function(deps)
 		if type(resultKey) == "string" and not seenRecipes[resultKey] then
 			seenRecipes[resultKey] = true
 			if recipesReady then
-				markFresh("map", resultKey, "новый")
+				if orbitOpen(resultKey) then
+					markFresh("map", resultKey, "новый")
+				end
 				markFresh("elements", resultKey, "открыт")
 			end
 		end
 	end)
 	Remotes:WaitForChild("EnemiesRevealed").OnClientEvent:Connect(function()
 		codexRevealed = true
+		-- Открылись все орбиты: карту — заново, с дальними кольцами.
+		if graph then
+			drawGraph()
+		end
 		-- CODEX открывает всё сразу: сотня вспышек ничего бы не сказала.
 		for _, list in fresh do
 			table.clear(list)

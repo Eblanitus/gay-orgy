@@ -618,7 +618,8 @@ function Detail.Element(scroll, key, ctx)
 		text(head, 70, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,
 			Theme.font.strong)
 	end
-	if ctx.onShowOnMap then
+	-- onMap(key) — нарисован ли элемент на карте (орбита открыта, #273).
+	if ctx.onShowOnMap and (not ctx.onMap or ctx.onMap(key)) then
 		-- Круглая кнопка в правом нижнем углу шапки, без надписи: значок — прицел (кольцо
 		-- с точкой), «где это на карте». Поверх печати «в разработке» — это управление.
 		local size = mobile and MobileUI.MIN_TAP or 34
