@@ -142,11 +142,13 @@ local function rule(scroll, order)
 	return line
 end
 
--- Разделитель: подпись слева, от неё до края — черта. Цвет — цвет имени элемента.
-local function divider(scroll, order, caption, color)
+-- Разделитель: «эффект», справа от него сами эффекты, дальше черта до края. Цвет — цвет
+-- имени элемента. Длинный список эффектов переносится, черта тогда сжимается.
+local function divider(scroll, order, caption, effects, color)
 	local row = Instance.new("Frame")
 	row.LayoutOrder = order
 	row.Size = UDim2.new(1, 0, 0, TEXT + 12)
+	row.AutomaticSize = Enum.AutomaticSize.Y
 	row.BackgroundTransparency = 1
 	row.ZIndex = scroll.ZIndex + 1
 	row.Parent = scroll
@@ -154,23 +156,31 @@ local function divider(scroll, order, caption, color)
 	layout.FillDirection = Enum.FillDirection.Horizontal
 	layout.VerticalAlignment = Enum.VerticalAlignment.Center
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 8)
+	layout.Padding = UDim.new(0, 10)
 	layout.Parent = row
-	local label = text(row, 1, Theme.Caps(caption), TEXT, color, Theme.font.strong)
-	label.AutomaticSize = Enum.AutomaticSize.X
-	label.Size = UDim2.new(0, 0, 1, 0)
-	label.TextYAlignment = Enum.TextYAlignment.Center
+	local label = text(row, 1, Theme.Caps(caption), TEXT, Theme.color.textMute, Theme.font.strong)
+	label.AutomaticSize = Enum.AutomaticSize.XY
+	label.Size = UDim2.new(0, 0, 0, 0)
+	label.TextWrapped = false
+	if effects then
+		local list = text(row, 2, effects, TEXT, color, Theme.font.strong)
+		list.AutomaticSize = Enum.AutomaticSize.XY
+		list.Size = UDim2.new(0, 0, 0, 0)
+		local shrink = Instance.new("UIFlexItem")
+		shrink.FlexMode = Enum.UIFlexMode.Shrink
+		shrink.Parent = list
+	end
 	local line = Instance.new("Frame")
-	line.LayoutOrder = 2
+	line.LayoutOrder = 3
 	line.Size = UDim2.new(0, 0, 0, 2)
 	line.BackgroundColor3 = color
 	line.BackgroundTransparency = 0.35
 	line.BorderSizePixel = 0
 	line.ZIndex = row.ZIndex + 1
 	line.Parent = row
-	local flex = Instance.new("UIFlexItem") -- черта занимает всё место справа от подписи
-	flex.FlexMode = Enum.UIFlexMode.Fill
-	flex.Parent = line
+	local fill = Instance.new("UIFlexItem") -- черта занимает всё место справа
+	fill.FlexMode = Enum.UIFlexMode.Fill
+	fill.Parent = line
 	return row
 end
 
@@ -507,20 +517,22 @@ function Detail.Element(scroll, key, ctx)
 	local effects = EntityInfo.ElementEffects(key, element)
 	if #unique + #features + #effects > 0 then
 		local tint = Theme.Legible(element.color) -- как у имени элемента
-		divider(head, 50, "эффект", tint)
-		local block = effectBlock(head, 51, tint)
+		local list
 		if #effects > 0 then
 			-- *так* в подписи эффекта — выделение (EntityInfo.ELEMENT_EFFECTS). Теги — после Caps:
 			-- заглавные имена тегов RichText не понимает.
-			local value = Theme.Caps(table.concat(effects, " · ")):gsub("%*(.-)%*",
+			list = Theme.Caps(table.concat(effects, " · ")):gsub("%*(.-)%*",
 				("<font color=\"#%s\">%%1</font>"):format(Theme.color.action:ToHex()))
-			text(block, 1, value, TEXT, Theme.color.accent, Theme.font.strong)
 		end
-		if #features > 0 then
-			text(block, 2, Theme.Caps(table.concat(features, " · ")), TEXT, Theme.color.accent, Theme.font.strong)
-		end
-		for index, row in unique do
-			reading(block, 10 + index, row.label, Theme.Caps(row.value))
+		divider(head, 50, "эффект", list, tint)
+		if #features + #unique > 0 then
+			local block = effectBlock(head, 51, tint)
+			if #features > 0 then
+				text(block, 2, Theme.Caps(table.concat(features, " · ")), TEXT, tint, Theme.font.strong)
+			end
+			for index, row in unique do
+				reading(block, 10 + index, row.label, Theme.Caps(row.value))
+			end
 		end
 	end
 	if recipe and ctx.craftable and ctx.craftable(key) then
