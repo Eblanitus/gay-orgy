@@ -266,17 +266,17 @@ function EntityInfo.ElementStats(elementKey, element)
 	local function dps(multiplier)
 		return EntityInfo.Word(EntityInfo.DAMAGE_WORDS, multiplier * rate)
 	end
+	-- Случайный, по скорости и растущий урон — по среднему: как он меняется, пишет строка
+	-- «особенности», здесь не дублируем.
+	local multiplier = element.damageMultiplier or 1
 	if element.damageRandom then
-		add("дпс снаряда", ("случайный: от «%s» до «%s»"):format(
-			dps(element.damageRandom.min), dps(element.damageRandom.max)))
+		multiplier = (element.damageRandom.min + element.damageRandom.max) / 2
 	elseif element.damageSpeedScale then
-		add("дпс снаряда", ("по скорости цели: от «%s» до «%s»"):format(
-			dps(element.damageSpeedScale.min), dps(element.damageSpeedScale.max)))
+		multiplier = (element.damageSpeedScale.min + element.damageSpeedScale.max) / 2
 	elseif element.damageRamp then
-		add("дпс снаряда", "растёт с каждым попаданием подряд")
-	else
-		add("дпс снаряда", dps(element.damageMultiplier or 1))
+		multiplier *= 1 + element.damageRamp.step * element.damageRamp.hits / 2
 	end
+	add("дпс снаряда", dps(multiplier))
 
 	if element.damagePerSecond then
 		add("дпс эффекта", EntityInfo.Word(EntityInfo.DOT_WORDS, element.damagePerSecond))
@@ -424,9 +424,9 @@ EntityInfo.ELEMENT_EFFECTS = {
 		return kind == "rust" and "смывает ржавчину" or nil
 	end },
 	{ field = "terrain", label = "меняет рельеф" },
-	-- Дым — удушье (разовый большой урон), Смог — взрыв с зоной слепоты.
+	-- Дым — удушье (разовый большой урон), Смог — взрыв с зоной тумана.
 	{ field = "breakthrough", label = function(plan)
-		return plan.zone and "взрыв · зона слепоты" or "удушье"
+		return plan.zone and "взрыв · зона тумана" or "удушье"
 	end },
 	{ field = "killDamage", label = function(plan)
 		return plan.spreadElement == "Steam" and "взрыв при смерти с ошпариванием" or "взрыв при смерти"
@@ -449,6 +449,7 @@ EntityInfo.IN_DEVELOPMENT = {
 	Clay = "керамическая статуя пока не появляется",
 	Star = "взрыв зоны и белый карлик пока не появляются",
 	Plant = "растение из трупа пока не вырастает — плоды лечат сразу",
+	Soil = "метка грунта пока ни на что не влияет",
 }
 
 -- Загадка для игрока (вики): вместо характеристик — вопросы.
