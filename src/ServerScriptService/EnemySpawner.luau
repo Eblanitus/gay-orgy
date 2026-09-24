@@ -896,6 +896,7 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 	assert(enemyData, ("[EnemySpawner] неизвестный тип врага: %s"):format(tostring(enemyType)))
 
 	local hp = hpOverride or enemyData.hp
+	ProfileStats.Seen(enemyType)
 
 	local enemy = buildEnemyModel(enemyData)
 

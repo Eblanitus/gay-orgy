@@ -101,7 +101,7 @@ function Crafting.Craft(a, b)
 		Inventory.Remove(elementKey, amount)
 	end
 	Inventory.Add(resultKey, 1)
-	ProfileStats.Add("crafts")
+	ProfileStats.Crafted(resultKey)
 
 	local firstTime = not known[resultKey]
 	known[resultKey] = true

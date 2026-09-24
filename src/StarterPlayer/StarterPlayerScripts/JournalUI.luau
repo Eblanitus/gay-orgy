@@ -102,6 +102,8 @@ local profile = {
 	elementKills = {},
 	enemyKills = {},
 	stats = {},
+	enemySeen = {},
+	elementCrafted = {},
 }
 
 local watchers = {}
@@ -120,7 +122,9 @@ ProfileSyncedRemote.OnClientEvent:Connect(function(plutonium, levels, recipes, k
 	profileChanged()
 end)
 
-ProfileStatsRemote.OnClientEvent:Connect(function(elementKills, enemyKills, stats)
+ProfileStatsRemote.OnClientEvent:Connect(function(elementKills, enemyKills, stats, enemySeen, elementCrafted)
+	profile.enemySeen = type(enemySeen) == "table" and enemySeen or {}
+	profile.elementCrafted = type(elementCrafted) == "table" and elementCrafted or {}
 	profile.elementKills = type(elementKills) == "table" and elementKills or {}
 	profile.enemyKills = type(enemyKills) == "table" and enemyKills or {}
 	profile.stats = type(stats) == "table" and stats or {}
@@ -244,10 +248,23 @@ function Journal.Mount(parent, onStatus)
 
 	local content = Instance.new("Frame")
 	content.Name = "Content"
-	content.Size = UDim2.new(1, 0, 1, 0)
+	local TAB_H = mobile and MobileUI.MIN_TAP or 34
+	content.Position = UDim2.new(0, 0, 0, TAB_H + 8)
+	content.Size = UDim2.new(1, 0, 1, -(TAB_H + 8))
 	content.BackgroundTransparency = 1
 	content.BorderSizePixel = 0
 	content.Parent = page
+
+	-- Вкладки: общая сводка, жуки, элементы — у каждой свой список.
+	local tabBar = Instance.new("Frame")
+	tabBar.Name = "Tabs"
+	tabBar.Size = UDim2.new(1, 0, 0, TAB_H)
+	tabBar.BackgroundTransparency = 1
+	tabBar.Parent = page
+	local tabLayout = Instance.new("UIListLayout")
+	tabLayout.FillDirection = Enum.FillDirection.Horizontal
+	tabLayout.Padding = UDim.new(0, 6)
+	tabLayout.Parent = tabBar
 
 	local refreshers = {}
 
@@ -267,7 +284,8 @@ function Journal.Mount(parent, onStatus)
 	-- Строка статистики ограничена по ширине. Во всю ширину рамки подпись и число
 	-- разносит на тысячу пикселей, и они читаются как два несвязных списка — та же
 	-- причина, по которой у самой рамки есть потолок ширины (MainMenu.FRAME_MAX_W).
-	local STATS_W = mobile and 420 or 560
+	local STATS_W = mobile and 480 or 640
+	local ROW_H = mobile and 30 or 32
 
 	local function statsWidth(gui)
 		local limit = Instance.new("UISizeConstraint")
@@ -276,12 +294,12 @@ function Journal.Mount(parent, onStatus)
 		return gui
 	end
 
-	local function statsSection(order, caption)
+	local function statsSection(order, caption, parent)
 		local label = Instance.new("TextLabel")
 		label.LayoutOrder = order
-		label.Size = UDim2.new(1, -8, 0, 26)
-		label.TextSize = mobile and 11 or 12
-		label.Parent = statsScroll
+		label.Size = UDim2.new(1, -8, 0, 34)
+		label.TextSize = mobile and 15 or 16
+		label.Parent = parent or statsScroll
 		Theme.Section(label, caption)
 		return statsWidth(label)
 	end
@@ -290,22 +308,22 @@ function Journal.Mount(parent, onStatus)
 	-- Два отдельных TextLabel, а не один с RichText: число должно стоять в колонку
 	-- со всеми остальными, а при склейке в одну строку его место зависело бы
 	-- от длины подписи.
-	local function statsRow(order)
+	local function statsRow(order, parent)
 		local row = Instance.new("Frame")
 		row.LayoutOrder = order
-		row.Size = UDim2.new(1, -8, 0, mobile and 24 or 25)
+		row.Size = UDim2.new(1, -8, 0, ROW_H)
 		row.BackgroundTransparency = 1
 		row.BorderSizePixel = 0
-		row.Parent = statsScroll
+		row.Parent = parent or statsScroll
 		statsWidth(row)
 
-		local caption = line(row, 0, mobile and 24 or 25, mobile and 12 or 13, Theme.color.textDim)
-		caption.Size = UDim2.new(1, -130, 1, 0)
+		local caption = line(row, 0, ROW_H, mobile and 16 or 18, Theme.color.textDim)
+		caption.Size = UDim2.new(1, -170, 1, 0)
 
-		local value = line(row, 0, mobile and 24 or 25, mobile and 13 or 14, Theme.color.accent, Enum.TextXAlignment.Right)
+		local value = line(row, 0, ROW_H, mobile and 17 or 19, Theme.color.accent, Enum.TextXAlignment.Right)
 		value.AnchorPoint = Vector2.new(1, 0)
 		value.Position = UDim2.new(1, 0, 0, 0)
-		value.Size = UDim2.new(0, 128, 1, 0)
+		value.Size = UDim2.new(0, 168, 1, 0)
 		value.FontFace = Theme.font.strong
 
 		return caption, value
@@ -327,60 +345,17 @@ function Journal.Mount(parent, onStatus)
 		local enemyCap, enemyVal = statsRow(5)
 		enemyCap.Text = Theme.Caps("Типов жуков встречено")
 
-		-- ---- Бой, элементы, забеги, лаборатория (ProfileStats) ----
-		local TOP = 5 -- строк в списках «больше всего»
-
-		-- Список «имя — число» по убыванию, пустые строки прячутся.
-		local function topRows(order)
-			local rows = {}
-			for i = 1, TOP do
-				local cap, val = statsRow(order + i)
-				table.insert(rows, { cap = cap, val = val })
-			end
-			return function(counts, nameOf)
-				local list = {}
-				for key, count in counts do
-					if count > 0 and nameOf(key) then
-						table.insert(list, { name = nameOf(key), count = count })
-					end
-				end
-				table.sort(list, function(a, b)
-					if a.count ~= b.count then
-						return a.count > b.count
-					end
-					return a.name < b.name
-				end)
-				for i, row in rows do
-					local item = list[i]
-					row.cap.Parent.Visible = item ~= nil
-					if item then
-						row.cap.Text = Theme.Caps(("%d. %s"):format(i, item.name))
-						row.val.Text = tostring(item.count)
-					end
-				end
-			end
-		end
-
+		-- ---- Бой, забеги, лаборатория (ProfileStats) ----
 		local function counter(order, caption)
 			local cap, val = statsRow(order)
 			cap.Text = Theme.Caps(caption)
 			return val
 		end
 
-		local function enemyName(key)
-			return Enemies[key] and Enemies[key].name or nil
-		end
-		local function knownElementName(key)
-			return Elements[key] and Elements[key].name or nil
-		end
-
 		statsSection(10, "Бой")
 		local killsVal = counter(11, "Жуков убито")
-		local topEnemies = topRows(20)
 
-		statsSection(30, "Элементы")
-		local favouriteVal = counter(31, "Любимый элемент")
-		local topElements = topRows(40)
+		local favouriteVal = counter(12, "Любимый элемент")
 
 		statsSection(50, "Забеги")
 		local runsVal = counter(51, "Забегов начато")
@@ -411,7 +386,6 @@ function Journal.Mount(parent, onStatus)
 				end
 			end
 			killsVal.Text = tostring(total)
-			topEnemies(profile.enemyKills, enemyName)
 
 			local best, bestCount = nil, 0
 			for key, count in profile.elementKills do
@@ -420,7 +394,6 @@ function Journal.Mount(parent, onStatus)
 				end
 			end
 			favouriteVal.Text = best and Theme.Caps(Elements[best].name) or "—"
-			topElements(profile.elementKills, knownElementName)
 
 			local stats = profile.stats
 			runsVal.Text = tostring(stats.runs or 0)
@@ -491,6 +464,90 @@ function Journal.Mount(parent, onStatus)
 
 	statsScroll.Visible = true
 	buildStats()
+
+	-- ---- Вкладки «Жуки» и «Элементы»: по строке-разделу на каждого, без карточек ----
+	-- Список пересобирается целиком на каждое обновление профиля: строк — десятки, а
+	-- обновление приходит не чаще раза в пару секунд.
+	local function entityList(name, order, show)
+		local scroll = makeScroll(content, name)
+		local layout = Instance.new("UIListLayout")
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Padding = UDim.new(0, 4)
+		layout.Parent = scroll
+		addRefresher(function()
+			for _, child in scroll:GetChildren() do
+				if child:IsA("GuiObject") then
+					child:Destroy()
+				end
+			end
+			local shown = 0
+			for _, key in order do
+				local rows = show(key)
+				if rows then
+					shown += 1
+					local base = shown * 10
+					statsSection(base, rows.name, scroll)
+					for i, row in rows do
+						local cap, val = statsRow(base + i, scroll)
+						cap.Text = Theme.Caps(row[1])
+						val.Text = tostring(row[2])
+					end
+				end
+			end
+			if shown == 0 then
+				local cap = statsRow(1, scroll)
+				cap.Text = Theme.Caps("пока пусто")
+			end
+		end)
+		return scroll
+	end
+
+	local enemiesScroll = entityList("EnemiesList", enemyOrder, function(key)
+		local seen = profile.enemySeen[key] or 0
+		local kills = profile.enemyKills[key] or 0
+		if seen == 0 and kills == 0 then
+			return nil
+		end
+		return { name = Enemies[key].name, { "Встречено", seen }, { "Убито", kills } }
+	end)
+
+	local elementsScroll = entityList("ElementsList", elementOrder, function(key)
+		local kills = profile.elementKills[key] or 0
+		local crafted = profile.elementCrafted[key] or 0
+		if kills == 0 and crafted == 0 then
+			return nil
+		end
+		return { name = Elements[key].name, { "Жуков добито", kills }, { "Создано скрещиванием", crafted } }
+	end)
+
+	local TABS = {
+		{ caption = "Общее", frame = statsScroll },
+		{ caption = "Жуки", frame = enemiesScroll },
+		{ caption = "Элементы", frame = elementsScroll },
+	}
+	local buttons = {}
+	local function selectTab(index)
+		for i, tab in TABS do
+			tab.frame.Visible = i == index
+			Theme.Button(buttons[i], i == index and "active" or "ghost")
+		end
+	end
+	for i, tab in TABS do
+		local button = Instance.new("TextButton")
+		button.Size = UDim2.new(1 / #TABS, -4, 1, 0)
+		button.FontFace = Theme.font.strong
+		button.TextSize = mobile and 15 or 16
+		button.Text = Theme.Caps(tab.caption)
+		button.Parent = tabBar
+		buttons[i] = button
+		button.MouseButton1Click:Connect(function()
+			selectTab(i)
+		end)
+	end
+	selectTab(1)
+	for _, fn in refreshers do
+		fn()
+	end
 
 	-- Профиль поменялся — статистика перерисовывается.
 	table.insert(watchers, function()

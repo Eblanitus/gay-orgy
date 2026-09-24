@@ -25,6 +25,8 @@ local DEFAULT_DATA = {
 	-- (ReplicatedStorage.Mastery), stats — счётчики журнала (JournalUI).
 	elementKills = {}, -- элемент -> сколько жуков добил
 	enemyKills = {}, -- тип жука -> сколько раз убит
+	enemySeen = {}, -- тип жука -> сколько раз появлялся на арене
+	elementCrafted = {}, -- элемент -> сколько раз получен скрещиванием
 	stats = {}, -- runs, wins, defeats, waves, playTime, crafts, towers, matterEarned, matterSpent
 	levels = {
 		[1] = { unlocked = true, completed = false, bestWave = 0 },

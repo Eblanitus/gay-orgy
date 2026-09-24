@@ -38,6 +38,8 @@ local function prepare(data)
 	data.elementKills = data.elementKills or {}
 	data.enemyKills = data.enemyKills or {}
 	data.stats = data.stats or {}
+	data.enemySeen = data.enemySeen or {}
+	data.elementCrafted = data.elementCrafted or {}
 	for key, value in data.killedTypes do
 		if value and not data.enemyKills[key] then
 			data.enemyKills[key] = 1
@@ -47,7 +49,8 @@ end
 
 local function send(player, data)
 	dirty[player] = nil
-	ProfileStatsRemote:FireClient(player, data.elementKills, data.enemyKills, data.stats)
+	ProfileStatsRemote:FireClient(player, data.elementKills, data.enemyKills, data.stats,
+		data.enemySeen, data.elementCrafted)
 end
 
 local function forEach(fn)
@@ -72,6 +75,21 @@ function ProfileStats.Kill(enemyType, elementKey)
 		if elementKey then
 			data.elementKills[elementKey] = (data.elementKills[elementKey] or 0) + 1
 		end
+	end)
+end
+
+-- Жук появился на арене — «встречено» во вкладке «Жуки» журнала.
+function ProfileStats.Seen(enemyType)
+	forEach(function(data)
+		data.enemySeen[enemyType] = (data.enemySeen[enemyType] or 0) + 1
+	end)
+end
+
+-- Скрещивание дало элемент — «создано» во вкладке «Элементы» журнала и общий счётчик crafts.
+function ProfileStats.Crafted(elementKey)
+	forEach(function(data)
+		data.elementCrafted[elementKey] = (data.elementCrafted[elementKey] or 0) + 1
+		data.stats.crafts = (data.stats.crafts or 0) + 1
 	end)
 end
 
