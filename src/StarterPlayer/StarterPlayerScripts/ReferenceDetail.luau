@@ -426,9 +426,13 @@ function Detail.Element(scroll, key, ctx)
 		reading(head, 30 + index, row.label, Theme.Caps(row.value))
 	end
 
-	local features = EntityInfo.ElementFeatures(element)
+	local features = EntityInfo.ElementFeatures(key, element)
 	if #features > 0 then
 		reading(head, 60, "особенности", Theme.Caps(table.concat(features, " · ")), Theme.color.accent)
+	end
+	local effects = EntityInfo.ElementEffects(key, element)
+	if #effects > 0 then
+		reading(head, 61, "эффект", Theme.Caps(table.concat(effects, " · ")), Theme.color.accent)
 	end
 	if recipe and ctx.craftable and ctx.craftable(key) then
 		text(head, 70, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,

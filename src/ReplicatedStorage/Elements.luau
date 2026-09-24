@@ -196,6 +196,9 @@ local Elements = {
 		tickInterval = 0.8,
 		duration = 4,
 		maxStacks = math.huge,
+		-- Задача #250: слабая цепочка по мокрым — как у Молнии, но без стана, короче и слабее.
+		-- Первая встреча игрока с проводимостью: Вода рядом — и Энергия уже бьёт соседей.
+		chain = { targets = 2, radius = 8, damageShare = 0.35, requiresWet = true },
 	},
 	Puddle = {
 		name = "Лужа",

@@ -25,36 +25,6 @@ EntityInfo.CASTE_NAME = {
 	[3] = "Особые",
 }
 
--- Порядок значим: в строку влезает не всё, и первыми должны идти те свойства,
--- ради которых элемент вообще берут.
-EntityInfo.ELEMENT_TRAITS = {
-	{ field = "damageMultiplier", label = "урон" },
-	{ field = "damagePerSecond", label = "урон/сек" },
-	{ field = "fireRateBonus", label = "темп" },
-	{ field = "fireRateRamp", label = "разгон" },
-	{ field = "slowPercent", label = "замедление" },
-	{ field = "armorPierce", label = "пробитие брони" },
-	{ field = "knockback", label = "отбрасывание" },
-	{ field = "stun", label = "оглушение" },
-	{ field = "chain", label = "цепной" },
-	{ field = "explosion", label = "взрыв" },
-	{ field = "killZone", label = "оставляет зону" },
-	{ field = "wet", label = "мочит" },
-	{ field = "conductive", label = "проводит ток" },
-	{ field = "blind", label = "ослепляет" },
-	{ field = "confusion", label = "сбивает с пути" },
-	{ field = "pull", label = "притягивает" },
-	{ field = "toss", label = "подбрасывает" },
-	{ field = "healer", label = "чинит" },
-	{ field = "terrain", label = "меняет рельеф" },
-	{ field = "amplifier", label = "усилитель" },
-	{ field = "primer", label = "метка взрыва" },
-	{ field = "contagion", label = "заразный" },
-	{ field = "mark", label = "метка" },
-	{ field = "breakthrough", label = "пробой" },
-	{ field = "killBarrier", label = "барьер" },
-}
-
 -- Признаки жука, которые видны игроку в бою.
 EntityInfo.ENEMY_TRAITS = {
 	{ field = "flying", label = "летает" },
@@ -106,10 +76,6 @@ function EntityInfo.Traits(entry, spec, limit)
 		end
 	end
 	return found
-end
-
-function EntityInfo.ElementTraits(element, limit)
-	return EntityInfo.Traits(element, EntityInfo.ELEMENT_TRAITS, limit)
 end
 
 function EntityInfo.EnemyTraits(enemy, limit)
@@ -217,13 +183,6 @@ function EntityInfo.Word(scale, value)
 	return scale[#scale].word
 end
 
--- Свойства, у которых теперь своя строка в справочнике: в перечне «особенностей»
--- они бы повторились.
-EntityInfo.RATED_FIELDS = {
-	fireRateBonus = true, damageMultiplier = true, damagePerSecond = true,
-	slowPercent = true, armorPierce = true, knockback = true, pull = true, stun = true,
-}
-
 -- Сколько материи стоит элемент: цена покупки каждого базового в его составе (поле cost),
 -- по всему дереву рецептов; пара одинаковых — дважды. Та же рекурсия, что у урона
 -- (Effects.Basics): чем дороже элемент, тем тяжелее его снаряд.
@@ -309,16 +268,110 @@ function EntityInfo.ElementStats(elementKey, element)
 	return rows
 end
 
--- Остальные свойства элемента — те, у которых нет своей строки (взрыв, цепь, метки…).
-function EntityInfo.ElementFeatures(element)
+-- Две строки карточки под характеристиками (задача #250):
+-- «особенности» — как стреляет сама турель (разгон, урон от скорости цели, накопление);
+-- «эффект» — что остаётся на жуке или на карте (цепь, мокрость, метки, зоны при смерти).
+-- Свойства со своей строкой характеристик (урон, темп, замедление, пробитие, отбрасывание,
+-- притяжение, оглушение) здесь не повторяются. Порядок значим: главное — первым.
+-- label — строка или функция(значение, элемент, ключ) → строка или nil (не показывать).
+EntityInfo.ELEMENT_FEATURES = {
+	{ field = "fireRateRamp", label = "разгон" },
+	{ field = "damageSpeedScale", label = "сильнее по быстрым" },
+	{ field = "damageRamp", label = "набирает урон" },
+	{ field = "damageRandom", label = "случайный урон" },
+	{ field = "breakthrough", label = "накопительный удар" },
+	{ field = "healer", label = "чинит постройки" },
+}
+
+-- Зона, которую элемент оставляет на месте смерти жука, — своим именем.
+EntityInfo.ZONE_NAMES = {
+	Earthquake = "зона землетрясения",
+	AcidRain = "кислотная зона",
+	Blizzard = "зона метели",
+	Coal = "зона пепла",
+	Drought = "зона засухи",
+	Hurricane = "зона урагана",
+	Hydrosphere = "потоп на всю карту",
+	Rain = "дождевая туча",
+	Snow = "зона холода",
+	Star = "зона звезды",
+}
+
+local MARK_NAMES = { soil = "метка грунта", ash = "метка пепла", rust = "ржавчина" }
+
+EntityInfo.ELEMENT_EFFECTS = {
+	-- chars — горящий снаряд; у Лавы и Вулкана это Плавление (conductive), не Горение.
+	{ field = "chars", label = function(_, element)
+		return not element.conductive and "горение" or nil
+	end },
+	{ field = "chain", label = function(chain)
+		return chain.requiresWet and "цепь по мокрым" or "цепь"
+	end },
+	{ field = "explosion", label = "взрыв при попадании" },
+	{ field = "wet", label = "мокрый" },
+	{ field = "conductive", label = "плавление" },
+	{ field = "scald", label = "ошпаривание" },
+	{ field = "bleeds", label = "кровотечение" },
+	{ field = "debuff", label = "разъедает броню" },
+	{ field = "regen", label = function(regen)
+		if regen.block then
+			return "блокирует регенерацию"
+		elseif regen.slow then
+			return "замедляет регенерацию"
+		end
+		return nil
+	end },
+	{ field = "attackSlowPercent", label = "замедляет атаку" },
+	{ field = "slowGrowth", label = "замедление растёт" },
+	{ field = "slowRamp", label = "застывание" },
+	{ field = "burnCatalyst", label = "раздувает горение" },
+	{ field = "amplifier", label = "усиливает эффекты" },
+	{ field = "blind", label = "слепота" },
+	{ field = "confusion", label = "сбивает с пути" },
+	{ field = "toss", label = "подбрасывает" },
+	{ field = "primer", label = "метка взрыва" },
+	{ field = "contagion", label = "заразный" },
+	{ field = "mark", label = function(mark)
+		return MARK_NAMES[mark.kind] or "метка"
+	end },
+	{ field = "washes", label = function(kind)
+		return kind == "rust" and "смывает ржавчину" or nil
+	end },
+	{ field = "terrain", label = "меняет рельеф" },
+	{ field = "breakthrough", label = function(plan)
+		return plan.zone and "зона слепоты" or nil
+	end },
+	{ field = "killDamage", label = "взрыв при смерти" },
+	{ field = "killZone", label = function(_, _, key)
+		return EntityInfo.ZONE_NAMES[key] or "оставляет зону"
+	end },
+	{ field = "killHeal", label = "лечащие плоды" },
+	{ field = "killBarrier", label = "преграда при смерти" },
+}
+
+local function collect(list, key, element)
 	local found = {}
-	for _, trait in EntityInfo.ELEMENT_TRAITS do
+	for _, trait in list do
 		local value = element[trait.field]
-		if not EntityInfo.RATED_FIELDS[trait.field] and value ~= nil and value ~= false and value ~= 0 then
-			table.insert(found, trait.label)
+		if value ~= nil and value ~= false and value ~= 0 then
+			local label = trait.label
+			if type(label) == "function" then
+				label = label(value, element, key)
+			end
+			if label then
+				table.insert(found, label)
+			end
 		end
 	end
 	return found
+end
+
+function EntityInfo.ElementFeatures(key, element)
+	return collect(EntityInfo.ELEMENT_FEATURES, key, element)
+end
+
+function EntityInfo.ElementEffects(key, element)
+	return collect(EntityInfo.ELEMENT_EFFECTS, key, element)
 end
 
 return EntityInfo
