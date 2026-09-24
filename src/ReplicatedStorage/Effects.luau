@@ -401,7 +401,7 @@ local applyRegen = EffectsDebuffsExports.applyRegen
 local applyInfection = EffectsDebuffsExports.applyInfection
 local refreshSlow = EffectsDebuffsExports.refreshSlow
 function Effects.HitDamage(target, elementData, damage)
-	-- Кто попал последним — тому и убийство в счёт справочника (KillStats, Mastery).
+	-- Кто попал последним — тому и убийство в счёт справочника (ProfileStats, Mastery).
 	-- Отсюда, а не из каждой турели: через HitDamage проходит любое попадание снаряда и зоны.
 	local elementKey = elementData and elementKeys[elementData]
 	if elementKey then

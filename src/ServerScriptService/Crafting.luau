@@ -12,6 +12,7 @@ local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Recipes = require(ReplicatedStorage:WaitForChild("Recipes"))
 local Inventory = require(ServerScriptService:WaitForChild("Inventory"))
 local PlayerData = require(ServerScriptService:WaitForChild("PlayerData"))
+local ProfileStats = require(ServerScriptService:WaitForChild("ProfileStats"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RecipeLearnedRemote = Remotes:WaitForChild("RecipeLearned")
@@ -100,6 +101,7 @@ function Crafting.Craft(a, b)
 		Inventory.Remove(elementKey, amount)
 	end
 	Inventory.Add(resultKey, 1)
+	ProfileStats.Add("crafts")
 
 	local firstTime = not known[resultKey]
 	known[resultKey] = true

@@ -1,7 +1,7 @@
 -- Ступени справочника: что открывается в карточке за число убийств (просьба автора, #263).
 -- У элемента считаются жуки, которых он добил (последнее попадание — атрибут LastElement,
 -- ставит Effects.HitDamage), у жука — сколько раз убит его тип. Счёт живёт в профиле
--- (PlayerData: elementKills, enemyKills), до клиента доходит событием KillStats.
+-- (PlayerData: elementKills, enemyKills), до клиента доходит событием ProfileStats.
 local Mastery = {}
 
 Mastery.ELEMENT = {

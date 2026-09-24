@@ -3,6 +3,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local MatterChangedRemote = Remotes:WaitForChild("MatterChanged")
+local ProfileStats = require(game:GetService("ServerScriptService"):WaitForChild("ProfileStats"))
 
 -- Стартовый запас на начало забега. Было 20 (ровно на одну Колбу) ещё до того, как стены
 -- и элементы стали отдельными тратами из того же кошелька (задачи #19, #23) — на лабиринт из
@@ -20,6 +21,7 @@ local Matter = {
 
 function Matter.Add(value)
 	Matter.amount += value
+	ProfileStats.Add("matterEarned", value)
 	MatterChangedRemote:FireAllClients(Matter.amount)
 	print(("[Материя] +%d, всего: %d"):format(value, Matter.amount))
 end
@@ -48,6 +50,7 @@ function Matter.Spend(value)
 		return false
 	end
 	Matter.amount -= value
+	ProfileStats.Add("matterSpent", value)
 	MatterChangedRemote:FireAllClients(Matter.amount)
 	print(("[Материя] -%d, всего: %d"):format(value, Matter.amount))
 	return true

@@ -20,6 +20,7 @@ local Levels = require(ReplicatedStorage:WaitForChild("Levels"))
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local ProfileSyncedRemote = Remotes:WaitForChild("ProfileSynced")
 local RecipeLearnedRemote = Remotes:WaitForChild("RecipeLearned")
+local ProfileStatsRemote = Remotes:WaitForChild("ProfileStats")
 
 local Journal = {}
 
@@ -97,6 +98,10 @@ local profile = {
 	levels = {},
 	recipes = {},
 	killedTypes = {},
+	-- Статистика (ServerScriptService.ProfileStats): счёт убийств и счётчики журнала.
+	elementKills = {},
+	enemyKills = {},
+	stats = {},
 }
 
 local watchers = {}
@@ -112,6 +117,13 @@ ProfileSyncedRemote.OnClientEvent:Connect(function(plutonium, levels, recipes, k
 	profile.levels = levels or {}
 	profile.recipes = recipes or {}
 	profile.killedTypes = killedTypes or {}
+	profileChanged()
+end)
+
+ProfileStatsRemote.OnClientEvent:Connect(function(elementKills, enemyKills, stats)
+	profile.elementKills = type(elementKills) == "table" and elementKills or {}
+	profile.enemyKills = type(enemyKills) == "table" and enemyKills or {}
+	profile.stats = type(stats) == "table" and stats or {}
 	profileChanged()
 end)
 
@@ -315,7 +327,116 @@ function Journal.Mount(parent, onStatus)
 		local enemyCap, enemyVal = statsRow(5)
 		enemyCap.Text = Theme.Caps("Типов жуков встречено")
 
-		statsSection(6, "Уровни")
+		-- ---- Бой, элементы, забеги, лаборатория (ProfileStats) ----
+		local TOP = 5 -- строк в списках «больше всего»
+
+		-- Список «имя — число» по убыванию, пустые строки прячутся.
+		local function topRows(order)
+			local rows = {}
+			for i = 1, TOP do
+				local cap, val = statsRow(order + i)
+				table.insert(rows, { cap = cap, val = val })
+			end
+			return function(counts, nameOf)
+				local list = {}
+				for key, count in counts do
+					if count > 0 and nameOf(key) then
+						table.insert(list, { name = nameOf(key), count = count })
+					end
+				end
+				table.sort(list, function(a, b)
+					if a.count ~= b.count then
+						return a.count > b.count
+					end
+					return a.name < b.name
+				end)
+				for i, row in rows do
+					local item = list[i]
+					row.cap.Parent.Visible = item ~= nil
+					if item then
+						row.cap.Text = Theme.Caps(("%d. %s"):format(i, item.name))
+						row.val.Text = tostring(item.count)
+					end
+				end
+			end
+		end
+
+		local function counter(order, caption)
+			local cap, val = statsRow(order)
+			cap.Text = Theme.Caps(caption)
+			return val
+		end
+
+		local function enemyName(key)
+			return Enemies[key] and Enemies[key].name or nil
+		end
+		local function knownElementName(key)
+			return Elements[key] and Elements[key].name or nil
+		end
+
+		statsSection(10, "Бой")
+		local killsVal = counter(11, "Жуков убито")
+		local topEnemies = topRows(20)
+
+		statsSection(30, "Элементы")
+		local favouriteVal = counter(31, "Любимый элемент")
+		local topElements = topRows(40)
+
+		statsSection(50, "Забеги")
+		local runsVal = counter(51, "Забегов начато")
+		local winsVal = counter(52, "Уровней пройдено")
+		local defeatsVal = counter(53, "Поражений")
+		local wavesVal = counter(54, "Волн пройдено")
+		local timeVal = counter(55, "Время в игре")
+
+		statsSection(60, "Лаборатория")
+		local craftsVal = counter(61, "Скрещиваний")
+		local towersVal = counter(62, "Построек")
+		local earnedVal = counter(63, "Материи получено")
+		local spentVal = counter(64, "Материи потрачено")
+
+		local function playTime(seconds)
+			local minutes = math.floor(seconds / 60)
+			if minutes < 60 then
+				return ("%d мин"):format(minutes)
+			end
+			return ("%d ч %d мин"):format(minutes // 60, minutes % 60)
+		end
+
+		local function refreshCounters()
+			local total = 0
+			for key, count in profile.enemyKills do
+				if Enemies[key] then
+					total += count
+				end
+			end
+			killsVal.Text = tostring(total)
+			topEnemies(profile.enemyKills, enemyName)
+
+			local best, bestCount = nil, 0
+			for key, count in profile.elementKills do
+				if Elements[key] and count > bestCount then
+					best, bestCount = key, count
+				end
+			end
+			favouriteVal.Text = best and Theme.Caps(Elements[best].name) or "—"
+			topElements(profile.elementKills, knownElementName)
+
+			local stats = profile.stats
+			runsVal.Text = tostring(stats.runs or 0)
+			winsVal.Text = tostring(stats.wins or 0)
+			defeatsVal.Text = tostring(stats.defeats or 0)
+			wavesVal.Text = tostring(stats.waves or 0)
+			timeVal.Text = Theme.Caps(playTime(stats.playTime or 0))
+			craftsVal.Text = tostring(stats.crafts or 0)
+			towersVal.Text = tostring(stats.towers or 0)
+			earnedVal.Text = tostring(math.floor(stats.matterEarned or 0))
+			spentVal.Text = tostring(math.floor(stats.matterSpent or 0))
+		end
+		addRefresher(refreshCounters)
+		refreshCounters()
+
+		statsSection(200, "Уровни")
 
 		-- Строка на каждый уровень из таблицы, а не только на открытые: в ТЗ лобби
 		-- прямо сказано — «непройденные и неоткрытые видны, но недоступны».
@@ -327,7 +448,7 @@ function Journal.Mount(parent, onStatus)
 
 		local levelRows = {}
 		for i, number in levelNumbers do
-			local cap, val = statsRow(6 + i)
+			local cap, val = statsRow(200 + i)
 			cap.Text = Theme.Caps(("%d. %s"):format(number, Levels[number].name or "?"))
 			levelRows[number] = val
 		end

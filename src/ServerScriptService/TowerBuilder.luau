@@ -15,6 +15,7 @@ local Targeting = require(ServerScriptService:WaitForChild("Targeting"))
 local EnemyProgress = require(ServerScriptService:WaitForChild("EnemyProgress")) -- только для отладочной печати прицела
 local Projectile = require(ServerScriptService:WaitForChild("Projectile"))
 local Matter = require(ServerScriptService:WaitForChild("Matter"))
+local ProfileStats = require(ServerScriptService:WaitForChild("ProfileStats"))
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local ShotFiredRemote = Remotes:WaitForChild("ShotFired") -- вспышка у дула; урон и его цифра теперь за Projectile
 -- Цифра урона над жуком для площадных турелей: у них нет снаряда, который сделал бы это за них.
@@ -294,6 +295,7 @@ function TowerBuilder.Build(cx, cz, towerType, turn)
 	end
 
 	local tower = placeTower(cx, cz, towerType, turn)
+	ProfileStats.Add("towers")
 	print(("[Постройка] %s поставлена в клетку (%d, %d) за %d материи, поворот %d°")
 		:format(tower.Name, cx, cz, towerData.cost, 90 * ((turn or 0) % 4)))
 	return true, tower

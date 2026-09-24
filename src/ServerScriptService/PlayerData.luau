@@ -21,9 +21,11 @@ local DEFAULT_DATA = {
 	xp = 0,
 	recipes = {},
 	killedTypes = {}, -- тип жука -> true, за что даёт плутоний Plutonium.AwardEnemyKill
-	-- Счёт убийств для ступеней справочника (ReplicatedStorage.Mastery), ведёт KillStats.
+	-- Статистика, ведёт ProfileStats: счёт убийств — для ступеней справочника
+	-- (ReplicatedStorage.Mastery), stats — счётчики журнала (JournalUI).
 	elementKills = {}, -- элемент -> сколько жуков добил
 	enemyKills = {}, -- тип жука -> сколько раз убит
+	stats = {}, -- runs, wins, defeats, waves, playTime, crafts, towers, matterEarned, matterSpent
 	levels = {
 		[1] = { unlocked = true, completed = false, bestWave = 0 },
 	},

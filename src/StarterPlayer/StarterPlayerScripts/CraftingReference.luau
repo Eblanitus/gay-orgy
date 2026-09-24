@@ -540,7 +540,7 @@ return function(deps)
 		return allEnemiesRevealed or killed[key] == true
 	end
 
-	-- Счёт убийств для ступеней карточек (Mastery): приходит событием KillStats.
+	-- Счёт убийств для ступеней карточек (Mastery): приходит событием ProfileStats.
 	local elementKills, enemyKills = {}, {}
 	local function killsByElement(key)
 		return elementKills[key] or 0
@@ -1895,7 +1895,7 @@ return function(deps)
 	end)
 	-- Перерисовка — только когда у кого-то открылась новая ступень: счёт приходит раз
 	-- в пару секунд, а карточка с крутящимся жуком не должна мигать на каждое убийство.
-	Remotes:WaitForChild("KillStats").OnClientEvent:Connect(function(byElement, byEnemy)
+	Remotes:WaitForChild("ProfileStats").OnClientEvent:Connect(function(byElement, byEnemy)
 		if type(byElement) ~= "table" or type(byEnemy) ~= "table" then
 			return
 		end

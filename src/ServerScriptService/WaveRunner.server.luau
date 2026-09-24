@@ -17,6 +17,7 @@ local LevelSchema = require(ServerScriptService:WaitForChild("LevelSchema"))
 local EnemySpawner = require(ServerScriptService:WaitForChild("EnemySpawner"))
 local TowerBootstrap = require(ServerScriptService:WaitForChild("TowerBootstrap"))
 local Matter = require(ServerScriptService:WaitForChild("Matter"))
+local ProfileStats = require(ServerScriptService:WaitForChild("ProfileStats"))
 local Inventory = require(ServerScriptService:WaitForChild("Inventory"))
 local Projectile = require(ServerScriptService:WaitForChild("Projectile"))
 local Grid = require(ServerScriptService:WaitForChild("Grid"))
@@ -115,6 +116,7 @@ LabTable.OnDestroyed(function()
 	runEnded = true
 	print("[Забег] лабораторный стол уничтожен — забег окончен")
 	print("поражение")
+	ProfileStats.Add("defeats")
 	RunEndedRemote:FireAllClients(false)
 	returnToLobby()
 end)
@@ -257,6 +259,7 @@ local function runWaves(myGeneration, levelNumber)
 
 		Matter.Add(Matter.WAVE_CLEAR_BONUS)
 		Plutonium.AwardWaveClear(levelNumber, wave.number)
+		ProfileStats.Add("waves")
 
 		if i < #activeLevelWaves then
 			print(("[Волна] волна %d зачищена, ждём кнопки"):format(wave.number))
@@ -267,6 +270,7 @@ local function runWaves(myGeneration, levelNumber)
 		runEnded = true
 		Plutonium.AwardLevelClear(levelNumber)
 		print("победа")
+		ProfileStats.Add("wins")
 		RunEndedRemote:FireAllClients(true)
 		returnToLobby()
 	end
@@ -288,6 +292,7 @@ local function startRun(levelNumber)
 	end
 
 	runEnded = false
+	ProfileStats.Add("runs")
 	activeLevelWaves = Levels[levelNumber].waves
 	WaveState.SetActive(false)
 	Matter.Reset()
