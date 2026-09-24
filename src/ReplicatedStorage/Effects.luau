@@ -13,6 +13,14 @@ local ExplosionRemote = Remotes:WaitForChild("Explosion")
 -- Цена элемента считается по дереву рецептов, поэтому модель урона знает про Recipes.
 -- Цикла нет: Recipes знает про Elements, Elements не знает ни про кого.
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
+
+-- Таблица элемента -> его ключ: турели передают в HitDamage саму таблицу (Elements[key]).
+local elementKeys = {}
+for key, data in Elements do
+	if type(data) == "table" then
+		elementKeys[data] = key
+	end
+end
 local Recipes = require(ReplicatedStorage:WaitForChild("Recipes"))
 
 -- Только за пол арены (Arena.floorY) — зона землетрясения садится на нём видимым диском.
@@ -393,6 +401,12 @@ local applyRegen = EffectsDebuffsExports.applyRegen
 local applyInfection = EffectsDebuffsExports.applyInfection
 local refreshSlow = EffectsDebuffsExports.refreshSlow
 function Effects.HitDamage(target, elementData, damage)
+	-- Кто попал последним — тому и убийство в счёт справочника (KillStats, Mastery).
+	-- Отсюда, а не из каждой турели: через HitDamage проходит любое попадание снаряда и зоны.
+	local elementKey = elementData and elementKeys[elementData]
+	if elementKey then
+		target:SetAttribute("LastElement", elementKey)
+	end
 	if damage <= 0 then
 		return 0
 	end

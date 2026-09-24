@@ -23,6 +23,7 @@ local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
 local Recipes = require(ReplicatedStorage:WaitForChild("Recipes"))
 local ReferenceTexts = require(ReplicatedStorage:WaitForChild("ReferenceTexts"))
 local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
+local Mastery = require(ReplicatedStorage:WaitForChild("Mastery"))
 
 local Detail = {}
 
@@ -129,6 +130,22 @@ local function reading(scroll, order, name, value, color)
 	return text(scroll, order, ("%s  <font color=\"#%s\"><b>%s</b></font>"):format(
 		Theme.Caps(name), (color or Theme.color.text):ToHex(), value
 	), TEXT, Theme.color.textMute)
+end
+
+-- Строка «что откроется следующим» (ступени Mastery): одна, ближайшая — не список замков.
+local function nextStep(scroll, order, steps, kills, whose)
+	local step, need = Mastery.Next(steps, kills)
+	if step and Mastery.CAPTION[step] then
+		text(scroll, order, Theme.Caps(("%s — откроется за %d убийств %s · сейчас %d"):format(
+			Mastery.CAPTION[step], need, whose, kills
+		)), SMALL, Theme.color.textMute, Theme.font.strong)
+	end
+end
+
+-- Закрытая вкладка: чем открыть.
+local function lockedTab(scroll, need, kills, whose)
+	text(scroll, 30, ("Откроется за %d убийств %s. Сейчас: %d."):format(need, whose, kills), TEXT,
+		Theme.color.textMute)
 end
 
 -- Разделитель: «эффект», справа от него сами эффекты, дальше черта до края. Цвет — цвет
@@ -455,8 +472,22 @@ function Detail.Element(scroll, key, ctx)
 	local known = ctx.known(key)
 
 	if not known then
-		title(scroll, 10, "???", Theme.color.textMute, ("тир %d"):format(element.tier))
+		title(scroll, 10, "???", Theme.color.textMute)
 		text(scroll, 30, "Рецепт ещё не открыт. Скрестите нужную пару на столе — и здесь появится всё об элементе.")
+		return
+	end
+
+	-- Ступени (Mastery.ELEMENT): что открыто — по числу жуков, добитых этим элементом.
+	-- Нет счёта в ctx — открыто всё.
+	local kills = ctx.kills and ctx.kills(key) or math.huge
+	local function open(step)
+		return kills >= Mastery.ELEMENT[step]
+	end
+	local WHOSE = "этим элементом"
+	if not open("card") then
+		title(scroll, 10, element.name, Theme.Legible(element.color))
+		text(scroll, 30, "Добейте этим элементом хотя бы одного жука — откроется карточка.", TEXT,
+			Theme.color.textMute)
 		return
 	end
 
@@ -487,11 +518,19 @@ function Detail.Element(scroll, key, ctx)
 
 	if elementTab == "pattern" then
 		-- Узор целиком — разглядеть все детали; нажатие раскрывает его на всю панель.
-		patternView(scroll, 20, key)
+		if open("pattern") then
+			patternView(scroll, 20, key)
+		else
+			lockedTab(scroll, Mastery.ELEMENT.pattern, kills, WHOSE)
+		end
 		return
 	end
 
 	if elementTab == "uses" then
+		if not open("crafts") then
+			lockedTab(scroll, Mastery.ELEMENT.crafts, kills, WHOSE)
+			return
+		end
 		-- Во что идёт дальше. Неоткрытые рецепты не называются даже вторым ингредиентом:
 		-- «Огонь + ??? = ???» уже подсказка. Остаётся только их число.
 		if #uses == 0 then
@@ -517,14 +556,18 @@ function Detail.Element(scroll, key, ctx)
 	end
 
 	-- «Описание»: шапка на узоре — от имени до «показать на карте», под ней текст.
-	local head = patternHead(scroll, 20, element.color, Theme.patterns and Theme.patterns[key])
+	local head = patternHead(scroll, 20, element.color,
+		open("pattern") and Theme.patterns and Theme.patterns[key] or nil)
 	title(head, 10, element.name, Theme.Legible(element.color))
 	local unfinished = EntityInfo.IN_DEVELOPMENT[key]
 	if unfinished then
 		rejectStamp(head.Parent, unfinished) -- head — тело шапки, печать ложится на всю шапку
 	end
 
-	if recipe then
+	nextStep(head, 15, Mastery.ELEMENT, kills, WHOSE)
+	if not open("crafts") then
+		-- рецепт закрыт
+	elseif recipe then
 		reading(head, 20, "рецепт", Theme.Caps(("%s + %s"):format(Elements[recipe.a].name, Elements[recipe.b].name)))
 	else
 		reading(head, 20, "источник", Theme.Caps("производитель"))
@@ -532,15 +575,15 @@ function Detail.Element(scroll, key, ctx)
 
 	-- Над разделителем «эффект» — что есть у каждого элемента, под ним — чем он особенный.
 	local unique = {}
-	for index, row in EntityInfo.ElementStats(key, element) do
+	for index, row in open("stats") and EntityInfo.ElementStats(key, element) or {} do
 		if EntityInfo.STANDARD_STATS[row.label] then
 			reading(head, 30 + index, row.label, Theme.Caps(row.value))
 		else
 			table.insert(unique, row)
 		end
 	end
-	local features = EntityInfo.ElementFeatures(key, element)
-	local effects = EntityInfo.ElementEffects(key, element)
+	local features = open("stats") and EntityInfo.ElementFeatures(key, element) or {}
+	local effects = open("stats") and EntityInfo.ElementEffects(key, element) or {}
 	if #unique + #features + #effects > 0 then
 		local tint = Theme.Legible(element.color) -- как у имени элемента
 		-- Подпись разделителя — по тому, что стоит рядом: эффект (остаётся на жуке) или
@@ -568,7 +611,7 @@ function Detail.Element(scroll, key, ctx)
 			end
 		end
 	end
-	if recipe and ctx.craftable and ctx.craftable(key) then
+	if recipe and open("crafts") and ctx.craftable and ctx.craftable(key) then
 		text(head, 70, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,
 			Theme.font.strong)
 	end
@@ -696,10 +739,15 @@ function Detail.Enemy(scroll, key, ctx)
 	if type(enemy) ~= "table" then
 		return
 	end
-	local caste = EntityInfo.CASTE_NAME[enemy.caste] or "прочие"
 
-	if not ctx.met(key) then
-		title(scroll, 10, "???", Theme.color.textMute, ("каста: %s"):format(caste))
+	-- Ступени (Mastery.ENEMY) — по числу убийств этого жука. Нет счёта в ctx — открыто всё.
+	local kills = ctx.kills and ctx.kills(key) or math.huge
+	local function open(step)
+		return kills >= Mastery.ENEMY[step]
+	end
+
+	if not ctx.met(key) or not open("card") then
+		title(scroll, 10, "???", Theme.color.textMute)
 		text(scroll, 30, "Этот жук ещё не убит. Описание откроется после первого убийства.")
 		return
 	end
@@ -708,17 +756,18 @@ function Detail.Enemy(scroll, key, ctx)
 	local color = enemy.color or Theme.color.textMute
 	local tint = Theme.Legible(color)
 	local head = patternHead(scroll, 20, color, nil)
-	title(head, 10, enemy.name, tint, ("каста: %s"):format(caste))
+	title(head, 10, enemy.name, tint)
+	nextStep(head, 15, Mastery.ENEMY, kills, "этого жука")
 
 	local unique = {}
-	for index, row in EntityInfo.EnemyStats(enemy) do
+	for index, row in open("stats") and EntityInfo.EnemyStats(enemy) or {} do
 		if row.standard then
 			reading(head, 20 + index, row.label, Theme.Caps(row.value))
 		else
 			table.insert(unique, row)
 		end
 	end
-	local traits = EntityInfo.EnemyTraits(enemy, 99)
+	local traits = open("stats") and EntityInfo.EnemyTraits(enemy, 99) or {}
 	if #traits + #unique > 0 then
 		local caption = #traits > 1 and "особенности" or "особенность"
 		divider(head, 50, caption, #traits > 0 and Theme.Caps(table.concat(traits, " · ")) or nil, tint)
@@ -736,7 +785,9 @@ function Detail.Enemy(scroll, key, ctx)
 		text(scroll, 60, ("<b>%s</b>  %s"):format(Theme.Caps("урок:"), wiki.lesson), TEXT, Theme.color.accent)
 	end
 
-	enemyView(scroll, 70, enemy)
+	if open("model") then
+		enemyView(scroll, 70, enemy)
+	end
 end
 
 return Detail

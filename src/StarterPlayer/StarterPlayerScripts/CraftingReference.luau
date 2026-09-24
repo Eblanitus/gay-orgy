@@ -23,6 +23,7 @@ return function(deps)
 	local Detail = require(script.Parent:WaitForChild("ReferenceDetail"))
 	local EntityInfo = require(script.Parent:WaitForChild("EntityInfo"))
 	local Pages = require(script.Parent:WaitForChild("ReferencePages"))
+	local Mastery = require(game:GetService("ReplicatedStorage"):WaitForChild("Mastery"))
 
 	-- ============ Вкладка "Справочник" ============
 	-- Граф рецептов: узел на каждый элемент, стрелка на каждый ингредиент. Где что стоит
@@ -530,6 +531,27 @@ return function(deps)
 	local selectNode
 	local focusOn
 
+	-- Кого игрок уже убивал — из профиля (ProfileSynced, четвёртый аргумент). Первое
+	-- убийство нового жука сервер досылает сразу (Plutonium.AwardEnemyKill).
+	local killed = {}
+	-- Промокод CODEX (PromoCode) открывает в справочнике всех жуков до выхода из игры.
+	local allEnemiesRevealed = false
+	local function isMet(key)
+		return allEnemiesRevealed or killed[key] == true
+	end
+
+	-- Счёт убийств для ступеней карточек (Mastery): приходит событием KillStats.
+	local elementKills, enemyKills = {}, {}
+	local function killsByElement(key)
+		return elementKills[key] or 0
+	end
+	local function killsOfEnemy(key)
+		if allEnemiesRevealed then
+			return math.huge
+		end
+		return math.max(enemyKills[key] or 0, killed[key] and 1 or 0)
+	end
+
 	-- Открыт ли элемент: базовые — всегда (их покупают, а не открывают), остальные — по рецепту.
 	local function isKnown(key)
 		return Elements[key] ~= nil and (Elements[key].tier == 0 or knownRecipes[key] == true)
@@ -979,9 +1001,7 @@ return function(deps)
 		-- текста не даёт ей читаться поверх линии, идущей в соседнем просвете.
 		local recipe = graph.producedBy[key]
 		local detailText
-		if not recipe then
-			detailText = Theme.Caps("базовый")
-		elseif known then
+		if recipe and known then
 			detailText = Theme.Caps(("%s + %s"):format(Elements[recipe.a].name, Elements[recipe.b].name))
 		end
 
@@ -1510,6 +1530,7 @@ return function(deps)
 				known = isKnown,
 				count = countOf,
 				craftable = isCraftable,
+				kills = killsByElement,
 				onPick = function(key)
 					selectNode(key)
 					focusOn(key)
@@ -1680,15 +1701,6 @@ return function(deps)
 	pagesFrame.BackgroundTransparency = 1
 	pagesFrame.Parent = bookFrame
 
-	-- Кого игрок уже убивал — из профиля (ProfileSynced, четвёртый аргумент). Первое
-	-- убийство нового жука сервер досылает сразу (Plutonium.AwardEnemyKill).
-	local killed = {}
-	-- Промокод CODEX (PromoCode) открывает в справочнике всех жуков до выхода из игры.
-	local allEnemiesRevealed = false
-	local function isMet(key)
-		return allEnemiesRevealed or killed[key] == true
-	end
-
 	local pages
 	local mode = "map"
 	local setMode
@@ -1698,6 +1710,8 @@ return function(deps)
 		count = countOf,
 		craftable = isCraftable,
 		met = isMet,
+		elementKills = killsByElement,
+		enemyKills = killsOfEnemy,
 		showOnMap = function(key)
 			setMode("map")
 			task.defer(function()
@@ -1878,6 +1892,28 @@ return function(deps)
 	Remotes:WaitForChild("EnemiesRevealed").OnClientEvent:Connect(function()
 		allEnemiesRevealed = true
 		pages.enemies.refresh()
+	end)
+	-- Перерисовка — только когда у кого-то открылась новая ступень: счёт приходит раз
+	-- в пару секунд, а карточка с крутящимся жуком не должна мигать на каждое убийство.
+	Remotes:WaitForChild("KillStats").OnClientEvent:Connect(function(byElement, byEnemy)
+		if type(byElement) ~= "table" or type(byEnemy) ~= "table" then
+			return
+		end
+		local changed = false
+		for key, count in byElement do
+			if Mastery.Level(Mastery.ELEMENT, count) ~= Mastery.Level(Mastery.ELEMENT, elementKills[key]) then
+				changed = true
+			end
+		end
+		for key, count in byEnemy do
+			if Mastery.Level(Mastery.ENEMY, count) ~= Mastery.Level(Mastery.ENEMY, enemyKills[key]) then
+				changed = true
+			end
+		end
+		elementKills, enemyKills = byElement, byEnemy
+		if changed then
+			task.defer(refreshKnowledge)
+		end
 	end)
 	Remotes:WaitForChild("ProfileSynced").OnClientEvent:Connect(function(_plutonium, _levels, _recipes, killedTypes)
 		if type(killedTypes) == "table" then

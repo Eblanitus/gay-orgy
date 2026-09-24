@@ -15,6 +15,7 @@ local Detail = require(script.Parent:WaitForChild("ReferenceDetail"))
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
+local Mastery = require(ReplicatedStorage:WaitForChild("Mastery"))
 
 local Pages = {}
 
@@ -308,7 +309,8 @@ local function page(parent, name, spec)
 	}
 end
 
--- ctx: known, count, craftable, met — как у ReferenceDetail; showOnMap(key) — перейти
+-- ctx: known, count, craftable, met — как у ReferenceDetail; elementKills(key), enemyKills(key) —
+-- счёт убийств для ступеней (Mastery); showOnMap(key) — перейти
 -- к элементу на карте рецептов.
 function Pages.Mount(parent, ctx)
 	local elements
@@ -316,6 +318,7 @@ function Pages.Mount(parent, ctx)
 		known = ctx.known,
 		count = ctx.count,
 		craftable = ctx.craftable,
+		kills = ctx.elementKills,
 		onPick = function(key)
 			elements.show(key)
 		end,
@@ -331,7 +334,8 @@ function Pages.Mount(parent, ctx)
 			return Elements[key].name
 		end,
 		paint = function(key)
-			return Elements[key].color, key
+			-- Узор в ячейке — только когда он открыт (Mastery.ELEMENT.pattern).
+			return Elements[key].color, ctx.elementKills(key) >= Mastery.ELEMENT.pattern and key or nil
 		end,
 		show = function(scroll, key)
 			Detail.Element(scroll, key, elementCtx)
@@ -349,7 +353,7 @@ function Pages.Mount(parent, ctx)
 			return Enemies[key].color or Theme.color.steel, nil
 		end,
 		show = function(scroll, key)
-			Detail.Enemy(scroll, key, { met = ctx.met })
+			Detail.Enemy(scroll, key, { met = ctx.met, kills = ctx.enemyKills })
 		end,
 	})
 
