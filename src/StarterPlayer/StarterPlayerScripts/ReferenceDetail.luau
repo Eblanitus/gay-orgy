@@ -146,11 +146,11 @@ end
 local function divider(scroll, order, caption)
 	local row = Instance.new("Frame")
 	row.LayoutOrder = order
-	row.Size = UDim2.new(1, 0, 0, SMALL + 8)
+	row.Size = UDim2.new(1, 0, 0, TEXT + 12)
 	row.BackgroundTransparency = 1
 	row.ZIndex = scroll.ZIndex + 1
 	row.Parent = scroll
-	local label = text(row, 0, Theme.Caps(caption), SMALL, Theme.color.accent, Theme.font.strong)
+	local label = text(row, 0, Theme.Caps(caption), TEXT, Theme.color.accent, Theme.font.strong)
 	label.AutomaticSize = Enum.AutomaticSize.X
 	label.Size = UDim2.new(0, 0, 1, 0)
 	label.Position = UDim2.new(0.5, 0, 0, 0)
@@ -161,11 +161,12 @@ local function divider(scroll, order, caption)
 		local line = Instance.new("Frame")
 		line.AnchorPoint = Vector2.new(side, 0.5)
 		line.Position = UDim2.new(side, 0, 0.5, 0)
-		line.Size = UDim2.new(0.5, -(SMALL * 3), 0, 1)
+		line.Size = UDim2.new(0.5, -(TEXT * 3), 0, 2)
+		line.BackgroundColor3 = Theme.color.accent
+		line.BackgroundTransparency = 0.35
+		line.BorderSizePixel = 0
 		line.ZIndex = row.ZIndex + 1
 		line.Parent = row
-		Theme.Rule(line)
-		line.BackgroundTransparency = 0.4
 	end
 	return row
 end
@@ -197,8 +198,11 @@ local function effectBlock(scroll, order)
 	rows.Parent = block
 	local layout = Instance.new("UIListLayout")
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 3)
+	layout.Padding = UDim.new(0, 4)
 	layout.Parent = rows
+	local pad = Instance.new("UIPadding")
+	pad.PaddingBottom = UDim.new(0, 8) -- отступ до кнопки «показать на карте»
+	pad.Parent = rows
 	return rows
 end
 
@@ -509,12 +513,12 @@ function Detail.Element(scroll, key, ctx)
 			text(block, 1, value, TEXT, Theme.color.accent, Theme.font.strong)
 		end
 		if #features > 0 then
-			text(block, 2, Theme.Caps(table.concat(features, " · ")), SMALL, Theme.color.accent, Theme.font.strong)
+			text(block, 2, Theme.Caps(table.concat(features, " · ")), TEXT, Theme.color.accent, Theme.font.strong)
 		end
 		for index, row in unique do
 			text(block, 10 + index, ("%s  <font color=\"#%s\"><b>%s</b></font>"):format(
 				Theme.Caps(row.label), Theme.color.text:ToHex(), Theme.Caps(row.value)
-			), SMALL, Theme.color.textMute)
+			), TEXT, Theme.color.textMute)
 		end
 	end
 	if recipe and ctx.craftable and ctx.craftable(key) then
