@@ -36,6 +36,17 @@
           "$path": "src/Workspace/Location/FloorMarkings.luau"
         }
       }
+    },
+    "SoundService": {
+      "$className": "SoundService",
+      "$ignoreUnknownInstances": true,
+      "Master": {
+        "$className": "SoundGroup",
+        "$ignoreUnknownInstances": true,
+        "Music": {
+          "$path": "src/SoundService/Master/Music.model.json"
+        }
+      }
     }
   }
 }

@@ -4,8 +4,9 @@
 --
 -- Путь файла повторяет иерархию в игре: src/ServerScriptService/Grid.luau.
 -- Суффикс задаёт класс: .server.luau — Script, .client.luau — LocalScript, .luau — ModuleScript.
--- RemoteEvent'ы из ReplicatedStorage.Remotes лежат рядом как Имя.model.json с {"className": ...}
--- (тот же формат читает Rojo).
+-- Простые инстансы без свойств (RemoteEvent'ы в ReplicatedStorage.Remotes, SoundGroup'ы) лежат
+-- как Имя.model.json с {"className": ...} — тот же формат читает Rojo. Remotes выгружаются из
+-- места целиком; остальные .model.json заводятся руками в src/, extract их не трогает.
 local fs = require("@lune/fs")
 local process = require("@lune/process")
 local roblox = require("@lune/roblox")
@@ -63,8 +64,23 @@ end
 
 local function extract()
 	local game = roblox.deserializePlace(fs.readFile(PLACE))
+	-- Стираются только выгружаемые файлы: .luau и Remotes. Ручные .model.json остаются.
+	local function clean(dir)
+		for _, name in fs.readDir(dir) do
+			local full = dir .. "/" .. name
+			if fs.isDir(full) then
+				clean(full)
+			elseif name:sub(-5) == ".luau" then
+				fs.removeFile(full)
+			end
+		end
+	end
 	if fs.isDir(SRC) then
-		fs.removeDir(SRC)
+		clean(SRC)
+		local remotesDir = SRC .. "/" .. table.concat(REMOTES, "/")
+		if fs.isDir(remotesDir) then
+			fs.removeDir(remotesDir)
+		end
 	end
 	local seen = {}
 	for _, s in scripts(game) do
@@ -92,10 +108,14 @@ local function build()
 	local wantedRemotes = {}
 	for _, rel in listFiles(SRC, nil, {}) do
 		if rel:sub(-#MODEL) == MODEL then
-			assert(rel:sub(1, #remotesDir) == remotesDir, ".model.json поддерживается только в " .. remotesDir)
-			local name = rel:sub(#remotesDir + 1, -#MODEL - 1)
+			local parts = string.split(rel:sub(1, -#MODEL - 1), "/")
+			local parent = game:GetService(parts[1])
+			for i = 2, #parts - 1 do
+				parent = assert(parent:FindFirstChild(parts[i]), "нет родителя для " .. rel)
+			end
+			local name = parts[#parts]
 			local class = serde.decode("json", fs.readFile(SRC .. "/" .. rel)).className
-			local inst = remotes:FindFirstChild(name)
+			local inst = parent:FindFirstChild(name)
 			if inst and inst.ClassName ~= class then
 				inst:Destroy()
 				inst = nil
@@ -103,7 +123,7 @@ local function build()
 			if not inst then
 				inst = roblox.Instance.new(class)
 				inst.Name = name
-				inst.Parent = remotes
+				inst.Parent = parent
 				print("новый:", rel)
 			end
 			wantedRemotes[inst] = true

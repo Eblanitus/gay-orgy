@@ -15,10 +15,11 @@
 |---|---|---|
 | Скрипты (88 шт.) | `src/` | файлами; в Studio их переносит Rojo |
 | RemoteEvent'ы | `src/ReplicatedStorage/Remotes/*.model.json` | файлами: новый remote — новый файл `Имя.model.json` с `{"className": "RemoteEvent"}` |
+| Группа звука `SoundService.Master.Music` | `src/SoundService/Master/Music.model.json` | файлом, как remote |
 | Карта, модели, шаблоны, GUI, звук, свет | только в месте Studio (`Workspace`, `ServerStorage`, `ReplicatedStorage.NormalBeetleTemplate`, `StarterGui`, `Lighting`, `SoundService`) | через MCP в Edit-режиме |
 | Снимок всего места | `place/game.rbxl` | не править; обновляется экспортом из Studio |
 
-Rojo-проект — `default.project.json`. Он управляет только скриптами и `Remotes`, всё остальное
+Rojo-проект — `default.project.json`. Он управляет только скриптами, `Remotes` и `SoundService.Master.Music`, всё остальное
 в сервисах не трогает (`$ignoreUnknownInstances`).
 
 ## Главное правило после переезда на Rojo
