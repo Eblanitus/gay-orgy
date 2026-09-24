@@ -17,6 +17,8 @@ local RunService = game:GetService("RunService")
 local Theme = require(script.Parent:WaitForChild("UITheme"))
 local EntityInfo = require(script.Parent:WaitForChild("EntityInfo"))
 local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
+local Show = require(script.Parent:WaitForChild("ProducerShow"))
+local UISound = require(script.Parent:WaitForChild("UISound"))
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
@@ -254,6 +256,7 @@ local function link(scroll, order, key, value, ctx)
 
 	if ctx.onPick then
 		button.MouseButton1Click:Connect(function()
+			UISound.Play("Click")
 			ctx.onPick(key)
 		end)
 	end
@@ -278,6 +281,7 @@ local function tabButton(parent, caption, on, action)
 	button.ZIndex = parent.ZIndex + 1
 	button.Parent = parent
 	Theme.Button(button, on and "active" or "ghost")
+	Show.Press(button)
 	button.MouseButton1Click:Connect(action)
 	return button
 end
@@ -627,6 +631,7 @@ function Detail.Element(scroll, key, ctx)
 		go.ZIndex = head.Parent.ZIndex + 30
 		go.Parent = head.Parent
 		Theme.Button(go, "quiet")
+		Show.Press(go)
 		Theme.Corner(go, size / 2)
 		local ring = Instance.new("Frame")
 		ring.AnchorPoint = Vector2.new(0.5, 0.5)

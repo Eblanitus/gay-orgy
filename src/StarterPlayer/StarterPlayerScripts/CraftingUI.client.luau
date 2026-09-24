@@ -356,15 +356,15 @@ local function selectTab(name)
 	end
 	Theme.Status(statusLabel, name, TAB_STATUS[name] or "")
 	Theme.SetScene(root, TAB_SCENE[name] or "lab")
-	-- У производителя своя шапка во всю ширину (вкладка «Купить»): общая шапка окна
-	-- и строка статуса под ней не нужны.
+	-- У производителя и справочника свои окна во всю ширину (CraftingProducer,
+	-- ReferenceFrame): общая шапка окна и строка статуса под ней им не нужны.
 	for _, inst in { title, matterLabel, closeButton, headerRule, footerRule, statusLabel } do
-		inst.Visible = name ~= "Купить"
+		inst.Visible = name == "Крафт"
 	end
 	-- Помеха — только на глазах у игрока: первую вкладку выбирают ещё при сборке окна.
-	-- У производителя общей помехи нет: его экран въезжает сбоку сам, а своя помеха —
-	-- только по сменившейся ячейке апгрейдера (ProducerShow, Show.Noise).
-	if gui.Enabled and name ~= "Купить" then
+	-- У производителя и справочника общей помехи нет: их мониторы раскрываются сами,
+	-- а своя помеха производителя — только по сменившейся ячейке апгрейдера (Show.Noise).
+	if gui.Enabled and name == "Крафт" then
 		Theme.Static()
 	end
 end
@@ -404,7 +404,7 @@ local CraftingProducerExports = require(script.Parent:WaitForChild("CraftingProd
 local CraftingCraftTabExports = require(script.Parent:WaitForChild("CraftingCraftTab"))({body = body, tabFrames = tabFrames, MobileUI = MobileUI, Theme = Theme, Elements = Elements, Recipes = Recipes, knownRecipes = knownRecipes, inventory = inventory, root = root, RequestCraft = RequestCraft})
 local refreshInventoryList = CraftingCraftTabExports.refreshInventoryList
 -- Вкладка «Справочник»: граф рецептов — рисование, кривые, перемещение и масштаб карты — в модуле CraftingReference.
-local CraftingReferenceExports = require(script.Parent:WaitForChild("CraftingReference"))({Theme = Theme, body = body, tabFrames = tabFrames, MobileUI = MobileUI, chromeButton = chromeButton, Elements = Elements, knownRecipes = knownRecipes, Graph = Graph, TweenService = TweenService, Recipes = Recipes, gui = gui, UserInputService = UserInputService, RunService = RunService, inventory = inventory, Remotes = Remotes, statusLabel = statusLabel})
+local CraftingReferenceExports = require(script.Parent:WaitForChild("CraftingReference"))({Theme = Theme, tabFrames = tabFrames, MobileUI = MobileUI, chromeButton = chromeButton, Elements = Elements, knownRecipes = knownRecipes, Graph = Graph, TweenService = TweenService, Recipes = Recipes, gui = gui, UserInputService = UserInputService, RunService = RunService, inventory = inventory, Remotes = Remotes, root = root})
 local getGraph = CraftingReferenceExports.getGraph
 local drawGraph = CraftingReferenceExports.drawGraph
 local refreshBook = CraftingReferenceExports.refreshBook
@@ -465,9 +465,9 @@ ProximityPromptService.PromptTriggered:Connect(function(prompt)
 		-- под кнопками Roblox навсегда. К столу игрок подходит гораздо позже.
 		applyChrome()
 		gui.Enabled = true
-		-- Производитель — без раскрытия окна и без помехи: его монитор раскрывается сам
-		-- (open в buildProducer, см. «Вкладка "Купить"»).
-		if section.tab ~= "Купить" then
+		-- Производитель и справочник — без раскрытия окна и без помехи: их мониторы
+		-- раскрываются сами (open в buildProducer и ReferenceFrame).
+		if section.tab == "Крафт" then
 			Theme.Open(root)
 			Theme.Static()
 		end

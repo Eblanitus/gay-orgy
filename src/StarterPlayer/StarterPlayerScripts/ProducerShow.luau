@@ -144,8 +144,9 @@ function Show.Shake(inst, power, time)
 	end)
 end
 
--- Вспышка: поверх предмета ложится цвет и тает.
-function Show.Flash(inst, color, time)
+-- Вспышка: поверх предмета ложится цвет и тает. radius — скругление в пикселях, если у предмета
+-- оно не как у ячеек (круглые узлы карты рецептов).
+function Show.Flash(inst, color, time, radius)
 	if not motion() then
 		return
 	end
@@ -154,7 +155,7 @@ function Show.Flash(inst, color, time)
 	f.Size = UDim2.fromScale(1, 1)
 	f.BackgroundColor3 = color
 	f.BackgroundTransparency = 0.3
-	Theme.Corner(f, Theme.radius.mark)
+	Theme.Corner(f, radius or Theme.radius.mark)
 	tween(f, time, { BackgroundTransparency = 1 }).Completed:Connect(function()
 		f:Destroy()
 	end)

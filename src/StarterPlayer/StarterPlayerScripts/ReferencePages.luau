@@ -12,6 +12,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Theme = require(script.Parent:WaitForChild("UITheme"))
 local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
 local Detail = require(script.Parent:WaitForChild("ReferenceDetail"))
+local Show = require(script.Parent:WaitForChild("ProducerShow"))
+local UISound = require(script.Parent:WaitForChild("UISound"))
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
@@ -99,15 +101,14 @@ local function page(parent, name, spec)
 	local list = scroller(frame, "List")
 	local grid = Theme.Grid(list, CELL_H, CELL_W, 8)
 
-	-- Карточка — на стеклянной плашке, как карточка узла на карте рецептов.
+	-- Карточка — на стеклянной плашке окна (MonitorGlass), как карточка узла на карте
+	-- рецептов. Слой пятен стекла — первый ребёнок карточки: остальное ложится поверх.
 	local card = Instance.new("Frame")
 	card.Name = "Card"
-	card.BackgroundColor3 = Theme.color.panel
-	card.BackgroundTransparency = 0.15
+	card.BorderSizePixel = 0
 	card.ZIndex = 4
 	card.Parent = frame
-	Theme.Corner(card, Theme.radius.control)
-	Theme.Hairline(card, 0.5)
+	spec.glass(card)
 
 	local detail = scroller(card, "Detail")
 	detail.ZIndex = 4
@@ -122,6 +123,7 @@ local function page(parent, name, spec)
 	back.ZIndex = 5
 	back.Parent = card
 	Theme.Button(back, "quiet")
+	Show.Press(back)
 
 	local empty = label(card, 13, Theme.color.textMute)
 	empty.Size = UDim2.new(1, -24, 0, 40)
@@ -241,6 +243,7 @@ local function page(parent, name, spec)
 				if Theme.WasDragged(list) then
 					return
 				end
+				UISound.Play("Click")
 				show(key)
 			end)
 		end
@@ -305,12 +308,17 @@ local function page(parent, name, spec)
 			return applyFilter()
 		end,
 		show = show,
+		-- Ячейка по ключу — для отклика на открытие (вспышка и подпись). До первого
+		-- показа страницы ячеек ещё нет.
+		cell = function(key)
+			return cells[key] and cells[key].cell
+		end,
 	}
 end
 
 -- ctx: known, count, craftable, met — как у ReferenceDetail; elementKills(key), enemyKills(key) —
 -- счёт убийств для ступеней (Mastery); showOnMap(key) — перейти
--- к элементу на карте рецептов.
+-- к элементу на карте рецептов; glass(plate) — стекло окна (MonitorGlass).
 function Pages.Mount(parent, ctx)
 	local elements
 	local elementCtx = {
@@ -327,6 +335,7 @@ function Pages.Mount(parent, ctx)
 
 	elements = page(parent, "ElementsPage", {
 		order = elementOrder,
+		glass = ctx.glass,
 		hint = "Выберите элемент — здесь появится, что он делает, из чего собран и во что идёт дальше.",
 		known = ctx.known,
 		name = function(key)
@@ -342,6 +351,7 @@ function Pages.Mount(parent, ctx)
 
 	local enemies = page(parent, "EnemiesPage", {
 		order = enemyOrder,
+		glass = ctx.glass,
 		hint = "Выберите жука — здесь появится, как он себя ведёт и чем опасен.",
 		known = ctx.met,
 		name = function(key)

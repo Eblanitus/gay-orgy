@@ -4,7 +4,6 @@
 -- этому куску; возвращается то, что основной файл использует дальше.
 return function(deps)
 	local Theme = deps.Theme
-	local body = deps.body
 	local tabFrames = deps.tabFrames
 	local MobileUI = deps.MobileUI
 	local chromeButton = deps.chromeButton
@@ -18,12 +17,15 @@ return function(deps)
 	local RunService = deps.RunService
 	local inventory = deps.inventory
 	local Remotes = deps.Remotes
-	local statusLabel = deps.statusLabel
+	local root = deps.root
 
 	local Detail = require(script.Parent:WaitForChild("ReferenceDetail"))
 	local EntityInfo = require(script.Parent:WaitForChild("EntityInfo"))
 	local Pages = require(script.Parent:WaitForChild("ReferencePages"))
 	local Mastery = require(game:GetService("ReplicatedStorage"):WaitForChild("Mastery"))
+	local Show = require(script.Parent:WaitForChild("ProducerShow"))
+	local UISound = require(script.Parent:WaitForChild("UISound"))
+	local ReferenceFrame = require(script.Parent:WaitForChild("ReferenceFrame"))
 
 	-- ============ Вкладка "Справочник" ============
 	-- Граф рецептов: узел на каждый элемент, стрелка на каждый ингредиент. Где что стоит
@@ -152,25 +154,25 @@ return function(deps)
 		layer = nil, -- слой колец и связей: его Rotation и есть поворот (drawGraph)
 	}
 
-	local bookFrame = Instance.new("Frame")
-	bookFrame.Name = "BookTab"
-	bookFrame.Size = UDim2.new(1, 0, 1, 0)
-	bookFrame.BackgroundTransparency = 1
-	bookFrame.Visible = false
-	bookFrame.Parent = body
-	tabFrames["Справочник"] = bookFrame
-
 	-- Три раздела справочника — жуки, карта рецептов, элементы — переключаются пунктами
-	-- внизу, как режимы производителя (просьба автора). Карта — прежнее содержимое вкладки,
-	-- теперь на своей странице mapFrame; «Жуки» и «Элементы» собирает ReferencePages.
-	local FOOT_H = MobileUI.isMobile and MobileUI.MIN_TAP or 30
-	local PAGE_SIZE = UDim2.new(1, 0, 1, -(FOOT_H + 8))
+	-- внизу, как режимы производителя (просьба автора). Окно своё, как у производителя
+	-- (ReferenceFrame, #269). Карта — прежнее содержимое вкладки, на своей странице
+	-- mapFrame; «Жуки» и «Элементы» собирает ReferencePages.
+	local MODES = {
+		{ id = "enemies", name = "Жуки" },
+		{ id = "map", name = "Карта" },
+		{ id = "elements", name = "Элементы" },
+	}
+	local window = ReferenceFrame.Build(root, gui, MODES)
+	local bookFrame = window.bookFrame
+	tabFrames["Справочник"] = bookFrame
+	local PAGE_SIZE = UDim2.new(1, 0, 1, 0)
 
 	local mapFrame = Instance.new("Frame")
 	mapFrame.Name = "MapPage"
 	mapFrame.Size = PAGE_SIZE
 	mapFrame.BackgroundTransparency = 1
-	mapFrame.Parent = bookFrame
+	mapFrame.Parent = window.screen
 
 	-- Тень под картой. Крупная решётка сцены лаборатории шла под графом прямыми линиями
 	-- и на обзоре читалась как лишние связи (#130). Тень гасит её только под картой, а к
@@ -370,6 +372,7 @@ return function(deps)
 		btn.ZIndex = 6
 		btn.Parent = mapFrame
 		chromeButton(btn, "quiet")
+		Show.Press(btn)
 		btn.MouseButton1Click:Connect(action)
 		return btn
 	end
@@ -429,6 +432,7 @@ return function(deps)
 	backButton.Parent = mapFrame
 
 	chromeButton(backButton, "quiet")
+	Show.Press(backButton)
 
 	-- Список рецептов под картой убирается (просьба автора): вся высота вкладки
 	-- уходит карте. Кнопка стоит в том же углу, что и возврат из цепочки, — обе про то,
@@ -443,6 +447,7 @@ return function(deps)
 	listButton.Parent = mapFrame
 
 	chromeButton(listButton, "quiet")
+	Show.Press(listButton)
 
 	-- Кнопки карты собраны в один угол — справа, рядом с масштабом. Слева от них теперь
 	-- нет ничего, кроме самой карты, и одинокая кнопка под вкладками читалась как третий
@@ -467,26 +472,33 @@ return function(deps)
 	-- Карточка выбранного элемента — слева на карте, на стеклянной плашке: что он делает,
 	-- сколько его есть, во что идёт. Слева, потому что наведение ставит выбранный элемент
 	-- справа от середины карты (spin), и карточка его не закрывает.
+	-- Стекло — на обычной плашке, а прокрутка внутри неё: у ScrollingFrame доли размера
+	-- детей считаются от холста, и слой пятен стекла растянулся бы по всей карточке (#269).
+	local cardPlate = Instance.new("Frame")
+	cardPlate.Name = "CardPlate"
+	cardPlate.BorderSizePixel = 0
+	cardPlate.ZIndex = 7
+	cardPlate.Visible = false
+	cardPlate.Parent = mapFrame
+	window.glass(cardPlate)
+	-- Ширина — доля карты с потолком: при сборке окна размер карты ещё нулевой, и число
+	-- в пикселях, посчитанное от него, так бы и осталось нулём.
+	local cardLimit = Instance.new("UISizeConstraint")
+	cardLimit.MaxSize = Vector2.new(MobileUI.isMobile and 250 or 330, math.huge)
+	cardLimit.Parent = cardPlate
+
 	local mapCard = Instance.new("ScrollingFrame")
 	mapCard.Name = "Card"
-	mapCard.BackgroundColor3 = Theme.color.panel
-	mapCard.BackgroundTransparency = 0.12
+	mapCard.Size = UDim2.new(1, 0, 1, 0)
+	mapCard.BackgroundTransparency = 1
 	mapCard.BorderSizePixel = 0
 	mapCard.ScrollBarThickness = 4
 	mapCard.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	mapCard.CanvasSize = UDim2.new(0, 0, 0, 0)
 	mapCard.ZIndex = 7
-	mapCard.Visible = false
-	mapCard.Parent = mapFrame
-	Theme.Corner(mapCard, Theme.radius.control)
-	Theme.Hairline(mapCard, 0.5)
+	mapCard.Parent = cardPlate
 	Theme.Scroller(mapCard)
 	Theme.DragScroll(mapCard)
-	-- Ширина — доля карты с потолком: при сборке окна размер карты ещё нулевой, и число
-	-- в пикселях, посчитанное от него, так бы и осталось нулём.
-	local cardLimit = Instance.new("UISizeConstraint")
-	cardLimit.MaxSize = Vector2.new(MobileUI.isMobile and 250 or 330, math.huge)
-	cardLimit.Parent = mapCard
 
 	local function applyBookLayout()
 		local share = listShown and GRAPH_SHARE or 1
@@ -500,8 +512,8 @@ return function(deps)
 		openedLabel.Visible = listShown
 		listScroll.Visible = listShown
 		listButton.Text = listShown and "СКРЫТЬ СПИСОК" or "ПОКАЗАТЬ СПИСОК"
-		mapCard.Position = UDim2.new(0, 6, 0, GRAPH_TOP + 6)
-		mapCard.Size = UDim2.new(0.45, 0, share, -(GRAPH_TOP + 40))
+		cardPlate.Position = UDim2.new(0, 6, 0, GRAPH_TOP + 6)
+		cardPlate.Size = UDim2.new(0.45, 0, share, -(GRAPH_TOP + 40))
 	end
 
 	listButton.MouseButton1Click:Connect(function()
@@ -1089,6 +1101,7 @@ return function(deps)
 			if panMoved > 6 then
 				return -- это была протяжка карты, а не выбор
 			end
+			UISound.Play("Click")
 			selectNode(key)
 			-- Повторное нажатие снимает выбор: наводиться тогда не на что, и карта снова крутится.
 			if selected == key then
@@ -1491,6 +1504,7 @@ return function(deps)
 				if Theme.WasDragged(listScroll) then
 					return
 				end
+				UISound.Play("Click")
 				selectNode(entry.key)
 				focusOn(entry.key)
 			end)
@@ -1528,7 +1542,7 @@ return function(deps)
 		end
 
 		-- Карточка выбранного элемента на карте.
-		mapCard.Visible = selected ~= nil
+		cardPlate.Visible = selected ~= nil
 		if selected then
 			Detail.Element(mapCard, selected, {
 				known = isKnown,
@@ -1610,7 +1624,7 @@ return function(deps)
 			return false
 		end
 		-- Карточка лежит поверх карты: протяжка и колесо над ней — её собственная прокрутка.
-		if mapCard.Visible and inside(mapCard, position) then
+		if cardPlate.Visible and inside(cardPlate, position) then
 			return false
 		end
 		return inside(graphScroll, position)
@@ -1703,7 +1717,7 @@ return function(deps)
 	pagesFrame.Name = "Pages"
 	pagesFrame.Size = PAGE_SIZE
 	pagesFrame.BackgroundTransparency = 1
-	pagesFrame.Parent = bookFrame
+	pagesFrame.Parent = window.screen
 
 	local pages
 	local mode = "map"
@@ -1716,6 +1730,7 @@ return function(deps)
 		met = isMet,
 		elementKills = killsByElement,
 		enemyKills = killsOfEnemy,
+		glass = window.glass,
 		showOnMap = function(key)
 			setMode("map")
 			task.defer(function()
@@ -1728,62 +1743,20 @@ return function(deps)
 		end,
 	})
 
-	local MODES = {
-		{ id = "enemies", name = "Жуки", frame = pages.enemies.frame,
-			status = "нажмите жука — покажу, как он себя ведёт; неубитые скрыты" },
-		{ id = "map", name = "Карта", frame = mapFrame,
-			status = "● — можно скрафтить сейчас; нажмите элемент — покажу его цепочку; «+», «−», «[]» — масштаб" },
-		{ id = "elements", name = "Элементы", frame = pages.elements.frame,
-			status = "нажмите элемент — покажу, что он делает и во что идёт" },
-	}
+	MODES[1].frame = pages.enemies.frame
+	MODES[2].frame = mapFrame
+	MODES[3].frame = pages.elements.frame
 
-	local modeBar = Instance.new("Frame")
-	modeBar.Name = "Modes"
-	modeBar.AnchorPoint = Vector2.new(0, 1)
-	modeBar.Position = UDim2.new(0, 0, 1, 0)
-	modeBar.Size = UDim2.new(1, 0, 0, FOOT_H)
-	modeBar.BackgroundTransparency = 1
-	modeBar.Parent = bookFrame
-
-	local MODE_W = MobileUI.isMobile and 104 or 150
-	local modeButtons = {}
-	for index, m in MODES do
-		local b = Instance.new("TextButton")
-		b.Name = "Mode_" .. m.id
-		b.Size = UDim2.new(0, MODE_W, 1, 0)
-		b.Position = UDim2.new(0, (index - 1) * (MODE_W + 8), 0, 0)
-		b.FontFace = Theme.font.strong
-		b.TextSize = MobileUI.isMobile and 12 or 14
-		b.TextXAlignment = Enum.TextXAlignment.Left
-		b.Parent = modeBar
-		local pad = Instance.new("UIPadding")
-		pad.PaddingLeft = UDim.new(0, 10)
-		pad.Parent = b
-		modeButtons[m.id] = b
-		b.MouseButton1Click:Connect(function()
+	local modeButtons = window.modeButtons
+	for _, m in MODES do
+		modeButtons[m.id].MouseButton1Click:Connect(function()
 			setMode(m.id)
 		end)
 	end
 
-	-- Поиск по имени — справа от разделов. Ищет только среди открытого: неоткрытое
+	-- Поиск по имени — в шапке окна. Ищет только среди открытого: неоткрытое
 	-- по имени и так не найти, а подсказка «такой есть» была бы подсказкой рецепта.
-	local searchBox = Instance.new("TextBox")
-	searchBox.Name = "Search"
-	searchBox.AnchorPoint = Vector2.new(1, 0)
-	searchBox.Position = UDim2.new(1, 0, 0, 0)
-	searchBox.Size = UDim2.new(0, MobileUI.isMobile and 150 or 260, 1, 0)
-	searchBox.ClearTextOnFocus = false
-	searchBox.PlaceholderText = "поиск…"
-	searchBox.Text = ""
-	searchBox.FontFace = Theme.font.body
-	searchBox.TextSize = MobileUI.isMobile and 13 or 14
-	searchBox.TextXAlignment = Enum.TextXAlignment.Left
-	searchBox.Parent = modeBar
-	Theme.Field(searchBox)
-	local searchPad = Instance.new("UIPadding")
-	searchPad.PaddingLeft = UDim.new(0, 10)
-	searchPad.PaddingRight = UDim.new(0, 10)
-	searchPad.Parent = searchBox
+	local searchBox = window.searchBox
 
 	-- Первое совпадение на карте — по порядку карты, чтобы Enter вёл всегда к одному и тому же.
 	local function mapSearch(text)
@@ -1838,45 +1811,120 @@ return function(deps)
 		end
 	end)
 
-	local function modeStatus()
-		for _, m in MODES do
-			if m.id == mode then
-				return m.status
-			end
-		end
-		return ""
-	end
-
+	-- Строки статуса у справочника больше нет: окно своё, без общей шапки лаборатории (#269).
 	function setMode(id)
+		local was = mode
 		mode = id
-		for _, m in MODES do
+		local from, to = 0, 0
+		for index, m in MODES do
 			local on = m.id == id
 			m.frame.Visible = on
-			chromeButton(modeButtons[m.id], on and "active" or "ghost")
-			modeButtons[m.id].Text = Theme.Caps(m.name)
+			Theme.Button(modeButtons[m.id], on and "active" or "ghost")
+			if m.id == was then
+				from = index
+			end
+			if on then
+				to = index
+			end
 		end
 		pagesFrame.Visible = id ~= "map"
 		applySearch()
-		if bookFrame.Visible then
-			Theme.Status(statusLabel, "Справочник", modeStatus())
+		-- Новый раздел въезжает с той стороны, где его пункт в подвале, — как у производителя.
+		if was ~= id then
+			Show.Slide(id == "map" and mapFrame or pagesFrame, to > from and 1 or -1)
 		end
 	end
 
-	-- Строку статуса вкладке ставит CraftingUI.selectTab — общей для всего раздела.
-	-- Справочник уточняет её под свой раздел, после (defer), чтобы его строка осталась.
-	-- Слушается и открытие окна: при повторном подходе к доске вкладка уже видима
-	-- (Visible не меняется), а selectTab снова ставит общую строку.
-	local function claimStatus()
-		task.defer(function()
-			if gui.Enabled and bookFrame.Visible then
-				Theme.Status(statusLabel, "Справочник", modeStatus())
-			end
-		end)
-	end
-	bookFrame:GetPropertyChangedSignal("Visible"):Connect(claimStatus)
-	gui:GetPropertyChangedSignal("Enabled"):Connect(claimStatus)
-
 	setMode("map")
+
+	-- ---------- отклик на открытие (#269) ----------
+	-- Открылась ступень карточки или новый рецепт — на пункте раздела «+N», пока раздел
+	-- не показан. На показанном разделе свежие ячейки вспыхивают, над ними всплывает, что
+	-- открылось, и звучит один «Gain» на всю пачку — как прибавка запаса у производителя.
+	-- Всё, что было открыто до входа, свежим не считается: первый счёт убийств
+	-- (ProfileStats) и рецепты профиля (ProfileSynced) — только отсчёт.
+	local fresh = { enemies = {}, map = {}, elements = {} }
+	local statsReady, recipesReady = false, false
+	local seenRecipes = {}
+
+	-- Какая ступень открылась между old и new убийств — старшая из перешагнутых.
+	local function openedStep(steps, old, new)
+		local best, bestNeed = nil, -1
+		for step, need in steps do
+			if (old or 0) < need and (new or 0) >= need and need > bestNeed then
+				best, bestNeed = step, need
+			end
+		end
+		return best
+	end
+
+	local function stepCaption(step)
+		return Mastery.CAPTION[step] or "открыт"
+	end
+
+	local function badge()
+		for _, m in MODES do
+			local n = 0
+			for _ in fresh[m.id] do
+				n += 1
+			end
+			modeButtons[m.id].Text = Theme.Caps(m.name) .. (n > 0 and ("  +" .. n) or "")
+		end
+	end
+
+	local function showFresh()
+		if not (gui.Enabled and bookFrame.Visible) then
+			return
+		end
+		local list = fresh[mode]
+		if next(list) == nil then
+			return
+		end
+		if mode == "map" and not graph then
+			return -- карта ещё собирается; покажется со следующим входом в раздел
+		end
+		fresh[mode] = {}
+		badge()
+		local any = false
+		for key, caption in list do
+			local target, radius
+			if mode == "map" then
+				target = nodeGui[key] and nodeGui[key].frame
+				radius = 999
+			else
+				target = pages[mode].cell(key)
+				radius = Theme.radius.control
+			end
+			if target then
+				Show.Flash(target, Theme.color.accent, 0.9, radius)
+				Show.Float(target, Theme.Caps(caption), Theme.color.accent, 14)
+				any = true
+			end
+		end
+		if any then
+			UISound.Play("Gain")
+		end
+	end
+
+	local function markFresh(page, key, caption)
+		if codexRevealed then
+			return
+		end
+		fresh[page][key] = caption
+		badge()
+		-- Пересборка карты и ячеек идёт отложенно (refreshKnowledge, drawGraph в CraftingUI):
+		-- вспышка — после неё, иначе легла бы на узел, который тут же заменят.
+		task.delay(0.1, showFresh)
+	end
+
+	local function onOpen()
+		task.defer(showFresh)
+	end
+	gui:GetPropertyChangedSignal("Enabled"):Connect(onOpen)
+	bookFrame:GetPropertyChangedSignal("Visible"):Connect(onOpen)
+	for _, m in MODES do
+		modeButtons[m.id].MouseButton1Click:Connect(onOpen)
+	end
 
 	-- Всё, что зависит от инвентаря и открытого, перерисовывается одним вызовом.
 	local function refreshKnowledge()
@@ -1890,11 +1938,24 @@ return function(deps)
 
 	-- Обработчики CraftingUI обновляют knownRecipes раньше или позже этого — порядок
 	-- подписчиков не закреплён, поэтому перерисовка отложена до конца кадра событий.
-	Remotes:WaitForChild("RecipeLearned").OnClientEvent:Connect(function()
+	Remotes:WaitForChild("RecipeLearned").OnClientEvent:Connect(function(resultKey)
 		task.defer(refreshKnowledge)
+		-- Сервер досылает при входе все известные рецепты: свежий — только ещё не виденный.
+		if type(resultKey) == "string" and not seenRecipes[resultKey] then
+			seenRecipes[resultKey] = true
+			if recipesReady then
+				markFresh("map", resultKey, "новый")
+				markFresh("elements", resultKey, "открыт")
+			end
+		end
 	end)
 	Remotes:WaitForChild("EnemiesRevealed").OnClientEvent:Connect(function()
 		codexRevealed = true
+		-- CODEX открывает всё сразу: сотня вспышек ничего бы не сказала.
+		for _, list in fresh do
+			table.clear(list)
+		end
+		badge()
 		refreshKnowledge()
 	end)
 	-- Перерисовка — только когда у кого-то открылась новая ступень: счёт приходит раз
@@ -1907,19 +1968,34 @@ return function(deps)
 		for key, count in byElement do
 			if Mastery.Level(Mastery.ELEMENT, count) ~= Mastery.Level(Mastery.ELEMENT, elementKills[key]) then
 				changed = true
+				local step = statsReady and openedStep(Mastery.ELEMENT, elementKills[key], count)
+				if step then
+					markFresh("elements", key, stepCaption(step))
+				end
 			end
 		end
 		for key, count in byEnemy do
 			if Mastery.Level(Mastery.ENEMY, count) ~= Mastery.Level(Mastery.ENEMY, enemyKills[key]) then
 				changed = true
+				local step = statsReady and openedStep(Mastery.ENEMY, enemyKills[key], count)
+				if step then
+					markFresh("enemies", key, stepCaption(step))
+				end
 			end
 		end
+		statsReady = true
 		elementKills, enemyKills = byElement, byEnemy
 		if changed then
 			task.defer(refreshKnowledge)
 		end
 	end)
-	Remotes:WaitForChild("ProfileSynced").OnClientEvent:Connect(function(_plutonium, _levels, _recipes, killedTypes)
+	Remotes:WaitForChild("ProfileSynced").OnClientEvent:Connect(function(_plutonium, _levels, recipes, killedTypes)
+		if type(recipes) == "table" then
+			for key in recipes do
+				seenRecipes[key] = true
+			end
+			recipesReady = true
+		end
 		if type(killedTypes) == "table" then
 			table.clear(killed)
 			for key, value in killedTypes do
