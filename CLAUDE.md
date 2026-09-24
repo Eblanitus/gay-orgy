@@ -43,8 +43,14 @@ Rojo-проект — `default.project.json`. Он управляет тольк
 ## Как читать код дёшево
 
 - Искать `grep -rn` по `src/`, читать только найденный кусок (`Read` с `offset`/`limit`).
-- Крупные файлы — не открывать целиком: `CraftingUI.client.luau` (~190 КБ), `TowerBuilder.luau`,
-  `UITheme.luau`, `Effects.luau` (>100 КБ), `Elements.luau`, `EnemySpawner.luau`, `TowerInteraction.client.luau`.
+- Крупные файлы (>60 КБ) — не открывать целиком: `CraftingReference.luau` (справочник, ~75 КБ),
+  `Elements.luau`, `EnemySpawner.luau`, `TowerInteraction.client.luau`, `EnemyGait.luau`, `Effects.luau`,
+  `ProfileStore.luau`.
+- Большие файлы разрезаны на модули (задача #203): `CraftingUI` → `CraftingBuyTab`, `CraftingProducer`,
+  `CraftingCraftTab`, `CraftingReference`; `UITheme` → `UIThemePanel`, `UIThemeButtons`;
+  `TowerBuilder` → `TowerModels`, `TowerFiring`; `Effects` → `EffectsDebuffs`. Модуль —
+  `return function(deps) ... end`: в начале `local x = deps.x` — локальные основного файла,
+  в конце — что основной файл использует дальше.
 
 ## Облачная сессия (без Studio)
 
