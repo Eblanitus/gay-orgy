@@ -125,9 +125,9 @@ local function page(parent, name, spec)
 	Theme.Button(back, "quiet")
 	Show.Press(back)
 
-	local empty = label(card, 13, Theme.color.textMute)
-	empty.Size = UDim2.new(1, -24, 0, 40)
-	empty.Position = UDim2.new(0, 12, 0, 12)
+	local empty = label(card, 18, Theme.color.textMute) -- крупнее (#280): на широкой карточке 13 терялось
+	empty.Size = UDim2.new(1, -32, 0, 80)
+	empty.Position = UDim2.new(0, 16, 0, 16)
 	empty.TextWrapped = true
 	empty.TextTruncate = Enum.TextTruncate.None
 	empty.TextYAlignment = Enum.TextYAlignment.Top
