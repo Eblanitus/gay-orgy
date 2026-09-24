@@ -74,7 +74,9 @@ function Frame.Build(root, gui, modes)
 	searchBox.TextTruncate = Enum.TextTruncate.AtEnd
 	Theme.Field(searchBox)
 	searchBox.PlaceholderColor3 = Theme.color.textMute:Lerp(Theme.color.ink, 0.35) -- тише текста
+	-- Кант — по рамке поля: у текстового объекта UIStroke по умолчанию обводит буквы.
 	local searchEdge = Theme.Stroke(searchBox, Theme.color.accent, 1, 0.35)
+	searchEdge.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	local searchPad = Instance.new("UIPadding")
 	searchPad.PaddingRight = UDim.new(0, 10)
 	searchPad.Parent = searchBox

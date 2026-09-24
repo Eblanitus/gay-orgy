@@ -393,34 +393,15 @@ return function(deps)
 	hintPad.PaddingRight = UDim.new(0, 8)
 	hintPad.Parent = hintBar
 
-	-- Выход из цепочки кнопкой, а не только нажатием на пустое место: на телефоне
-	-- пустого места на экране может и не оказаться, а любое касание там — ещё и протяжка.
-	local backButton = Instance.new("TextButton")
-	-- В правом верхнем углу самой карты, слева от кнопок масштаба: возврат во всех окнах
-	-- стоит справа вверху. На телефоне кнопка высотой в палец, и в полоске между графом
-	-- и списком она бы не поместилась.
-	backButton.Size = UDim2.new(0, 104, 0, MobileUI.isMobile and MobileUI.MIN_TAP or 22)
-	backButton.AnchorPoint = Vector2.new(1, 0)
-	backButton.Position = UDim2.new(1, -(ZOOM_BTN * 3 + 28), 0, 2)
-	backButton.FontFace = Theme.font.strong
-	backButton.TextSize = 11
-	backButton.Text = "ВСЕ РЕЦЕПТЫ"
-	backButton.ZIndex = 6
-	backButton.Visible = false
-	backButton.Parent = mapFrame
-
-	chromeButton(backButton, "quiet")
-	Show.Press(backButton)
-
 	-- Список рецептов под картой убирается (просьба автора): вся высота вкладки
 	-- уходит карте. Кнопка стоит в том же углу, что и возврат из цепочки, — обе про то,
 	-- что сейчас показано, а не про саму карту.
 	local listButton = Instance.new("TextButton")
-	listButton.Size = UDim2.new(0, 150, 0, MobileUI.isMobile and MobileUI.MIN_TAP or 22)
+	listButton.Size = UDim2.new(0, 96, 0, MobileUI.isMobile and MobileUI.MIN_TAP or 22)
 	listButton.Position = UDim2.new(0, 2, 0, 2)
 	listButton.FontFace = Theme.font.strong
 	listButton.TextSize = 11
-	listButton.Text = "СКРЫТЬ СПИСОК"
+	listButton.Text = "СПИСОК ▲"
 	listButton.ZIndex = 6
 	listButton.Parent = mapFrame
 
@@ -429,16 +410,16 @@ return function(deps)
 
 	-- Кнопки карты собраны в один угол — справа, рядом с масштабом. Слева от них теперь
 	-- нет ничего, кроме самой карты, и одинокая кнопка под вкладками читалась как третий
-	-- этаж шапки. На телефоне «Скрыть список» остаётся слева: три кнопки масштаба шириной
-	-- в палец и «Все рецепты» и так занимают там весь правый угол.
+	-- этаж шапки. На телефоне кнопка списка остаётся слева: три кнопки масштаба шириной
+	-- в палец и так занимают там весь правый угол. Кнопки «Все рецепты» больше нет (#272):
+	-- из цепочки выходят нажатием на пустое место карты.
 	if not MobileUI.isMobile then
 		local zoomRow = ZOOM_BTN * 3 + 20
 		listButton.AnchorPoint = Vector2.new(1, 0)
 		listButton.Position = UDim2.new(1, -(zoomRow + 8), 0, 2)
-		backButton.Position = UDim2.new(1, -(zoomRow + 166), 0, 2)
 	end
 
-	local listShown = true
+	local listShown = false -- по умолчанию вся вкладка — карте (#272)
 
 	-- Пустая полоса между шапкой и картой. Раньше холст выводился вверх на всю высоту
 	-- шапки, и узлы, проходя под вкладками, торчали из-под них краями (замечание
@@ -498,7 +479,8 @@ return function(deps)
 		listScroll.Size = UDim2.new(1, -2 * inset, 1 - share, -(6 + 2 * inset + 22))
 		openedLabel.Visible = listShown
 		listScroll.Visible = listShown
-		listButton.Text = listShown and "СКРЫТЬ СПИСОК" or "ПОКАЗАТЬ СПИСОК"
+		-- Стрелка — куда поедет список: вверх выехать, вниз уйти.
+		listButton.Text = listShown and "СПИСОК ▼" or "СПИСОК ▲"
 		cardPlate.Position = UDim2.new(0, 6, 0, GRAPH_TOP + 6)
 		cardPlate.Size = UDim2.new(0.45, 0, share, -(GRAPH_TOP + 40))
 	end
@@ -1409,8 +1391,6 @@ return function(deps)
 		-- строк — это метр пустоты справа от каждой и прокрутка после десятой.
 		Theme.Grid(listScroll, 24, 340, 4)
 
-		backButton.Visible = selected ~= nil
-
 		local steps = {}
 		if selected then
 			for key in chainNodes do
@@ -1559,10 +1539,6 @@ return function(deps)
 		repaint()
 		refreshBook()
 	end
-
-	backButton.MouseButton1Click:Connect(function()
-		selectNode(nil)
-	end)
 
 	-- Раскладка считается не при входе в игру, а при первом открытии справочника: счёт
 	-- занимает около четверти секунды, и на слабом телефоне это заметная пауза ровно в тот
