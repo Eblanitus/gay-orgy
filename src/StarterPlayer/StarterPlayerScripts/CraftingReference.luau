@@ -1728,17 +1728,6 @@ return function(deps)
 		elementKills = killsByElement,
 		enemyKills = killsOfEnemy,
 		glass = window.glass,
-		onMap = onMap,
-		showOnMap = function(key)
-			setMode("map")
-			task.defer(function()
-				ensureGraph()
-				if selected ~= key then
-					selectNode(key)
-				end
-				focusOn(key)
-			end)
-		end,
 	})
 
 	MODES[1].frame = pages.enemies.frame

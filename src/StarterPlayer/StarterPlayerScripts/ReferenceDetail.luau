@@ -464,8 +464,7 @@ local function patternHead(scroll, order, color, spec)
 end
 
 -- ctx: known(key) — открыт ли элемент, craftable(key) — можно ли скрафтить сейчас,
--- onPick(key) — переход к другому элементу, onShowOnMap(key) — кнопка «показать на карте»
--- (нет поля — нет кнопки: на самой карте она не нужна).
+-- onPick(key) — переход к другому элементу. Кнопки «показать на карте» больше нет (#281).
 function Detail.Element(scroll, key, ctx)
 	clear(scroll)
 	local element = Elements[key]
@@ -618,48 +617,6 @@ function Detail.Element(scroll, key, ctx)
 		text(head, 70, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,
 			Theme.font.strong)
 	end
-	-- onMap(key) — нарисован ли элемент на карте (орбита открыта, #273).
-	if ctx.onShowOnMap and (not ctx.onMap or ctx.onMap(key)) then
-		-- Круглая кнопка в правом нижнем углу шапки, без надписи: значок — прицел (кольцо
-		-- с точкой), «где это на карте». Поверх печати «в разработке» — это управление.
-		local size = mobile and MobileUI.MIN_TAP or 34
-		local go = Instance.new("TextButton")
-		go.Name = "ShowOnMap"
-		go.AnchorPoint = Vector2.new(1, 1)
-		go.Position = UDim2.new(1, -10, 1, -10)
-		go.Size = UDim2.new(0, size, 0, size)
-		go.Text = ""
-		go.ZIndex = head.Parent.ZIndex + 30
-		go.Parent = head.Parent
-		Theme.Button(go, "quiet")
-		Show.Press(go)
-		Theme.Corner(go, size / 2)
-		local ring = Instance.new("Frame")
-		ring.AnchorPoint = Vector2.new(0.5, 0.5)
-		ring.Position = UDim2.new(0.5, 0, 0.5, 0)
-		ring.Size = UDim2.new(0, size * 0.5, 0, size * 0.5)
-		ring.BackgroundTransparency = 1
-		ring.ZIndex = go.ZIndex + 1
-		ring.Parent = go
-		Theme.Corner(ring, size)
-		local stroke = Instance.new("UIStroke")
-		stroke.Color = go.TextColor3 -- цвет надписи кнопки из темы
-		stroke.Thickness = 2
-		stroke.Parent = ring
-		local dot = Instance.new("Frame")
-		dot.AnchorPoint = Vector2.new(0.5, 0.5)
-		dot.Position = UDim2.new(0.5, 0, 0.5, 0)
-		dot.Size = UDim2.new(0, 5, 0, 5)
-		dot.BackgroundColor3 = go.TextColor3
-		dot.BorderSizePixel = 0
-		dot.ZIndex = go.ZIndex + 2
-		dot.Parent = go
-		Theme.Corner(dot, 3)
-		go.MouseButton1Click:Connect(function()
-			ctx.onShowOnMap(key)
-		end)
-	end
-
 	-- Антиматерия — загадка: у неё описания нет совсем (просьба автора), без заглушки.
 	if not EntityInfo.MYSTERY[key] then
 		text(scroll, 40, ReferenceTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)

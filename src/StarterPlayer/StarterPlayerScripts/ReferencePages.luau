@@ -317,8 +317,8 @@ local function page(parent, name, spec)
 end
 
 -- ctx: known, count, craftable, met — как у ReferenceDetail; elementKills(key), enemyKills(key) —
--- счёт убийств для ступеней (Mastery); showOnMap(key) — перейти
--- к элементу на карте рецептов; glass(plate) — стекло окна (MonitorGlass).
+-- счёт убийств для ступеней (Mastery);
+-- glass(plate) — стекло окна (MonitorGlass).
 function Pages.Mount(parent, ctx)
 	local elements
 	local elementCtx = {
@@ -329,9 +329,6 @@ function Pages.Mount(parent, ctx)
 		onPick = function(key)
 			elements.show(key)
 		end,
-		-- Открытый элемент можно найти и на карте: оттуда видна вся его ветка.
-		onShowOnMap = ctx.showOnMap,
-		onMap = ctx.onMap,
 	}
 
 	elements = page(parent, "ElementsPage", {
