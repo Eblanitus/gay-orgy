@@ -5,7 +5,7 @@
 - `default.project.json` — проект Rojo: переносит `src/` в Studio.
 - `ВИКИПЕДИЯ/` — дизайн-документы, `Устаревшие документы/` — архив, `Отчёты/` — сводки по неделям.
 - `inbox/` — сюда заливать файлы через GitHub (Add file → Upload files).
-- `RULES.md`, `CLAUDE.md` — правила для агентов, `CHANGELOG.md` — история задач.
+- `RULES.md`, `CLAUDE.md` — правила для агентов, история задач — в коммитах (`git log`), старый CHANGELOG — в `Устаревшие документы/`.
 
 Суффикс файла задаёт тип скрипта: `.server.luau` — Script, `.client.luau` — LocalScript, `.luau` — ModuleScript.
 
