@@ -98,10 +98,6 @@ function Frame.Build(root, gui, modes)
 	handle.Rotation = 45
 	handle.BackgroundColor3 = Theme.color.accent
 	handle.BackgroundTransparency = 0
-	-- Черта между подписью и текстом, как у плашки материи производителя.
-	local searchRule = make("Frame", "SearchRule", mon, 4)
-	searchRule.BackgroundColor3 = Theme.color.text
-	searchRule.BackgroundTransparency = 0.85
 	searchBox.Focused:Connect(function()
 		searchEdge.Thickness, searchEdge.Transparency = 2, 0
 	end)
@@ -171,8 +167,6 @@ function Frame.Build(root, gui, modes)
 		searchBox.TextSize = by(13, 15)
 		local capGap, capW = by(10, 14), by(14, 18)
 		place(searchCaption, searchX + capGap, closeY + (closeH - capW) / 2, capW, capW)
-		local ruleX = searchX + capGap + capW
-		place(searchRule, ruleX, closeY + closeH * 0.25, 1, closeH * 0.5)
 		searchPad.PaddingLeft = UDim.new(0, capGap + capW + 10)
 		head.TextSize = by(20, 32)
 		place(head, px, pt, MW - px * 2 - closeW - searchW - g * 2, titleH)
