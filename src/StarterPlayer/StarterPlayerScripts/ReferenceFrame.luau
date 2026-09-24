@@ -82,11 +82,22 @@ function Frame.Build(root, gui, modes)
 	searchPad.Parent = searchBox
 	-- Подпись — не ребёнок поля: отступ поля сдвинул бы и её. Нажатия она не держит,
 	-- они проходят в поле под ней.
-	local searchCaption = make("TextLabel", "SearchCaption", mon, 4)
-	searchCaption.FontFace = Theme.font.strong
-	searchCaption.TextColor3 = Theme.color.accent
-	searchCaption.TextXAlignment = Enum.TextXAlignment.Left
-	searchCaption.Text = "ПОИСК"
+	-- Значок — лупа (#278), нарисованная рамками: стекло — кольцо, ручка — повёрнутая черта.
+	local searchCaption = make("Frame", "SearchIcon", mon, 4)
+	local lens = make("Frame", "Lens", searchCaption, 4)
+	lens.AnchorPoint = Vector2.new(0.5, 0.5)
+	lens.Position = UDim2.fromScale(0.42, 0.42)
+	lens.Size = UDim2.fromScale(0.62, 0.62)
+	Theme.Corner(lens, 999)
+	local lensEdge = Theme.Stroke(lens, Theme.color.accent, 2, 0)
+	lensEdge.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	local handle = make("Frame", "Handle", searchCaption, 4)
+	handle.AnchorPoint = Vector2.new(0.5, 0.5)
+	handle.Position = UDim2.fromScale(0.8, 0.8)
+	handle.Size = UDim2.new(0.34, 0, 0, 2)
+	handle.Rotation = 45
+	handle.BackgroundColor3 = Theme.color.accent
+	handle.BackgroundTransparency = 0
 	-- Черта между подписью и текстом, как у плашки материи производителя.
 	local searchRule = make("Frame", "SearchRule", mon, 4)
 	searchRule.BackgroundColor3 = Theme.color.text
@@ -158,9 +169,8 @@ function Frame.Build(root, gui, modes)
 		local searchX = MW - px - closeW - g - searchW
 		place(searchBox, searchX, closeY, searchW, closeH)
 		searchBox.TextSize = by(13, 15)
-		local capGap, capW = by(10, 14), by(42, 52)
-		searchCaption.TextSize = by(11, 13)
-		place(searchCaption, searchX + capGap, closeY, capW, closeH)
+		local capGap, capW = by(10, 14), by(14, 18)
+		place(searchCaption, searchX + capGap, closeY + (closeH - capW) / 2, capW, capW)
 		local ruleX = searchX + capGap + capW
 		place(searchRule, ruleX, closeY + closeH * 0.25, 1, closeH * 0.5)
 		searchPad.PaddingLeft = UDim.new(0, capGap + capW + 10)
