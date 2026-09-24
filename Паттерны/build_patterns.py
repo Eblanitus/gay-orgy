@@ -10,9 +10,10 @@ from PIL import Image, ImageDraw, ImageFilter
 from scipy import ndimage as nd
 
 Image.MAX_IMAGE_PIXELS = None
-SRC = r"C:\Users\user\Contacts\Паттерны"
-OUT = os.path.join(SRC, "out")
-SCR = r"C:\Users\user\AppData\Local\Temp\claude\C--Users-user-Contacts\9acaadbd-6b0d-44c0-b826-383390d4baa1\scratchpad"
+HERE = os.path.dirname(os.path.abspath(__file__))
+SRC = os.path.join(HERE, "Исходники")  # исходные картинки паттернов
+OUT = os.path.join(HERE, "out")        # готовые маски p_<Элемент>.png
+SCR = HERE                             # сюда пишется patterns_preview.png (в Git не попадает)
 FILL = 0.55
 DARK = 0  # line mode: field farther than this (px on the 1024 canvas) from a line goes dark; 0 = off
 

@@ -1,3 +1,6 @@
 tools/bin/
 rojo.exe
 *.exe
+__pycache__/
+*.pyc
+Паттерны/patterns_preview.png
