@@ -49,8 +49,8 @@ function Frame.Build(root, gui, modes)
 	Theme.Corner(mon, Theme.radius.panel)
 	Theme.Stroke(mon, Theme.color.frame, 1, 0)
 	Theme.Brackets(mon)
-	-- Фон окна — созвездия (Theme.Stars, #270): свой узор у каждого окна, этот похож на
-	-- карту рецептов. Первым ребёнком рамки, под всем содержимым.
+	-- Фон окна — редкие тусклые звёзды (Theme.Stars, #270, #271): свой узор у каждого
+	-- окна. Первым ребёнком рамки, под всем содержимым.
 	local paintDots = Theme.Stars(mon, { zIndex = 1 })
 	local glass = Glass.Mount(mon)
 
@@ -67,12 +67,13 @@ function Frame.Build(root, gui, modes)
 	-- в поле пишут, кант горит в полную силу.
 	local searchBox = make("TextBox", "Search", mon, 3)
 	searchBox.ClearTextOnFocus = false
-	searchBox.PlaceholderText = "имя элемента или жука…"
+	searchBox.PlaceholderText = "элемент или жук…"
 	searchBox.Text = ""
 	searchBox.FontFace = Theme.font.body
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
 	searchBox.TextTruncate = Enum.TextTruncate.AtEnd
 	Theme.Field(searchBox)
+	searchBox.PlaceholderColor3 = Theme.color.textMute:Lerp(Theme.color.ink, 0.35) -- тише текста
 	local searchEdge = Theme.Stroke(searchBox, Theme.color.accent, 1, 0.35)
 	local searchPad = Instance.new("UIPadding")
 	searchPad.PaddingRight = UDim.new(0, 10)
@@ -84,6 +85,10 @@ function Frame.Build(root, gui, modes)
 	searchCaption.TextColor3 = Theme.color.accent
 	searchCaption.TextXAlignment = Enum.TextXAlignment.Left
 	searchCaption.Text = "ПОИСК"
+	-- Черта между подписью и текстом, как у плашки материи производителя.
+	local searchRule = make("Frame", "SearchRule", mon, 4)
+	searchRule.BackgroundColor3 = Theme.color.text
+	searchRule.BackgroundTransparency = 0.85
 	searchBox.Focused:Connect(function()
 		searchEdge.Thickness, searchEdge.Transparency = 2, 0
 	end)
@@ -150,11 +155,13 @@ function Frame.Build(root, gui, modes)
 		local searchW = math.min(by(170, 320), math.floor((MW - px * 2 - closeW - g) / 2))
 		local searchX = MW - px - closeW - g - searchW
 		place(searchBox, searchX, closeY, searchW, closeH)
-		searchBox.TextSize = by(14, 18)
-		local capGap, capW = by(10, 14), by(50, 64)
-		searchCaption.TextSize = by(12, 15)
+		searchBox.TextSize = by(13, 15)
+		local capGap, capW = by(10, 14), by(42, 52)
+		searchCaption.TextSize = by(11, 13)
 		place(searchCaption, searchX + capGap, closeY, capW, closeH)
-		searchPad.PaddingLeft = UDim.new(0, capGap + capW + 6)
+		local ruleX = searchX + capGap + capW
+		place(searchRule, ruleX, closeY + closeH * 0.25, 1, closeH * 0.5)
+		searchPad.PaddingLeft = UDim.new(0, capGap + capW + 10)
 		head.TextSize = by(20, 32)
 		place(head, px, pt, MW - px * 2 - closeW - searchW - g * 2, titleH)
 

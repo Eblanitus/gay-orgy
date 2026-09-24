@@ -68,7 +68,7 @@ return function(deps)
 	--
 	-- Старшая связь (дерево карты) ярче второй (сетка между ветками): при равной яркости
 	-- сто двадцать четыре линии сливались в одну паутину, и формы дерева было не прочесть.
-	local LINE_GROUND = Theme.color.panel
+	local LINE_GROUND = Theme.color.ink
 	-- Бледность колец ярусов: насколько их цвет смешан с фоном (wire.rings).
 	local BEAD = 0.35
 	-- Иерархия линий карты. Магистраль —
@@ -110,9 +110,6 @@ return function(deps)
 	-- Кольца ярусов под связями (RecipeGraph, guides): сплошные и еле заметные — подложка,
 	-- по которой читается глубина, а не ещё одна сетка поверх паутины.
 	local GUIDE = Theme.color.panel:Lerp(Theme.color.steel, 0.14)
-	-- Тень под картой (graphShade): прозрачность её середины и доля каждой стороны,
-	-- на которой тень уходит в окно.
-	local SHADE, SHADE_EDGE = 0.2, 0.12
 	local NODE_UNKNOWN = Color3.fromRGB(16, 20, 25)
 
 	-- Стеклянная плашка. Настоящего размытия фона (backdrop-filter) в Roblox UI нет —
@@ -174,41 +171,22 @@ return function(deps)
 	mapFrame.BackgroundTransparency = 1
 	mapFrame.Parent = window.screen
 
-	-- Тень под картой. Крупная решётка сцены лаборатории шла под графом прямыми линиями
-	-- и на обзоре читалась как лишние связи (#130). Тень гасит её только под картой, а к
-	-- краям уходит в прозрачность по обеим осям, чтобы карта не выглядела вырезанной
-	-- прямоугольником. Обе оси сразу даёт только CanvasGroup: градиент заливки гасит края
-	-- по горизонтали, градиент самой группы — по вертикали, и непрозрачности перемножаются.
-	-- Создаётся раньше карты: из равных по ZIndex позже рисуется тот, кто позже в дереве.
-	local function shadeRamp(inner)
-		return NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(SHADE_EDGE, inner),
-			NumberSequenceKeypoint.new(1 - SHADE_EDGE, inner),
-			NumberSequenceKeypoint.new(1, 1),
-		})
+	-- Карта и список лежат на стеклянных плашках (#271): фон окна под ними размыт, и
+	-- звёзды не путаются со связями. Плашки создаются раньше содержимого: из равных по
+	-- ZIndex позже рисуется тот, кто позже в дереве.
+	local function plate(name)
+		local f = Instance.new("Frame")
+		f.Name = name
+		f.BorderSizePixel = 0
+		f.ZIndex = 1
+		f.Parent = mapFrame
+		window.glass(f)
+		return f
 	end
+	local mapPlate = plate("MapPlate")
+	local listPlate = plate("ListPlate")
 
-	local graphShade = Instance.new("CanvasGroup")
-	graphShade.Name = "Shade"
-	graphShade.Size = UDim2.new(1, 0, GRAPH_SHARE, 0)
-	graphShade.BackgroundTransparency = 1
-	graphShade.BorderSizePixel = 0
-	graphShade.Parent = mapFrame
-	local shadeFill = Instance.new("Frame")
-	shadeFill.Size = UDim2.new(1, 0, 1, 0)
-	shadeFill.BackgroundColor3 = Theme.color.panel
-	shadeFill.BorderSizePixel = 0
-	shadeFill.Parent = graphShade
-	local shadeAcross = Instance.new("UIGradient")
-	shadeAcross.Transparency = shadeRamp(SHADE)
-	shadeAcross.Parent = shadeFill
-	local shadeDown = Instance.new("UIGradient")
-	shadeDown.Rotation = 90
-	shadeDown.Transparency = shadeRamp(0)
-	shadeDown.Parent = graphShade
-
-	-- Рамка кривых карты — поверх тени и под самой картой: из равных по ZIndex
+	-- Рамка кривых карты — поверх плашки и под самой картой: из равных по ZIndex
 	-- позже рисуется тот, кто позже в дереве, и узлы ложатся на линии, а не под них.
 	wire.view = Instance.new("Frame")
 	wire.view.Name = "Wires"
@@ -504,11 +482,20 @@ return function(deps)
 		local share = listShown and GRAPH_SHARE or 1
 		graphScroll.Position = UDim2.new(0, 0, 0, GRAPH_TOP)
 		graphScroll.Size = UDim2.new(1, 0, share, -GRAPH_TOP)
-		graphShade.Position = graphScroll.Position
-		graphShade.Size = graphScroll.Size
+		mapPlate.Position = graphScroll.Position
+		mapPlate.Size = graphScroll.Size
 		wire.view.Position = graphScroll.Position
 		wire.view.Size = graphScroll.Size
 		hintBar.Position = UDim2.new(0, 4, share, -4)
+		-- Список — на своей плашке под картой, содержимое с отступом от её краёв.
+		local inset = 10
+		listPlate.Visible = listShown
+		listPlate.Position = UDim2.new(0, 0, share, 6)
+		listPlate.Size = UDim2.new(1, 0, 1 - share, -6)
+		openedLabel.Position = UDim2.new(0, inset, share, 6 + inset)
+		openedLabel.Size = UDim2.new(1, -2 * inset, 0, 18)
+		listScroll.Position = UDim2.new(0, inset, share, 6 + inset + 22)
+		listScroll.Size = UDim2.new(1, -2 * inset, 1 - share, -(6 + 2 * inset + 22))
 		openedLabel.Visible = listShown
 		listScroll.Visible = listShown
 		listButton.Text = listShown and "СКРЫТЬ СПИСОК" or "ПОКАЗАТЬ СПИСОК"

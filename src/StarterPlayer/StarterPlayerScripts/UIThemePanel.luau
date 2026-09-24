@@ -614,9 +614,10 @@ return function(deps)
 	end
 
 
-	-- Созвездия — фон окна справочника (#270): у каждого окна свой узор (точки у
-	-- производителя, редкие точки у меню), и справочнику достался рисунок, похожий на его
-	-- карту рецептов: звёзды разной величины, часть соседних связана тонкими линиями.
+	-- Звёзды — фон окна справочника (#270, #271): у каждого окна свой узор (точки у
+	-- производителя, редкие точки у меню), справочнику досталось
+	-- ночное небо: редкие тусклые звёзды разной величины. Линий между ними нет — линиями
+	-- говорит сама карта рецептов, фон с ней не спорит.
 	-- Звезда — одна на ячейку сетки, со сдвигом внутри ячейки: так рисунок выглядит
 	-- случайным, но без пустых дыр и слипшихся кучек. Посев постоянный, как у Theme.Dots:
 	-- при смене размера окна небо не перетасовывается.
@@ -633,7 +634,7 @@ return function(deps)
 
 	function Theme.Stars(frame, opts)
 		opts = opts or {}
-		local cell = opts.cell or 72
+		local cell = opts.cell or 110
 
 		local layer = Instance.new("Frame")
 		layer.Name = "Stars"
@@ -655,9 +656,8 @@ return function(deps)
 			local rng = Random.new(7)
 			local cols, rows = math.max(1, math.floor(w / cell)), math.max(1, math.floor(h / cell))
 			local cw, ch = w / cols, h / rows
-			local grid, list = {}, {}
+			local list = {}
 			for r = 0, rows - 1 do
-				grid[r] = {}
 				for c = 0, cols - 1 do
 					-- Сдвиг не до самого края ячейки: соседние звёзды не слипаются.
 					local x = math.floor(c * cw + cw * rng:NextNumber(0.2, 0.8))
@@ -665,35 +665,7 @@ return function(deps)
 					local roll = rng:NextNumber()
 					local size = roll < 0.12 and 4 or roll < 0.4 and 3 or 2
 					local star = { x = x, y = y, size = size }
-					grid[r][c] = star
 					list[#list + 1] = star
-				end
-			end
-
-			-- Связи — под звёздами: слой линий создаётся первым.
-			local function link(a, b)
-				local dx, dy = b.x - a.x, b.y - a.y
-				local len = math.sqrt(dx * dx + dy * dy)
-				local line = Instance.new("Frame")
-				line.BorderSizePixel = 0
-				line.BackgroundColor3 = Theme.color.grid
-				line.BackgroundTransparency = 0.82
-				line.AnchorPoint = Vector2.new(0.5, 0.5)
-				line.Position = UDim2.fromOffset((a.x + b.x) / 2, (a.y + b.y) / 2)
-				line.Size = UDim2.fromOffset(len, 1)
-				line.Rotation = math.deg(math.atan2(dy, dx))
-				line.ZIndex = layer.ZIndex
-				line.Parent = layer
-			end
-			for r = 0, rows - 1 do
-				for c = 0, cols - 1 do
-					local a = grid[r][c]
-					if c + 1 < cols and rng:NextNumber() < 0.3 then
-						link(a, grid[r][c + 1])
-					end
-					if r + 1 < rows and rng:NextNumber() < 0.3 then
-						link(a, grid[r + 1][c])
-					end
 				end
 			end
 
@@ -702,7 +674,7 @@ return function(deps)
 				d.BorderSizePixel = 0
 				d.BackgroundColor3 = Theme.color.grid
 				-- Крупные ярче: у звёзд величина и блеск идут вместе.
-				d.BackgroundTransparency = star.size == 4 and 0.05 or star.size == 3 and 0.25 or 0.45
+				d.BackgroundTransparency = star.size == 4 and 0.35 or star.size == 3 and 0.55 or 0.7
 				d.Size = UDim2.fromOffset(star.size, star.size)
 				d.Position = UDim2.fromOffset(star.x - star.size / 2, star.y - star.size / 2)
 				d.ZIndex = layer.ZIndex
