@@ -11,7 +11,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("UITheme"))
 local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
-local EntityInfo = require(script.Parent:WaitForChild("EntityInfo"))
 local Detail = require(script.Parent:WaitForChild("ReferenceDetail"))
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
@@ -87,8 +86,7 @@ end
 --   order         — ключи по порядку
 --   known(key)    — открыт ли (неоткрытое — «???» и приглушено)
 --   paint(key)    — цвет ячейки и ключ узора (или nil)
---   lines(key)    — { имя, метка справа, строка под именем }
---   name(key)     — имя для поиска
+--   name(key)     — имя в ячейке и для поиска
 --   show(scroll, key) — собрать карточку
 local function page(parent, name, spec)
 	local frame = Instance.new("Frame")
@@ -173,12 +171,8 @@ local function page(parent, name, spec)
 		local color, pattern = spec.paint(key)
 		Theme.ElementFill(parts.cell, color, { dim = not known, element = known and pattern or nil })
 		Theme.Inner(parts.inner)
-		local text = spec.lines(key)
-		parts.name.Text = Theme.Caps(text[1])
+		parts.name.Text = Theme.Caps(known and spec.name(key) or "???")
 		parts.name.TextColor3 = known and Theme.color.text or Theme.color.textDim
-		parts.mark.Text = Theme.Caps(text[2] or "")
-		parts.sub.Text = text[3] and Theme.Caps(text[3]) or ""
-		parts.sub.TextColor3 = text.hot and Theme.color.action or Theme.color.textMute
 		parts.pick.Enabled = key == selected
 	end
 
@@ -222,14 +216,7 @@ local function page(parent, name, spec)
 			inner.Parent = cell
 
 			local nameLabel = label(inner, mobile and 14 or 14, Theme.color.text, Theme.font.strong)
-			nameLabel.Size = UDim2.new(1, -56, 0, 20)
-			local markLabel = label(inner, 11, Theme.color.textMute, Theme.font.strong, Enum.TextXAlignment.Right)
-			markLabel.AnchorPoint = Vector2.new(1, 0)
-			markLabel.Position = UDim2.new(1, 0, 0, 2)
-			markLabel.Size = UDim2.new(0, 54, 0, 18)
-			local subLabel = label(inner, 11, Theme.color.textMute)
-			subLabel.Position = UDim2.new(0, 0, 0, 21)
-			subLabel.Size = UDim2.new(1, 0, 0, 16)
+			nameLabel.Size = UDim2.new(1, 0, 1, 0)
 
 			-- Выбранная ячейка — рамкой, а не цветом: цвет у ячейки — опознание элемента.
 			-- Рамка на своей прозрачной плашке поверх ячейки: у самой ячейки свой кант
@@ -247,7 +234,7 @@ local function page(parent, name, spec)
 			pick.Enabled = false
 			pick.Parent = pickFrame
 
-			cells[key] = { cell = cell, inner = inner, name = nameLabel, mark = markLabel, sub = subLabel, pick = pick }
+			cells[key] = { cell = cell, inner = inner, name = nameLabel, pick = pick }
 			paintCell(key)
 
 			cell.MouseButton1Click:Connect(function()
@@ -346,23 +333,6 @@ function Pages.Mount(parent, ctx)
 		paint = function(key)
 			return Elements[key].color, key
 		end,
-		lines = function(key)
-			local element = Elements[key]
-			if not ctx.known(key) then
-				return { "???", ("т%d"):format(element.tier) }
-			end
-			local recipe = EntityInfo.RecipeOf(key)
-			local have = ctx.count(key)
-			local mark = (have and have > 0) and ("×%d"):format(have) or ("т%d"):format(element.tier)
-			if recipe and ctx.craftable(key) then
-				return { element.name, mark, "● можно скрафтить", hot = true }
-			end
-			return {
-				element.name,
-				mark,
-				recipe and ("%s + %s"):format(Elements[recipe.a].name, Elements[recipe.b].name) or "базовый",
-			}
-		end,
 		show = function(scroll, key)
 			Detail.Element(scroll, key, elementCtx)
 		end,
@@ -377,18 +347,6 @@ function Pages.Mount(parent, ctx)
 		end,
 		paint = function(key)
 			return Enemies[key].color or Theme.color.steel, nil
-		end,
-		lines = function(key)
-			local enemy = Enemies[key]
-			local caste = EntityInfo.CASTE_NAME[enemy.caste] or "прочие"
-			if not ctx.met(key) then
-				return { "???", "", caste }
-			end
-			return {
-				enemy.name,
-				"hp " .. EntityInfo.Number(enemy.hp),
-				("%s · скор %s"):format(caste, EntityInfo.Number(enemy.speed)),
-			}
 		end,
 		show = function(scroll, key)
 			Detail.Enemy(scroll, key, { met = ctx.met })
