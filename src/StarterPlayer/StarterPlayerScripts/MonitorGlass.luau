@@ -13,13 +13,61 @@ local Glass = {}
 -- Пятно вчетверо шире точки и во столько же бледнее: свет точки растёкся по стеклу.
 local FROST_SIZE, FROST_T = 9, 0.9
 
--- mon — рамка окна, у которой уже есть точки (Theme.Dots). Возвращает glass(plate):
+-- Под звездой (Theme.Stars) пятно шире самой звезды втрое: звёзды разной величины, и
+-- пятна тоже.
+local STAR_SPREAD, STAR_T = 3, 0.86
+
+local function blob(layer, x, y, size, transparency)
+	local d = Instance.new("Frame")
+	d.BorderSizePixel = 0
+	d.BackgroundColor3 = Theme.color.grid
+	d.BackgroundTransparency = transparency
+	d.Size = UDim2.fromOffset(size, size)
+	d.Position = UDim2.fromOffset(x - size / 2, y - size / 2)
+	d.ZIndex = layer.ZIndex
+	local round = Instance.new("UICorner")
+	round.CornerRadius = UDim.new(0.5, 0)
+	round.Parent = d
+	d.Parent = layer
+end
+
+-- Созвездия справочника: пятна на местах звёзд.
+local function frostStars(mon, stars, plate, layer)
+	local open = mon:FindFirstChild("OpenScale")
+	local list = Theme.StarsOf(stars)
+	if (open and open.Scale < 1) or not list then
+		return
+	end
+	local rel = plate.AbsolutePosition - stars.AbsolutePosition
+	local rx, ry = math.floor(rel.X + 0.5), math.floor(rel.Y + 0.5)
+	local w, h = plate.AbsoluteSize.X, plate.AbsoluteSize.Y
+	local key = rx .. ":" .. ry .. ":" .. w .. "x" .. h .. ":" .. tostring(stars:GetAttribute("Version"))
+	if layer:GetAttribute("For") == key then
+		return
+	end
+	layer:SetAttribute("For", key)
+	layer:ClearAllChildren()
+	for _, star in list do
+		local x, y = star.x - rx, star.y - ry
+		local size = star.size * STAR_SPREAD
+		if x > -size and y > -size and x < w + size and y < h + size then
+			blob(layer, x, y, size, STAR_T)
+		end
+	end
+end
+
+-- mon — рамка окна, у которой уже есть точки (Theme.Dots) или созвездия (Theme.Stars). Возвращает glass(plate):
 -- превращает плашку в стекло. Слой Frost ложится ребёнком плашки на её ZIndex, поэтому
 -- содержимое плашки должно быть на слой выше или создано после слоя.
 function Glass.Mount(mon)
 	local monDots = mon:FindFirstChild("Dots")
+	local stars = mon:FindFirstChild("Stars")
 	local frosted = {}
 	local function frost(plate, layer)
+		if stars then
+			frostStars(mon, stars, plate, layer)
+			return
+		end
 		local open = mon:FindFirstChild("OpenScale")
 		local step = monDots:GetAttribute("Step")
 		if (open and open.Scale < 1) or not step then
@@ -43,17 +91,7 @@ function Glass.Mount(mon)
 		while cx <= w do
 			local cy = oy + half + r0 * step - ry
 			while cy <= h do
-				local d = Instance.new("Frame")
-				d.BorderSizePixel = 0
-				d.BackgroundColor3 = Theme.color.grid
-				d.BackgroundTransparency = FROST_T
-				d.Size = UDim2.fromOffset(FROST_SIZE, FROST_SIZE)
-				d.Position = UDim2.fromOffset(cx - FROST_SIZE / 2, cy - FROST_SIZE / 2)
-				d.ZIndex = layer.ZIndex
-				local round = Instance.new("UICorner")
-				round.CornerRadius = UDim.new(0.5, 0)
-				round.Parent = d
-				d.Parent = layer
+				blob(layer, cx, cy, FROST_SIZE, FROST_T)
 				cy += step
 			end
 			cx += step
@@ -64,8 +102,12 @@ function Glass.Mount(mon)
 			frost(plate, layer)
 		end
 	end
-	monDots:GetAttributeChangedSignal("OriginX"):Connect(refrostAll)
-	monDots:GetAttributeChangedSignal("OriginY"):Connect(refrostAll)
+	if stars then
+		stars:GetAttributeChangedSignal("Version"):Connect(refrostAll)
+	else
+		monDots:GetAttributeChangedSignal("OriginX"):Connect(refrostAll)
+		monDots:GetAttributeChangedSignal("OriginY"):Connect(refrostAll)
+	end
 
 	return function(plate)
 		plate.BackgroundColor3 = Theme.color.ink

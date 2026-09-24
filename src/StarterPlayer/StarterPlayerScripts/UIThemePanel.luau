@@ -614,6 +614,109 @@ return function(deps)
 	end
 
 
+	-- Созвездия — фон окна справочника (#270): у каждого окна свой узор (точки у
+	-- производителя, редкие точки у меню), и справочнику достался рисунок, похожий на его
+	-- карту рецептов: звёзды разной величины, часть соседних связана тонкими линиями.
+	-- Звезда — одна на ячейку сетки, со сдвигом внутри ячейки: так рисунок выглядит
+	-- случайным, но без пустых дыр и слипшихся кучек. Посев постоянный, как у Theme.Dots:
+	-- при смене размера окна небо не перетасовывается.
+	--
+	-- Где стоят звёзды, знает Theme.StarsOf(layer) — по ним стекло кладёт свои пятна
+	-- (MonitorGlass). После каждой перерисовки у слоя растёт атрибут Version.
+	--
+	-- opts: cell — сторона ячейки, zIndex. Возвращает paint(w, h), как Theme.Dots.
+	local starsOf = setmetatable({}, { __mode = "k" })
+
+	function Theme.StarsOf(layer)
+		return starsOf[layer]
+	end
+
+	function Theme.Stars(frame, opts)
+		opts = opts or {}
+		local cell = opts.cell or 72
+
+		local layer = Instance.new("Frame")
+		layer.Name = "Stars"
+		layer.BackgroundTransparency = 1
+		layer.BorderSizePixel = 0
+		layer.ZIndex = opts.zIndex or frame.ZIndex
+		layer.Parent = frame
+		Theme.Bleed(layer, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 1, 0))
+
+		local paintedFor
+		return function(w, h)
+			w, h = math.floor(w), math.floor(h)
+			local key = w .. "x" .. h
+			if paintedFor == key then
+				return
+			end
+			paintedFor = key
+			layer:ClearAllChildren()
+			local rng = Random.new(7)
+			local cols, rows = math.max(1, math.floor(w / cell)), math.max(1, math.floor(h / cell))
+			local cw, ch = w / cols, h / rows
+			local grid, list = {}, {}
+			for r = 0, rows - 1 do
+				grid[r] = {}
+				for c = 0, cols - 1 do
+					-- Сдвиг не до самого края ячейки: соседние звёзды не слипаются.
+					local x = math.floor(c * cw + cw * rng:NextNumber(0.2, 0.8))
+					local y = math.floor(r * ch + ch * rng:NextNumber(0.2, 0.8))
+					local roll = rng:NextNumber()
+					local size = roll < 0.12 and 4 or roll < 0.4 and 3 or 2
+					local star = { x = x, y = y, size = size }
+					grid[r][c] = star
+					list[#list + 1] = star
+				end
+			end
+
+			-- Связи — под звёздами: слой линий создаётся первым.
+			local function link(a, b)
+				local dx, dy = b.x - a.x, b.y - a.y
+				local len = math.sqrt(dx * dx + dy * dy)
+				local line = Instance.new("Frame")
+				line.BorderSizePixel = 0
+				line.BackgroundColor3 = Theme.color.grid
+				line.BackgroundTransparency = 0.82
+				line.AnchorPoint = Vector2.new(0.5, 0.5)
+				line.Position = UDim2.fromOffset((a.x + b.x) / 2, (a.y + b.y) / 2)
+				line.Size = UDim2.fromOffset(len, 1)
+				line.Rotation = math.deg(math.atan2(dy, dx))
+				line.ZIndex = layer.ZIndex
+				line.Parent = layer
+			end
+			for r = 0, rows - 1 do
+				for c = 0, cols - 1 do
+					local a = grid[r][c]
+					if c + 1 < cols and rng:NextNumber() < 0.3 then
+						link(a, grid[r][c + 1])
+					end
+					if r + 1 < rows and rng:NextNumber() < 0.3 then
+						link(a, grid[r + 1][c])
+					end
+				end
+			end
+
+			for _, star in list do
+				local d = Instance.new("Frame")
+				d.BorderSizePixel = 0
+				d.BackgroundColor3 = Theme.color.grid
+				-- Крупные ярче: у звёзд величина и блеск идут вместе.
+				d.BackgroundTransparency = star.size == 4 and 0.05 or star.size == 3 and 0.25 or 0.45
+				d.Size = UDim2.fromOffset(star.size, star.size)
+				d.Position = UDim2.fromOffset(star.x - star.size / 2, star.y - star.size / 2)
+				d.ZIndex = layer.ZIndex
+				local round = Instance.new("UICorner")
+				round.CornerRadius = UDim.new(0.5, 0)
+				round.Parent = d
+				d.Parent = layer
+			end
+
+			starsOf[layer] = list
+			layer:SetAttribute("Version", (layer:GetAttribute("Version") or 0) + 1)
+		end
+	end
+
 	-- Угловые засечки: по две линии в пиксель в каждом углу окна — визир прибора.
 	--
 	-- Зачем они при том, что у панели уже есть кант: окна игры открываются во весь экран,

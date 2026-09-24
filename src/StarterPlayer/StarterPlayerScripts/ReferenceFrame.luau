@@ -49,8 +49,9 @@ function Frame.Build(root, gui, modes)
 	Theme.Corner(mon, Theme.radius.panel)
 	Theme.Stroke(mon, Theme.color.frame, 1, 0)
 	Theme.Brackets(mon)
-	-- Точки — первым ребёнком рамки, под всем содержимым.
-	local paintDots = Theme.Dots(mon, { zIndex = 1 })
+	-- Фон окна — созвездия (Theme.Stars, #270): свой узор у каждого окна, этот похож на
+	-- карту рецептов. Первым ребёнком рамки, под всем содержимым.
+	local paintDots = Theme.Stars(mon, { zIndex = 1 })
 	local glass = Glass.Mount(mon)
 
 	local head = make("TextLabel", "Title", mon, 3)
@@ -61,18 +62,34 @@ function Frame.Build(root, gui, modes)
 	Theme.Display(head)
 	head.TextColor3 = Theme.color.accent
 
-	-- Поиск — в шапке, на месте материи производителя: слева от крестика.
+	-- Поиск — в шапке, на месте материи производителя: слева от крестика. Выделен
+	-- (просьба автора, #270): кант цвета акцента, подпись «ПОИСК» в самом поле; пока
+	-- в поле пишут, кант горит в полную силу.
 	local searchBox = make("TextBox", "Search", mon, 3)
 	searchBox.ClearTextOnFocus = false
-	searchBox.PlaceholderText = "поиск…"
+	searchBox.PlaceholderText = "имя элемента или жука…"
 	searchBox.Text = ""
 	searchBox.FontFace = Theme.font.body
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
+	searchBox.TextTruncate = Enum.TextTruncate.AtEnd
 	Theme.Field(searchBox)
+	local searchEdge = Theme.Stroke(searchBox, Theme.color.accent, 1, 0.35)
 	local searchPad = Instance.new("UIPadding")
-	searchPad.PaddingLeft = UDim.new(0, 10)
 	searchPad.PaddingRight = UDim.new(0, 10)
 	searchPad.Parent = searchBox
+	-- Подпись — не ребёнок поля: отступ поля сдвинул бы и её. Нажатия она не держит,
+	-- они проходят в поле под ней.
+	local searchCaption = make("TextLabel", "SearchCaption", mon, 4)
+	searchCaption.FontFace = Theme.font.strong
+	searchCaption.TextColor3 = Theme.color.accent
+	searchCaption.TextXAlignment = Enum.TextXAlignment.Left
+	searchCaption.Text = "ПОИСК"
+	searchBox.Focused:Connect(function()
+		searchEdge.Thickness, searchEdge.Transparency = 2, 0
+	end)
+	searchBox.FocusLost:Connect(function()
+		searchEdge.Thickness, searchEdge.Transparency = 1, 0.35
+	end)
 
 	local close = make("TextButton", "Close", mon, 3)
 	Show.Press(close)
@@ -131,8 +148,13 @@ function Frame.Build(root, gui, modes)
 		local closeY = pt + math.max(0, math.floor((titleH - closeH) / 2))
 		place(close, MW - px - closeW, closeY, closeW, closeH)
 		local searchW = math.min(by(170, 320), math.floor((MW - px * 2 - closeW - g) / 2))
-		place(searchBox, MW - px - closeW - g - searchW, closeY, searchW, closeH)
+		local searchX = MW - px - closeW - g - searchW
+		place(searchBox, searchX, closeY, searchW, closeH)
 		searchBox.TextSize = by(14, 18)
+		local capGap, capW = by(10, 14), by(50, 64)
+		searchCaption.TextSize = by(12, 15)
+		place(searchCaption, searchX + capGap, closeY, capW, closeH)
+		searchPad.PaddingLeft = UDim.new(0, capGap + capW + 6)
 		head.TextSize = by(20, 32)
 		place(head, px, pt, MW - px * 2 - closeW - searchW - g * 2, titleH)
 

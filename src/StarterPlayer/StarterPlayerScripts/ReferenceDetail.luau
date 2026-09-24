@@ -510,7 +510,7 @@ function Detail.Element(scroll, key, ctx)
 	local uses = Detail.UsedIn(key)
 	for _, tab in {
 		{ id = "about", caption = "описание" },
-		{ id = "uses", caption = ("используется в · %d"):format(#uses) },
+		{ id = "uses", caption = "рецепты" },
 		{ id = "pattern", caption = "узор" },
 	} do
 		local button = tabButton(tabs, tab.caption, elementTab == tab.id, function()
