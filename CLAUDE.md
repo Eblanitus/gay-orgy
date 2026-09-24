@@ -46,7 +46,7 @@ Rojo-проект — `default.project.json`. Он управляет тольк
 - Крупные файлы (>60 КБ) — не открывать целиком: `CraftingReference.luau` (справочник, ~75 КБ),
   `Elements.luau`, `EnemySpawner.luau`, `TowerInteraction.client.luau`, `EnemyGait.luau`, `Effects.luau`,
   `ProfileStore.luau`.
-- Большие файлы разрезаны на модули (задача #203): `CraftingUI` → `CraftingBuyTab`, `CraftingProducer`,
+- Большие файлы разрезаны на модули (задача #240): `CraftingUI` → `CraftingBuyTab`, `CraftingProducer`,
   `CraftingCraftTab`, `CraftingReference`; `UITheme` → `UIThemePanel`, `UIThemeButtons`;
   `TowerBuilder` → `TowerModels`, `TowerFiring`; `Effects` → `EffectsDebuffs`. Модуль —
   `return function(deps) ... end`: в начале `local x = deps.x` — локальные основного файла,
