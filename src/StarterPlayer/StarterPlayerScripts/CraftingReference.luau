@@ -463,10 +463,6 @@ return function(deps)
 		applyBookLayout()
 	end)
 
-	-- Высота шапки меняется вместе с полосой Roblox (поворот телефона, полный экран),
-	-- и карта должна выводиться наверх ровно на новую высоту.
-	onChrome = applyBookLayout
-
 	applyBookLayout()
 
 	-- ---------- рисование ----------
@@ -1537,6 +1533,7 @@ return function(deps)
 			return graph
 		end,
 		drawGraph = drawGraph,
+		applyBookLayout = applyBookLayout,
 		refreshBook = refreshBook,
 	}
 end

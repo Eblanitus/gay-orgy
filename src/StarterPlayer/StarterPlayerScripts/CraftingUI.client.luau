@@ -408,6 +408,9 @@ local CraftingReferenceExports = require(script.Parent:WaitForChild("CraftingRef
 local getGraph = CraftingReferenceExports.getGraph
 local drawGraph = CraftingReferenceExports.drawGraph
 local refreshBook = CraftingReferenceExports.refreshBook
+-- Высота шапки меняется вместе с полосой Roblox (поворот телефона, полный экран),
+-- и карта справочника должна выводиться наверх ровно на новую высоту.
+onChrome = CraftingReferenceExports.applyBookLayout
 -- ============ Подключение к серверу ============
 
 InventoryChanged.OnClientEvent:Connect(function(counts)
