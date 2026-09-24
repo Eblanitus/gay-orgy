@@ -30,13 +30,14 @@ EntityInfo.ELEMENT_TRAITS = {
 	{ field = "damageMultiplier", label = "урон" },
 	{ field = "damagePerSecond", label = "урон/сек" },
 	{ field = "fireRateBonus", label = "темп" },
+	{ field = "fireRateRamp", label = "разгон" },
 	{ field = "slowPercent", label = "замедление" },
 	{ field = "armorPierce", label = "пробитие брони" },
 	{ field = "knockback", label = "отбрасывание" },
 	{ field = "stun", label = "оглушение" },
 	{ field = "chain", label = "цепной" },
 	{ field = "explosion", label = "взрыв" },
-	{ field = "killZone", label = "лужа" },
+	{ field = "killZone", label = "оставляет зону" },
 	{ field = "wet", label = "мочит" },
 	{ field = "conductive", label = "проводит ток" },
 	{ field = "blind", label = "ослепляет" },
@@ -46,7 +47,7 @@ EntityInfo.ELEMENT_TRAITS = {
 	{ field = "healer", label = "чинит" },
 	{ field = "terrain", label = "меняет рельеф" },
 	{ field = "amplifier", label = "усилитель" },
-	{ field = "primer", label = "грунтовка" },
+	{ field = "primer", label = "метка взрыва" },
 	{ field = "contagion", label = "заразный" },
 	{ field = "mark", label = "метка" },
 	{ field = "breakthrough", label = "пробой" },
@@ -137,6 +138,192 @@ end
 
 function EntityInfo.RecipeOf(elementKey)
 	return recipeOf[elementKey]
+end
+
+-- ============ Характеристики элемента словами ============
+--
+-- Справочник показывает не числа, а оценку словом — «медленная», «быстрая», «безумно
+-- быстрая» (просьба автора, как в Brawl Stars). Числа живут в Elements; здесь только
+-- пороги, по которым число становится словом. Порог — верхняя граница ступени:
+-- значение до неё включительно получает это слово.
+
+-- Во сколько раз темп элемента отличается от темпа турели (1 + fireRateBonus). Для разгона —
+-- его потолок: ramp.max считается в выстрелах в секунду, и у турели в 1 выстрел/сек это
+-- ровно множитель.
+EntityInfo.RATE_WORDS = {
+	{ upTo = 0.3, word = "безумно медленная" },
+	{ upTo = 0.6, word = "очень медленная" },
+	{ upTo = 0.85, word = "медленная" },
+	{ upTo = 1.15, word = "нормальная" },
+	{ upTo = 1.6, word = "быстрая" },
+	{ upTo = 2.5, word = "очень быстрая" },
+	{ upTo = math.huge, word = "безумно быстрая" },
+}
+
+-- Множитель урона снаряда к урону его цены (damageMultiplier; нет поля — 1).
+EntityInfo.DAMAGE_WORDS = {
+	{ upTo = 0, word = "нет" },
+	{ upTo = 0.45, word = "очень слабый" },
+	{ upTo = 0.8, word = "слабый" },
+	{ upTo = 1.2, word = "нормальный" },
+	{ upTo = 2, word = "сильный" },
+	{ upTo = 3, word = "очень сильный" },
+	{ upTo = math.huge, word = "огромный" },
+}
+
+-- Урон по времени, в секунду (damagePerSecond).
+EntityInfo.DOT_WORDS = {
+	{ upTo = 5, word = "слабый" },
+	{ upTo = 10, word = "нормальный" },
+	{ upTo = 15, word = "сильный" },
+	{ upTo = math.huge, word = "очень сильный" },
+}
+
+-- Доля брони, которую элемент игнорирует (armorPierce).
+EntityInfo.PIERCE_WORDS = {
+	{ upTo = 0.55, word = "частичное" },
+	{ upTo = 0.99, word = "почти полное" },
+	{ upTo = math.huge, word = "полное" },
+}
+
+-- Отбрасывание и притяжение — на сколько studs (knockback.distance, pull.distance).
+EntityInfo.PUSH_WORDS = {
+	{ upTo = 1.75, word = "слабое" },
+	{ upTo = 3, word = "среднее" },
+	{ upTo = 5, word = "сильное" },
+	{ upTo = math.huge, word = "очень сильное" },
+}
+
+-- Замедление хода — доля (slowPercent).
+EntityInfo.SLOW_WORDS = {
+	{ upTo = 0.3, word = "слабое" },
+	{ upTo = 0.55, word = "среднее" },
+	{ upTo = 0.75, word = "сильное" },
+	{ upTo = math.huge, word = "очень сильное" },
+}
+
+-- Оглушение — секунды (stun.duration).
+EntityInfo.STUN_WORDS = {
+	{ upTo = 0.35, word = "короткое" },
+	{ upTo = math.huge, word = "долгое" },
+}
+
+function EntityInfo.Word(scale, value)
+	for _, step in scale do
+		if value <= step.upTo then
+			return step.word
+		end
+	end
+	return scale[#scale].word
+end
+
+-- Свойства, у которых теперь своя строка в справочнике: в перечне «особенностей»
+-- они бы повторились.
+EntityInfo.RATED_FIELDS = {
+	fireRateBonus = true, fireRateRamp = true, damageMultiplier = true, damagePerSecond = true,
+	slowPercent = true, armorPierce = true, knockback = true, pull = true, stun = true,
+}
+
+-- Из скольких базовых собран элемент (1 у базового; пара одинаковых — дважды). Та же
+-- рекурсия по дереву, что у урона (Effects.Basics): урон снаряда растёт с этим числом.
+local basicsOf = {}
+local function countBasics(key, seen)
+	if basicsOf[key] then
+		return basicsOf[key]
+	end
+	local recipe = recipeOf[key]
+	if not recipe or seen[key] then
+		return 1
+	end
+	seen[key] = true
+	local count = countBasics(recipe.a, seen) + countBasics(recipe.b, seen)
+	basicsOf[key] = count
+	return count
+end
+
+function EntityInfo.Basics(elementKey)
+	return countBasics(elementKey, {})
+end
+
+local function plural(n, one, few, many)
+	local d10, d100 = n % 10, n % 100
+	if d10 == 1 and d100 ~= 11 then
+		return one
+	elseif d10 >= 2 and d10 <= 4 and (d100 < 12 or d100 > 14) then
+		return few
+	end
+	return many
+end
+
+-- Строки характеристик элемента: { label, value }. Скорострельность и урон — всегда,
+-- остальное — только если у элемента это есть.
+function EntityInfo.ElementStats(elementKey, element)
+	local rows = {}
+	local function add(label, value)
+		table.insert(rows, { label = label, value = value })
+	end
+
+	local basics = EntityInfo.Basics(elementKey)
+	add("стоимость", ("%d %s"):format(basics, plural(basics, "базовый элемент", "базовых элемента", "базовых элементов")))
+
+	local ramp = element.fireRateRamp
+	if ramp then
+		add("скорострельность", ("%s, разгоняется до: %s"):format(
+			EntityInfo.Word(EntityInfo.RATE_WORDS, ramp.base or 1),
+			EntityInfo.Word(EntityInfo.RATE_WORDS, ramp.max)
+		))
+	else
+		add("скорострельность", EntityInfo.Word(EntityInfo.RATE_WORDS, 1 + (element.fireRateBonus or 0)))
+	end
+
+	if element.damageRandom then
+		add("урон снаряда", ("случайный: от «%s» до «%s»"):format(
+			EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageRandom.min),
+			EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageRandom.max)
+		))
+	elseif element.damageSpeedScale then
+		add("урон снаряда", ("по скорости цели: от «%s» до «%s»"):format(
+			EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageSpeedScale.min),
+			EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageSpeedScale.max)
+		))
+	elseif element.damageRamp then
+		add("урон снаряда", "растёт с каждым попаданием подряд")
+	else
+		add("урон снаряда", EntityInfo.Word(EntityInfo.DAMAGE_WORDS, element.damageMultiplier or 1))
+	end
+
+	if element.damagePerSecond then
+		add("урон по времени", EntityInfo.Word(EntityInfo.DOT_WORDS, element.damagePerSecond))
+	end
+	if element.armorPierce then
+		add("пробитие брони", EntityInfo.Word(EntityInfo.PIERCE_WORDS, element.armorPierce))
+	end
+	if element.knockback then
+		local word = EntityInfo.Word(EntityInfo.PUSH_WORDS, element.knockback.distance)
+		add("отбрасывание", element.knockback.radial and (word .. ", по площади") or word)
+	end
+	if element.pull then
+		add("притяжение", EntityInfo.Word(EntityInfo.PUSH_WORDS, element.pull.distance))
+	end
+	if element.slowPercent and element.slowPercent > 0 then
+		add("замедление", EntityInfo.Word(EntityInfo.SLOW_WORDS, element.slowPercent))
+	end
+	if element.stun then
+		add("оглушение", EntityInfo.Word(EntityInfo.STUN_WORDS, element.stun.duration))
+	end
+	return rows
+end
+
+-- Остальные свойства элемента — те, у которых нет своей строки (взрыв, цепь, метки…).
+function EntityInfo.ElementFeatures(element)
+	local found = {}
+	for _, trait in EntityInfo.ELEMENT_TRAITS do
+		local value = element[trait.field]
+		if not EntityInfo.RATED_FIELDS[trait.field] and value ~= nil and value ~= false and value ~= 0 then
+			table.insert(found, trait.label)
+		end
+	end
+	return found
 end
 
 return EntityInfo

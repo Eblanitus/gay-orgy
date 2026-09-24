@@ -332,6 +332,8 @@ function Pages.Mount(parent, ctx)
 		onPick = function(key)
 			elements.show(key)
 		end,
+		-- Открытый элемент можно найти и на карте: оттуда видна вся его ветка.
+		onShowOnMap = ctx.showOnMap,
 	}
 
 	elements = page(parent, "ElementsPage", {
@@ -363,21 +365,6 @@ function Pages.Mount(parent, ctx)
 		end,
 		show = function(scroll, key)
 			Detail.Element(scroll, key, elementCtx)
-			-- Открытый элемент можно найти и на карте: оттуда видна вся его ветка.
-			if ctx.known(key) and ctx.showOnMap then
-				local go = Instance.new("TextButton")
-				go.LayoutOrder = 25
-				go.Size = UDim2.new(0, 170, 0, mobile and MobileUI.MIN_TAP or 26)
-				go.FontFace = Theme.font.strong
-				go.TextSize = 11
-				go.Text = Theme.Caps("показать на карте")
-				go.ZIndex = scroll.ZIndex + 1
-				go.Parent = scroll
-				Theme.Button(go, "quiet")
-				go.MouseButton1Click:Connect(function()
-					ctx.showOnMap(key)
-				end)
-			end
 		end,
 	})
 

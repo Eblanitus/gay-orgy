@@ -279,8 +279,67 @@ local function patternView(scroll, order, key)
 	return box
 end
 
--- ctx: known(key) — открыт ли элемент, count(key) — сколько в инвентаре (nil — вне забега),
--- craftable(key) — можно ли скрафтить сейчас, onPick(key) — переход к другому элементу.
+-- Шапка карточки: имя, рецепт и характеристики на фоне узора элемента (просьба автора).
+-- Узор — целиком по ширине шапки, обрезан по высоте; поверх — тёмная вуаль, чтобы текст
+-- читался на любом узоре.
+local function patternHead(scroll, order, key)
+	local element = Elements[key]
+	local spec = Theme.patterns and Theme.patterns[key]
+
+	local head = Instance.new("Frame")
+	head.Name = "Head"
+	head.LayoutOrder = order
+	head.Size = UDim2.new(1, 0, 0, 0)
+	head.AutomaticSize = Enum.AutomaticSize.Y
+	head.BackgroundColor3 = Theme.Shadowed(element.color, 0.6)
+	head.ClipsDescendants = true
+	head.ZIndex = scroll.ZIndex + 1
+	head.Parent = scroll
+	Theme.Corner(head, Theme.radius.control)
+
+	if spec then
+		local image = Instance.new("ImageLabel")
+		image.Size = UDim2.new(1, 0, 1, 0)
+		image.BackgroundTransparency = 1
+		image.Image = spec.image
+		image.ImageColor3 = spec.color or Theme.PatternTint(element.color)
+		image.ImageTransparency = math.min(spec.transparency or 0.7, 0.45)
+		image.ScaleType = Enum.ScaleType.Crop
+		image.ZIndex = head.ZIndex + 1
+		image.Parent = head
+	end
+
+	local veil = Instance.new("Frame")
+	veil.Size = UDim2.new(1, 0, 1, 0)
+	veil.BackgroundColor3 = Color3.new(0, 0, 0)
+	veil.BackgroundTransparency = 0.45
+	veil.BorderSizePixel = 0
+	veil.ZIndex = head.ZIndex + 2
+	veil.Parent = head
+
+	local body = Instance.new("Frame")
+	body.Name = "Body"
+	body.Size = UDim2.new(1, 0, 0, 0)
+	body.AutomaticSize = Enum.AutomaticSize.Y
+	body.BackgroundTransparency = 1
+	body.ZIndex = head.ZIndex + 3
+	body.Parent = head
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 5)
+	layout.Parent = body
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 12)
+	pad.PaddingRight = UDim.new(0, 12)
+	pad.PaddingTop = UDim.new(0, 10)
+	pad.PaddingBottom = UDim.new(0, 12)
+	pad.Parent = body
+	return body
+end
+
+-- ctx: known(key) — открыт ли элемент, craftable(key) — можно ли скрафтить сейчас,
+-- onPick(key) — переход к другому элементу, onShowOnMap(key) — кнопка «показать на карте»
+-- (нет поля — нет кнопки: на самой карте она не нужна).
 function Detail.Element(scroll, key, ctx)
 	clear(scroll)
 	local element = Elements[key]
@@ -296,12 +355,10 @@ function Detail.Element(scroll, key, ctx)
 		return
 	end
 
-	title(scroll, 10, element.name, Theme.Legible(element.color),
-		recipe and ("тир %d"):format(element.tier) or ("тир %d · базовый"):format(element.tier))
-
+	-- Вкладки карточки — сверху, над шапкой с узором.
 	local tabs = Instance.new("Frame")
 	tabs.Name = "Tabs"
-	tabs.LayoutOrder = 20
+	tabs.LayoutOrder = 10
 	tabs.Size = UDim2.new(1, 0, 0, mobile and MobileUI.MIN_TAP or 26)
 	tabs.BackgroundTransparency = 1
 	tabs.ZIndex = scroll.ZIndex + 1
@@ -311,14 +368,23 @@ function Detail.Element(scroll, key, ctx)
 	tabsLayout.Padding = UDim.new(0, 6)
 	tabsLayout.Parent = tabs
 	local uses = Detail.UsedIn(key)
-	tabButton(tabs, "описание", elementTab == "about", function()
-		elementTab = "about"
-		Detail.Element(scroll, key, ctx)
-	end)
-	tabButton(tabs, ("в крафтах · %d"):format(#uses), elementTab == "uses", function()
-		elementTab = "uses"
-		Detail.Element(scroll, key, ctx)
-	end)
+	for _, tab in {
+		{ id = "about", caption = "описание" },
+		{ id = "uses", caption = ("в крафтах · %d"):format(#uses) },
+		{ id = "pattern", caption = "узор" },
+	} do
+		local button = tabButton(tabs, tab.caption, elementTab == tab.id, function()
+			elementTab = tab.id
+			Detail.Element(scroll, key, ctx)
+		end)
+		button.Size = UDim2.new(1 / 3, -4, 1, 0)
+	end
+
+	if elementTab == "pattern" then
+		-- Узор целиком — разглядеть все детали; нажатие раскрывает его на всю панель.
+		patternView(scroll, 20, key)
+		return
+	end
 
 	if elementTab == "uses" then
 		-- Во что идёт дальше. Неоткрытые рецепты не называются даже вторым ингредиентом:
@@ -345,30 +411,44 @@ function Detail.Element(scroll, key, ctx)
 		return
 	end
 
-	patternView(scroll, 30, key)
+	-- «Описание»: шапка на узоре — от имени до «показать на карте», под ней текст.
+	local head = patternHead(scroll, 20, key)
+	title(head, 10, element.name, Theme.Legible(element.color))
 
 	if recipe then
-		reading(scroll, 40, "рецепт", Theme.Caps(("%s + %s"):format(Elements[recipe.a].name, Elements[recipe.b].name)))
+		reading(head, 20, "рецепт", Theme.Caps(("%s + %s"):format(Elements[recipe.a].name, Elements[recipe.b].name)))
 	else
-		reading(scroll, 40, "где взять", Theme.Caps("производитель, за материю"))
+		reading(head, 20, "источник", Theme.Caps("производитель, за материю"))
 	end
 
-	local have = ctx.count and ctx.count(key)
-	if have then
-		reading(scroll, 50, "в инвентаре", tostring(have), have > 0 and Theme.color.text or Theme.color.textMute)
+	for index, row in EntityInfo.ElementStats(key, element) do
+		reading(head, 30 + index, row.label, Theme.Caps(row.value))
+	end
+
+	local features = EntityInfo.ElementFeatures(element)
+	if #features > 0 then
+		reading(head, 60, "особенности", Theme.Caps(table.concat(features, " · ")), Theme.color.accent)
 	end
 	if recipe and ctx.craftable and ctx.craftable(key) then
-		text(scroll, 60, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,
+		text(head, 70, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,
 			Theme.font.strong)
 	end
-
-	local traits = EntityInfo.ElementTraits(element, 99)
-	if #traits > 0 then
-		reading(scroll, 70, "свойства", Theme.Caps(table.concat(traits, " · ")), Theme.color.accent)
+	if ctx.onShowOnMap then
+		local go = Instance.new("TextButton")
+		go.LayoutOrder = 80
+		go.Size = UDim2.new(0, 170, 0, mobile and MobileUI.MIN_TAP or 26)
+		go.FontFace = Theme.font.strong
+		go.TextSize = 11
+		go.Text = Theme.Caps("показать на карте")
+		go.ZIndex = head.ZIndex + 1
+		go.Parent = head
+		Theme.Button(go, "quiet")
+		go.MouseButton1Click:Connect(function()
+			ctx.onShowOnMap(key)
+		end)
 	end
 
-	rule(scroll, 80)
-	text(scroll, 90, WikiTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)
+	text(scroll, 40, WikiTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)
 end
 
 -- ---------- жук ----------
