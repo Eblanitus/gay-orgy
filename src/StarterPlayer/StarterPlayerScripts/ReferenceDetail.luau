@@ -142,38 +142,41 @@ local function rule(scroll, order)
 	return line
 end
 
--- Разделитель с подписью посередине: «——— эффект ———».
-local function divider(scroll, order, caption)
+-- Разделитель: подпись слева, от неё до края — черта. Цвет — цвет имени элемента.
+local function divider(scroll, order, caption, color)
 	local row = Instance.new("Frame")
 	row.LayoutOrder = order
 	row.Size = UDim2.new(1, 0, 0, TEXT + 12)
 	row.BackgroundTransparency = 1
 	row.ZIndex = scroll.ZIndex + 1
 	row.Parent = scroll
-	local label = text(row, 0, Theme.Caps(caption), TEXT, Theme.color.accent, Theme.font.strong)
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 8)
+	layout.Parent = row
+	local label = text(row, 1, Theme.Caps(caption), TEXT, color, Theme.font.strong)
 	label.AutomaticSize = Enum.AutomaticSize.X
 	label.Size = UDim2.new(0, 0, 1, 0)
-	label.Position = UDim2.new(0.5, 0, 0, 0)
-	label.AnchorPoint = Vector2.new(0.5, 0)
-	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.TextYAlignment = Enum.TextYAlignment.Center
-	for side = 0, 1 do
-		local line = Instance.new("Frame")
-		line.AnchorPoint = Vector2.new(side, 0.5)
-		line.Position = UDim2.new(side, 0, 0.5, 0)
-		line.Size = UDim2.new(0.5, -(TEXT * 3), 0, 2)
-		line.BackgroundColor3 = Theme.color.accent
-		line.BackgroundTransparency = 0.35
-		line.BorderSizePixel = 0
-		line.ZIndex = row.ZIndex + 1
-		line.Parent = row
-	end
+	local line = Instance.new("Frame")
+	line.LayoutOrder = 2
+	line.Size = UDim2.new(0, 0, 0, 2)
+	line.BackgroundColor3 = color
+	line.BackgroundTransparency = 0.35
+	line.BorderSizePixel = 0
+	line.ZIndex = row.ZIndex + 1
+	line.Parent = row
+	local flex = Instance.new("UIFlexItem") -- черта занимает всё место справа от подписи
+	flex.FlexMode = Enum.UIFlexMode.Fill
+	flex.Parent = line
 	return row
 end
 
 -- Блок под разделителем: строки с отступом и цветной чертой слева — видно, что это уже
 -- не общие характеристики, а своё у элемента.
-local function effectBlock(scroll, order)
+local function effectBlock(scroll, order, color)
 	local block = Instance.new("Frame")
 	block.LayoutOrder = order
 	block.Size = UDim2.new(1, 0, 0, 0)
@@ -184,7 +187,7 @@ local function effectBlock(scroll, order)
 	-- Черта — отдельно от списка строк: UIListLayout поставил бы её в очередь.
 	local bar = Instance.new("Frame")
 	bar.Size = UDim2.new(0, 2, 1, 0)
-	bar.BackgroundColor3 = Theme.color.accent
+	bar.BackgroundColor3 = color
 	bar.BackgroundTransparency = 0.3
 	bar.BorderSizePixel = 0
 	bar.ZIndex = block.ZIndex + 1
@@ -503,8 +506,9 @@ function Detail.Element(scroll, key, ctx)
 	local features = EntityInfo.ElementFeatures(key, element)
 	local effects = EntityInfo.ElementEffects(key, element)
 	if #unique + #features + #effects > 0 then
-		divider(head, 50, "эффект")
-		local block = effectBlock(head, 51)
+		local tint = Theme.Legible(element.color) -- как у имени элемента
+		divider(head, 50, "эффект", tint)
+		local block = effectBlock(head, 51, tint)
 		if #effects > 0 then
 			-- *так* в подписи эффекта — выделение (EntityInfo.ELEMENT_EFFECTS). Теги — после Caps:
 			-- заглавные имена тегов RichText не понимает.
@@ -516,9 +520,7 @@ function Detail.Element(scroll, key, ctx)
 			text(block, 2, Theme.Caps(table.concat(features, " · ")), TEXT, Theme.color.accent, Theme.font.strong)
 		end
 		for index, row in unique do
-			text(block, 10 + index, ("%s  <font color=\"#%s\"><b>%s</b></font>"):format(
-				Theme.Caps(row.label), Theme.color.text:ToHex(), Theme.Caps(row.value)
-			), TEXT, Theme.color.textMute)
+			reading(block, 10 + index, row.label, Theme.Caps(row.value))
 		end
 	end
 	if recipe and ctx.craftable and ctx.craftable(key) then

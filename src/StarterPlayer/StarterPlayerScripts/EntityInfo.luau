@@ -289,6 +289,16 @@ function EntityInfo.ElementStats(elementKey, element)
 			add("длительность эффекта", EntityInfo.Word(EntityInfo.DURATION_WORDS, element.duration))
 		end
 	end
+	-- Дым и Смог: удар раз в несколько попаданий подряд — в ДПС он входит своей долей.
+	local burst = element.breakthrough
+	if burst then
+		local basics = math.max(1, matter / 10)
+		add("дпс снаряда с эффектом", dps(multiplier + burst.damage / burst.hits / (5 * basics)))
+		add("удар каждые", ("%d %s"):format(burst.hits, plural(burst.hits, "попадание", "попадания", "попаданий")))
+		if burst.zone then
+			add("длительность зоны", EntityInfo.Word(EntityInfo.DURATION_WORDS, burst.zone.duration))
+		end
+	end
 	-- Кислота не пробивает броню попаданием, а разъедает её эффектом, пока не снимет совсем —
 	-- «неограниченное» (у Кислотного дождя — через кислотную зону); «максимальное» — сразу
 	-- и полностью, как у Алмаза.
