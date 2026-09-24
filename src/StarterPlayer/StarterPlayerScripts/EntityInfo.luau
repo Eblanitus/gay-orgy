@@ -134,15 +134,10 @@ EntityInfo.DAMAGE_WORDS = {
 	{ upTo = 1.2, word = "нормальный" },
 	{ upTo = 2, word = "сильный" },
 	{ upTo = 3, word = "очень сильный" },
-	{ upTo = math.huge, word = "огромный" },
-}
-
--- ДПС эффекта — урон по времени в секунду (damagePerSecond).
-EntityInfo.DOT_WORDS = {
-	{ upTo = 5, word = "слабый" },
-	{ upTo = 10, word = "нормальный" },
-	{ upTo = 15, word = "сильный" },
-	{ upTo = math.huge, word = "очень сильный" },
+	{ upTo = 5, word = "огромный" },
+	-- Выше — только снаряд с эффектом на полных стеках: у горения и кислоты урон копится.
+	{ upTo = 10, word = "колоссальный" },
+	{ upTo = math.huge, word = "запредельный" },
 }
 
 -- Доля брони, которую элемент игнорирует (armorPierce).
@@ -282,8 +277,14 @@ function EntityInfo.ElementStats(elementKey, element)
 	end
 	add("дпс снаряда", dps(multiplier))
 
+	-- Снаряд и эффект одной строкой (просьба автора: игрок сам их не сложит). Урон эффекта
+	-- переводится в доли урона снаряда: снаряд бьёт на Towers.Ballista.damage (5) за каждый
+	-- базовый элемент в составе. Стеки копятся, пока старый не истёк: при частой стрельбе
+	-- на жуке висит duration × rate стеков, но не больше maxStacks.
 	if element.damagePerSecond then
-		add("дпс эффекта", EntityInfo.Word(EntityInfo.DOT_WORDS, element.damagePerSecond))
+		local basics = math.max(1, matter / 10)
+		local stacks = math.clamp((element.duration or 1) * rate, 1, element.maxStacks or 1)
+		add("дпс снаряда с эффектом", dps(multiplier + element.damagePerSecond * stacks / (5 * basics * rate)))
 		if element.duration then
 			add("длительность эффекта", EntityInfo.Word(EntityInfo.DURATION_WORDS, element.duration))
 		end
