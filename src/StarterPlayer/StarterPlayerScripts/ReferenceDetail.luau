@@ -142,6 +142,66 @@ local function rule(scroll, order)
 	return line
 end
 
+-- Разделитель с подписью посередине: «——— эффект ———».
+local function divider(scroll, order, caption)
+	local row = Instance.new("Frame")
+	row.LayoutOrder = order
+	row.Size = UDim2.new(1, 0, 0, SMALL + 8)
+	row.BackgroundTransparency = 1
+	row.ZIndex = scroll.ZIndex + 1
+	row.Parent = scroll
+	local label = text(row, 0, Theme.Caps(caption), SMALL, Theme.color.accent, Theme.font.strong)
+	label.AutomaticSize = Enum.AutomaticSize.X
+	label.Size = UDim2.new(0, 0, 1, 0)
+	label.Position = UDim2.new(0.5, 0, 0, 0)
+	label.AnchorPoint = Vector2.new(0.5, 0)
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	for side = 0, 1 do
+		local line = Instance.new("Frame")
+		line.AnchorPoint = Vector2.new(side, 0.5)
+		line.Position = UDim2.new(side, 0, 0.5, 0)
+		line.Size = UDim2.new(0.5, -(SMALL * 3), 0, 1)
+		line.ZIndex = row.ZIndex + 1
+		line.Parent = row
+		Theme.Rule(line)
+		line.BackgroundTransparency = 0.4
+	end
+	return row
+end
+
+-- Блок под разделителем: строки с отступом и цветной чертой слева — видно, что это уже
+-- не общие характеристики, а своё у элемента.
+local function effectBlock(scroll, order)
+	local block = Instance.new("Frame")
+	block.LayoutOrder = order
+	block.Size = UDim2.new(1, 0, 0, 0)
+	block.AutomaticSize = Enum.AutomaticSize.Y
+	block.BackgroundTransparency = 1
+	block.ZIndex = scroll.ZIndex + 1
+	block.Parent = scroll
+	-- Черта — отдельно от списка строк: UIListLayout поставил бы её в очередь.
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(0, 2, 1, 0)
+	bar.BackgroundColor3 = Theme.color.accent
+	bar.BackgroundTransparency = 0.3
+	bar.BorderSizePixel = 0
+	bar.ZIndex = block.ZIndex + 1
+	bar.Parent = block
+	local rows = Instance.new("Frame")
+	rows.Position = UDim2.new(0, 10, 0, 0)
+	rows.Size = UDim2.new(1, -10, 0, 0)
+	rows.AutomaticSize = Enum.AutomaticSize.Y
+	rows.BackgroundTransparency = 1
+	rows.ZIndex = block.ZIndex
+	rows.Parent = block
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 3)
+	layout.Parent = rows
+	return rows
+end
+
 -- Строка-ссылка на другой элемент: нажатие ведёт к нему (ctx.onPick).
 local function link(scroll, order, key, value, ctx)
 	local button = Instance.new("TextButton")
@@ -427,21 +487,35 @@ function Detail.Element(scroll, key, ctx)
 		reading(head, 20, "источник", Theme.Caps("производитель"))
 	end
 
+	-- Над разделителем «эффект» — что есть у каждого элемента, под ним — чем он особенный.
+	local unique = {}
 	for index, row in EntityInfo.ElementStats(key, element) do
-		reading(head, 30 + index, row.label, Theme.Caps(row.value))
+		if EntityInfo.STANDARD_STATS[row.label] then
+			reading(head, 30 + index, row.label, Theme.Caps(row.value))
+		else
+			table.insert(unique, row)
+		end
 	end
-
 	local features = EntityInfo.ElementFeatures(key, element)
-	if #features > 0 then
-		reading(head, 60, "особенности", Theme.Caps(table.concat(features, " · ")), Theme.color.accent)
-	end
 	local effects = EntityInfo.ElementEffects(key, element)
-	if #effects > 0 then
-		-- *так* в подписи эффекта — выделение (EntityInfo.ELEMENT_EFFECTS). Теги — после Caps:
-		-- заглавные имена тегов RichText не понимает.
-		local value = Theme.Caps(table.concat(effects, " · ")):gsub("%*(.-)%*",
-			("<font color=\"#%s\">%%1</font>"):format(Theme.color.action:ToHex()))
-		reading(head, 61, "эффект", value, Theme.color.accent)
+	if #unique + #features + #effects > 0 then
+		divider(head, 50, "эффект")
+		local block = effectBlock(head, 51)
+		if #effects > 0 then
+			-- *так* в подписи эффекта — выделение (EntityInfo.ELEMENT_EFFECTS). Теги — после Caps:
+			-- заглавные имена тегов RichText не понимает.
+			local value = Theme.Caps(table.concat(effects, " · ")):gsub("%*(.-)%*",
+				("<font color=\"#%s\">%%1</font>"):format(Theme.color.action:ToHex()))
+			text(block, 1, value, TEXT, Theme.color.accent, Theme.font.strong)
+		end
+		if #features > 0 then
+			text(block, 2, Theme.Caps(table.concat(features, " · ")), SMALL, Theme.color.accent, Theme.font.strong)
+		end
+		for index, row in unique do
+			text(block, 10 + index, ("%s  <font color=\"#%s\"><b>%s</b></font>"):format(
+				Theme.Caps(row.label), Theme.color.text:ToHex(), Theme.Caps(row.value)
+			), SMALL, Theme.color.textMute)
+		end
 	end
 	if recipe and ctx.craftable and ctx.craftable(key) then
 		text(head, 70, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,
