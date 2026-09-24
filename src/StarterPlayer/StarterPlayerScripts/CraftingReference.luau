@@ -522,9 +522,10 @@ return function(deps)
 		return codexRevealed or killed[key] == true
 	end
 
-	-- Орбиты карты открываются поэтапно (#273): пока видны ярусы до OPEN_DEPTH включительно,
-	-- дальние кольца, их узлы и связи не рисуются вовсе. Условия открытия следующих орбит
-	-- ещё не придуманы; CODEX открывает все. Ярус — глубина по рецептам (RecipeGraph.depth),
+	-- Орбиты карты открываются поэтапно (#273, #274): пока видны ярусы до OPEN_DEPTH
+	-- включительно, дальних колец на карте нет вовсе. На открытых орбитах — только открытые
+	-- элементы: неоткрытых «???» нет, элемент появляется, когда открыт его рецепт.
+	-- Условия открытия следующих орбит ещё не придуманы; CODEX открывает всё. Ярус — глубина по рецептам (RecipeGraph.depth),
 	-- до сборки карты — ярус из Elements.
 	local OPEN_DEPTH = 1
 	local function orbitShown(depth)
@@ -553,6 +554,13 @@ return function(deps)
 	-- Открыт ли элемент: базовые — всегда (их покупают, а не открывают), остальные — по рецепту.
 	local function isKnown(key)
 		return Elements[key] ~= nil and (Elements[key].tier == 0 or knownRecipes[key] == true)
+	end
+
+	-- Нарисован ли элемент на карте: орбита открыта и сам он открыт (с CODEX — все).
+	-- drawnCount — сколько их нарисовано при последней сборке (-1 — ещё не собрана).
+	local drawnCount = -1
+	local function onMap(key)
+		return orbitOpen(key) and (codexRevealed or isKnown(key))
 	end
 
 	local function countOf(key)
@@ -1358,13 +1366,15 @@ return function(deps)
 			edgesOf[key] = {}
 		end
 		for _, edge in graph.edges do
-			if orbitOpen(edge.child) and orbitOpen(edge.parent) then
+			if onMap(edge.child) and onMap(edge.parent) then
 				drawEdge(edge)
 			end
 		end
+		drawnCount = 0
 		for _, key in graph.keys do
-			if orbitOpen(key) then
+			if onMap(key) then
 				drawNode(key)
+				drawnCount += 1
 			end
 		end
 
@@ -1548,7 +1558,7 @@ return function(deps)
 	-- список — ко всем открытым рецептам.
 	function selectNode(key)
 		-- Узел за закрытой орбитой на карте не нарисован — и выбрать нечего.
-		if key ~= nil and not orbitOpen(key) then
+		if key ~= nil and not onMap(key) then
 			return
 		end
 		if key ~= nil and key == selected then
@@ -1718,7 +1728,7 @@ return function(deps)
 		elementKills = killsByElement,
 		enemyKills = killsOfEnemy,
 		glass = window.glass,
-		onMap = orbitOpen,
+		onMap = onMap,
 		showOnMap = function(key)
 			setMode("map")
 			task.defer(function()
@@ -1915,9 +1925,26 @@ return function(deps)
 	end
 
 	-- Всё, что зависит от инвентаря и открытого, перерисовывается одним вызовом.
+	-- Сколько элементов сейчас на карте: изменилось — карту надо пересобрать, а не
+	-- перекрасить (новый элемент на ней ещё не нарисован). Сам счёт ведёт drawGraph.
+	local function mapCount()
+		local n = 0
+		for _, key in graph.keys do
+			if onMap(key) then
+				n += 1
+			end
+		end
+		return n
+	end
+
 	local function refreshKnowledge()
 		if graph then
-			repaint()
+			local n = mapCount()
+			if n ~= drawnCount then
+				drawGraph()
+			else
+				repaint()
+			end
 		end
 		refreshBook()
 		pages.elements.refresh()
@@ -1932,7 +1959,7 @@ return function(deps)
 		if type(resultKey) == "string" and not seenRecipes[resultKey] then
 			seenRecipes[resultKey] = true
 			if recipesReady then
-				if orbitOpen(resultKey) then
+				if onMap(resultKey) then
 					markFresh("map", resultKey, "новый")
 				end
 				markFresh("elements", resultKey, "открыт")
@@ -1941,10 +1968,6 @@ return function(deps)
 	end)
 	Remotes:WaitForChild("EnemiesRevealed").OnClientEvent:Connect(function()
 		codexRevealed = true
-		-- Открылись все орбиты: карту — заново, с дальними кольцами.
-		if graph then
-			drawGraph()
-		end
 		-- CODEX открывает всё сразу: сотня вспышек ничего бы не сказала.
 		for _, list in fresh do
 			table.clear(list)
