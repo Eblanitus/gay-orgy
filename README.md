@@ -3,6 +3,8 @@
 - `src/` — все скрипты и RemoteEvent'ы текстом, по папкам как в Explorer.
 - `place/game.rbxl` — снимок всего места (карта, модели, шаблоны). Открывается в Studio через **File → Open from File**.
 - `default.project.json` — проект Rojo: переносит `src/` в Studio.
+- `ВИКИПЕДИЯ/` — дизайн-документы, `Устаревшие документы/` — архив, `Отчёты/` — сводки по неделям.
+- `inbox/` — сюда заливать файлы через GitHub (Add file → Upload files).
 - `RULES.md`, `CLAUDE.md` — правила для агентов, `CHANGELOG.md` — история задач.
 
 Суффикс файла задаёт тип скрипта: `.server.luau` — Script, `.client.luau` — LocalScript, `.luau` — ModuleScript.
