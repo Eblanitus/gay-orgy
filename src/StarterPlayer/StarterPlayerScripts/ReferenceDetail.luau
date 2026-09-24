@@ -4,7 +4,7 @@
 -- вкладок «Элементы» и «Жуки». Две копии разошлись бы при первой же правке — то же правило,
 -- что у EntityInfo.
 --
--- Слова берутся из вики (WikiTexts, собирается tools/wiki_texts.py), числа и свойства — из
+-- Слова — из ReferenceTexts (тексты для игрока по смыслу вики), числа и свойства — из
 -- таблиц игры (Elements, Enemies, EntityInfo). Своих описаний здесь нет: фраза от себя
 -- разошлась бы с тем, что делает код, при первой правке баланса.
 --
@@ -21,14 +21,15 @@ local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
 local Recipes = require(ReplicatedStorage:WaitForChild("Recipes"))
-local WikiTexts = require(ReplicatedStorage:WaitForChild("WikiTexts"))
+local ReferenceTexts = require(ReplicatedStorage:WaitForChild("ReferenceTexts"))
 local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
 
 local Detail = {}
 
 local mobile = MobileUI.isMobile
-local TEXT = mobile and 13 or 14
-local SMALL = mobile and 11 or 12
+-- Места в карточке много — текст крупный (просьба автора: описание было слишком мелким).
+local TEXT = mobile and 15 or 18
+local SMALL = mobile and 13 or 14
 
 -- Во что идёт элемент: рецепты, где он один из двух ингредиентов. Считается один раз.
 local usedIn = {}
@@ -114,7 +115,7 @@ local function text(scroll, order, value, size, color, font)
 end
 
 local function title(scroll, order, value, color, mark)
-	local label = text(scroll, order, Theme.Caps(value), mobile and 20 or 24, color, Theme.font.strong)
+	local label = text(scroll, order, Theme.Caps(value), mobile and 22 or 30, color, Theme.font.strong)
 	label.TextWrapped = false
 	label.TextTruncate = Enum.TextTruncate.AtEnd
 	if mark then
@@ -370,7 +371,7 @@ function Detail.Element(scroll, key, ctx)
 	local uses = Detail.UsedIn(key)
 	for _, tab in {
 		{ id = "about", caption = "описание" },
-		{ id = "uses", caption = ("в крафтах · %d"):format(#uses) },
+		{ id = "uses", caption = ("используется в · %d"):format(#uses) },
 		{ id = "pattern", caption = "узор" },
 	} do
 		local button = tabButton(tabs, tab.caption, elementTab == tab.id, function()
@@ -418,7 +419,7 @@ function Detail.Element(scroll, key, ctx)
 	if recipe then
 		reading(head, 20, "рецепт", Theme.Caps(("%s + %s"):format(Elements[recipe.a].name, Elements[recipe.b].name)))
 	else
-		reading(head, 20, "источник", Theme.Caps("производитель, за материю"))
+		reading(head, 20, "источник", Theme.Caps("производитель"))
 	end
 
 	for index, row in EntityInfo.ElementStats(key, element) do
@@ -448,7 +449,7 @@ function Detail.Element(scroll, key, ctx)
 		end)
 	end
 
-	text(scroll, 40, WikiTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)
+	text(scroll, 40, ReferenceTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)
 end
 
 -- ---------- жук ----------
@@ -563,7 +564,7 @@ function Detail.Enemy(scroll, key, ctx)
 	end
 
 	rule(scroll, 40)
-	local wiki = WikiTexts.enemies[enemy.name]
+	local wiki = ReferenceTexts.enemies[enemy.name]
 	text(scroll, 50, wiki and wiki.text or "Описания в вики пока нет.", TEXT, Theme.color.text)
 	if wiki and wiki.lesson then
 		text(scroll, 60, ("<b>%s</b>  %s"):format(Theme.Caps("урок:"), wiki.lesson), TEXT, Theme.color.accent)

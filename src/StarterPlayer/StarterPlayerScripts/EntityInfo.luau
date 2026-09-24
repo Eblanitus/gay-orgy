@@ -12,6 +12,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Recipes = require(ReplicatedStorage:WaitForChild("Recipes"))
+local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 
 local EntityInfo = {}
 
@@ -147,9 +148,8 @@ end
 -- пороги, по которым число становится словом. Порог — верхняя граница ступени:
 -- значение до неё включительно получает это слово.
 
--- Во сколько раз темп элемента отличается от темпа турели (1 + fireRateBonus). Для разгона —
--- его потолок: ramp.max считается в выстрелах в секунду, и у турели в 1 выстрел/сек это
--- ровно множитель.
+-- Во сколько раз темп элемента отличается от темпа турели (1 + fireRateBonus). У разгонных
+-- (fireRateRamp) — стартовый темп: разгон — способность, он идёт в «особенности».
 EntityInfo.RATE_WORDS = {
 	{ upTo = 0.3, word = "безумно медленная" },
 	{ upTo = 0.6, word = "очень медленная" },
@@ -183,7 +183,7 @@ EntityInfo.DOT_WORDS = {
 EntityInfo.PIERCE_WORDS = {
 	{ upTo = 0.55, word = "частичное" },
 	{ upTo = 0.99, word = "почти полное" },
-	{ upTo = math.huge, word = "полное" },
+	{ upTo = math.huge, word = "неограниченное" },
 }
 
 -- Отбрасывание и притяжение — на сколько studs (knockback.distance, pull.distance).
@@ -220,29 +220,30 @@ end
 -- Свойства, у которых теперь своя строка в справочнике: в перечне «особенностей»
 -- они бы повторились.
 EntityInfo.RATED_FIELDS = {
-	fireRateBonus = true, fireRateRamp = true, damageMultiplier = true, damagePerSecond = true,
+	fireRateBonus = true, damageMultiplier = true, damagePerSecond = true,
 	slowPercent = true, armorPierce = true, knockback = true, pull = true, stun = true,
 }
 
--- Из скольких базовых собран элемент (1 у базового; пара одинаковых — дважды). Та же
--- рекурсия по дереву, что у урона (Effects.Basics): урон снаряда растёт с этим числом.
-local basicsOf = {}
-local function countBasics(key, seen)
-	if basicsOf[key] then
-		return basicsOf[key]
+-- Сколько материи стоит элемент: цена покупки каждого базового в его составе (поле cost),
+-- по всему дереву рецептов; пара одинаковых — дважды. Та же рекурсия, что у урона
+-- (Effects.Basics): чем дороже элемент, тем тяжелее его снаряд.
+local matterOf = {}
+local function countMatter(key, seen)
+	if matterOf[key] then
+		return matterOf[key]
 	end
 	local recipe = recipeOf[key]
 	if not recipe or seen[key] then
-		return 1
+		return (Elements[key] and Elements[key].cost) or 0
 	end
 	seen[key] = true
-	local count = countBasics(recipe.a, seen) + countBasics(recipe.b, seen)
-	basicsOf[key] = count
-	return count
+	local total = countMatter(recipe.a, seen) + countMatter(recipe.b, seen)
+	matterOf[key] = total
+	return total
 end
 
-function EntityInfo.Basics(elementKey)
-	return countBasics(elementKey, {})
+function EntityInfo.MatterCost(elementKey)
+	return countMatter(elementKey, {})
 end
 
 local function plural(n, one, few, many)
@@ -263,18 +264,12 @@ function EntityInfo.ElementStats(elementKey, element)
 		table.insert(rows, { label = label, value = value })
 	end
 
-	local basics = EntityInfo.Basics(elementKey)
-	add("стоимость", ("%d %s"):format(basics, plural(basics, "базовый элемент", "базовых элемента", "базовых элементов")))
+	local matter = EntityInfo.MatterCost(elementKey)
+	add("стоимость", ("%d %s"):format(matter, plural(matter, "материя", "материи", "материи")))
 
 	local ramp = element.fireRateRamp
-	if ramp then
-		add("скорострельность", ("%s, разгоняется до: %s"):format(
-			EntityInfo.Word(EntityInfo.RATE_WORDS, ramp.base or 1),
-			EntityInfo.Word(EntityInfo.RATE_WORDS, ramp.max)
-		))
-	else
-		add("скорострельность", EntityInfo.Word(EntityInfo.RATE_WORDS, 1 + (element.fireRateBonus or 0)))
-	end
+	add("скорострельность", EntityInfo.Word(EntityInfo.RATE_WORDS,
+		ramp and (ramp.base or 1) or (1 + (element.fireRateBonus or 0))))
 
 	if element.damageRandom then
 		add("урон снаряда", ("случайный: от «%s» до «%s»"):format(
