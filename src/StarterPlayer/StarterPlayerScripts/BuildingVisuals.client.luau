@@ -640,6 +640,7 @@ local function rigStep(dt)
 	for index = #rigs, 1, -1 do
 		local entry = rigs[index]
 		if not entry.model.Parent then
+			entry.partAdded:Disconnect()
 			table.remove(rigs, index) -- турель снесли
 		else
 			local elapsed = now - entry.shotClock
@@ -747,36 +748,70 @@ local function addRigTracker(building)
 		return false -- модель ещё не доехала целиком: попытку повторит watchFor
 	end
 
-	local pitchNode = rig.pitchNode and yawNode:FindFirstChild(rig.pitchNode, true)
-	local recoilNode = rig.recoilNode and yawNode:FindFirstChild(rig.recoilNode, true)
-	local drumNode = rig.drumNode and yawNode:FindFirstChild(rig.drumNode, true)
-	local rammerNode = rig.rammerNode and yawNode:FindFirstChild(rig.rammerNode, true)
-
 	-- Пивот берётся ПОЛНЫЙ, с поворотом постройки: origin детали — это её место
 	-- в СОБСТВЕННОЙ системе турели. Наведение этот поворот ЗАМЕНЯЕТ (угол с сервера
 	-- мировой), поэтому в кадре умножаем на позицию пивота без его вращения —
 	-- иначе поворот считался бы дважды.
 	local pivot = building:GetPivot()
 	local parts = {}
-	for _, part in yawNode:GetDescendants() do
-		if part:IsA("BasePart") then
-			table.insert(parts, {
-				part = part,
-				origin = pivot:Inverse() * part.CFrame,
-				-- Порядок проверок в кадре: откат -> наклон -> барабан -> просто круг.
-				-- Ствол попадает и в recoils, и в pitches — откат считается поверх наклона
-				-- и его включает в себя.
-				pitches = pitchNode ~= nil and part:IsDescendantOf(pitchNode),
-				recoils = recoilNode ~= nil and part:IsDescendantOf(recoilNode),
-				rams = rammerNode ~= nil and part:IsDescendantOf(rammerNode),
-				drums = drumNode ~= nil and part:IsDescendantOf(drumNode),
-			})
+	local known = {}
+	local entry
+
+	-- Лежит ли деталь под узлом с этим именем — подъёмом по предкам до yawNode,
+	-- а не заранее найденным узлом: узел (тот же MainBarrel) мог доехать позже круга,
+	-- и найденный один раз nil навсегда оставил бы ствол без отката и наклона.
+	-- Предок у детали есть всегда: ребёнок не приходит клиенту раньше родителя.
+	local function under(part, name)
+		if not name then
+			return false
 		end
+		local node = part.Parent
+		while node and node ~= yawNode do
+			if node.Name == name then
+				return true
+			end
+			node = node.Parent
+		end
+		return false
+	end
+
+	-- Модель доезжает по частям (см. watchFor выше): деталь, пришедшая после того, как
+	-- появился yawNode, раньше в список не попадала и стояла на месте до конца забега —
+	-- та самая редкая «половина Инжектора не анимируется». Поэтому, как у Колбы,
+	-- слушается и DescendantAdded. known — чтобы деталь, выгруженная стримингом
+	-- и приехавшая снова, не встала в список дважды.
+	local function addPart(part)
+		if not part:IsA("BasePart") or known[part] then
+			return
+		end
+		known[part] = true
+		table.insert(parts, {
+			part = part,
+			-- Сервер риг не двигает (крутит его только этот клиент), поэтому CFrame
+			-- опоздавшей детали — всё та же поза покоя, и origin из неё верный.
+			origin = pivot:Inverse() * part.CFrame,
+			-- Порядок проверок в кадре: откат -> наклон -> барабан -> просто круг.
+			-- Ствол попадает и в recoils, и в pitches — откат считается поверх наклона
+			-- и его включает в себя.
+			pitches = under(part, rig.pitchNode),
+			recoils = under(part, rig.recoilNode),
+			rams = under(part, rig.rammerNode),
+			drums = under(part, rig.drumNode),
+		})
+		if entry then
+			-- Стоящую турель rigStep не перерисовывает: без этого опоздавшая деталь
+			-- осталась бы в позе покоя до следующего доворота или выстрела.
+			entry.posed = false
+		end
+	end
+
+	for _, part in yawNode:GetDescendants() do
+		addPart(part)
 	end
 
 	local look = pivot.LookVector
 	local trunnion = CFrame.new(rig.trunnion)
-	table.insert(rigs, {
+	entry = {
 		model = building,
 		parts = parts,
 		trunnion = trunnion,
@@ -800,7 +835,9 @@ local function addRigTracker(building)
 		drumTo = 0,
 		-- Выстрела ещё не было: любое elapsed отсюда заведомо больше всех сроков.
 		shotClock = -math.huge,
-	})
+		partAdded = yawNode.DescendantAdded:Connect(addPart),
+	}
+	table.insert(rigs, entry)
 
 	if not rigConnection then
 		rigConnection = RunService.RenderStepped:Connect(rigStep)
