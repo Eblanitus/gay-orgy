@@ -517,18 +517,25 @@ function Detail.Element(scroll, key, ctx)
 	local effects = EntityInfo.ElementEffects(key, element)
 	if #unique + #features + #effects > 0 then
 		local tint = Theme.Legible(element.color) -- как у имени элемента
-		local list
+		-- Подпись разделителя — по тому, что стоит рядом: эффект (остаётся на жуке) или
+		-- особенность (как стреляет турель). Есть и то и другое — особенности строкой ниже.
+		local featureCaption = #features > 1 and "особенности" or "особенность"
+		local featureList = Theme.Caps(table.concat(features, " · "))
+		local caption, list = "эффект", nil
 		if #effects > 0 then
 			-- *так* в подписи эффекта — выделение (EntityInfo.ELEMENT_EFFECTS). Теги — после Caps:
 			-- заглавные имена тегов RichText не понимает.
 			list = Theme.Caps(table.concat(effects, " · ")):gsub("%*(.-)%*",
 				("<font color=\"#%s\">%%1</font>"):format(Theme.color.action:ToHex()))
+		elseif #features > 0 then
+			caption, list = featureCaption, featureList
 		end
-		divider(head, 50, "эффект", list, tint)
-		if #features + #unique > 0 then
+		divider(head, 50, caption, list, tint)
+		local featuresBelow = #effects > 0 and #features > 0
+		if featuresBelow or #unique > 0 then
 			local block = effectBlock(head, 51, tint)
-			if #features > 0 then
-				text(block, 2, Theme.Caps(table.concat(features, " · ")), TEXT, tint, Theme.font.strong)
+			if featuresBelow then
+				reading(block, 2, featureCaption, featureList, tint)
 			end
 			for index, row in unique do
 				reading(block, 10 + index, row.label, Theme.Caps(row.value))
