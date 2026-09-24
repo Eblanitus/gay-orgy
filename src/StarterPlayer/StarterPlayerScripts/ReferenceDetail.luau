@@ -131,17 +131,6 @@ local function reading(scroll, order, name, value, color)
 	), TEXT, Theme.color.textMute)
 end
 
-local function rule(scroll, order)
-	local line = Instance.new("Frame")
-	line.LayoutOrder = order
-	line.Size = UDim2.new(1, 0, 0, 1)
-	line.ZIndex = scroll.ZIndex + 1
-	line.Parent = scroll
-	Theme.Rule(line)
-	line.BackgroundTransparency = 0.6
-	return line
-end
-
 -- Разделитель: «эффект», справа от него сами эффекты, дальше черта до края. Цвет — цвет
 -- имени элемента. Длинный список эффектов переносится, черта тогда сжимается.
 local function divider(scroll, order, caption, effects, color)
@@ -360,16 +349,54 @@ end
 -- Шапка карточки: имя, рецепт и характеристики на фоне узора элемента (просьба автора).
 -- Узор — целиком по ширине шапки, обрезан по высоте; поверх — тёмная вуаль, чтобы текст
 -- читался на любом узоре.
-local function patternHead(scroll, order, key)
-	local element = Elements[key]
-	local spec = Theme.patterns and Theme.patterns[key]
+-- Печать «в разработке» поверх всей шапки: содержимое под ней затемнено, как бумага,
+-- которую отклонили. Под словом — что именно пока не работает.
+local function rejectStamp(head, reason)
+	local veil = Instance.new("Frame")
+	veil.Name = "Rejected"
+	veil.Size = UDim2.new(1, 0, 1, 0)
+	veil.BackgroundColor3 = Color3.new(0, 0, 0)
+	veil.BackgroundTransparency = 0.35
+	veil.BorderSizePixel = 0
+	veil.ZIndex = head.ZIndex + 20
+	veil.Parent = head
+	local stamp = Instance.new("TextLabel")
+	stamp.AnchorPoint = Vector2.new(0.5, 0.5)
+	stamp.Position = UDim2.new(0.5, 0, 0.5, 0)
+	stamp.AutomaticSize = Enum.AutomaticSize.XY
+	stamp.Size = UDim2.new(0, 0, 0, 0)
+	stamp.Rotation = -8
+	stamp.BackgroundTransparency = 1
+	stamp.RichText = true
+	stamp.FontFace = Theme.font.strong
+	stamp.TextSize = mobile and 26 or 38
+	stamp.TextColor3 = Theme.color.danger
+	stamp.Text = ("%s\n<font size=\"%d\">%s</font>"):format(Theme.Caps("в разработке"), SMALL, Theme.Caps(reason))
+	stamp.ZIndex = veil.ZIndex + 1
+	stamp.Parent = veil
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 14)
+	pad.PaddingRight = UDim.new(0, 14)
+	pad.PaddingTop = UDim.new(0, 6)
+	pad.PaddingBottom = UDim.new(0, 8)
+	pad.Parent = stamp
+	local frame = Instance.new("UIStroke")
+	frame.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	frame.Color = Theme.color.danger
+	frame.Thickness = 3
+	frame.Parent = stamp
+	Theme.Corner(stamp, 6)
+end
+
+-- color — цвет сущности (элемента или жука), spec — узор из Theme.patterns (у жуков нет).
+local function patternHead(scroll, order, color, spec)
 
 	local head = Instance.new("Frame")
 	head.Name = "Head"
 	head.LayoutOrder = order
 	head.Size = UDim2.new(1, 0, 0, 0)
 	head.AutomaticSize = Enum.AutomaticSize.Y
-	head.BackgroundColor3 = Theme.Shadowed(element.color, 0.6)
+	head.BackgroundColor3 = Theme.Shadowed(color, 0.6)
 	head.ClipsDescendants = true
 	head.ZIndex = scroll.ZIndex + 1
 	head.Parent = scroll
@@ -380,7 +407,7 @@ local function patternHead(scroll, order, key)
 		image.Size = UDim2.new(1, 0, 1, 0)
 		image.BackgroundTransparency = 1
 		image.Image = spec.image
-		image.ImageColor3 = spec.color or Theme.PatternTint(element.color)
+		image.ImageColor3 = spec.color or Theme.PatternTint(color)
 		image.ImageTransparency = math.min(spec.transparency or 0.7, 0.45)
 		image.ScaleType = Enum.ScaleType.Crop
 		image.ZIndex = head.ZIndex + 1
@@ -490,12 +517,11 @@ function Detail.Element(scroll, key, ctx)
 	end
 
 	-- «Описание»: шапка на узоре — от имени до «показать на карте», под ней текст.
-	local head = patternHead(scroll, 20, key)
+	local head = patternHead(scroll, 20, element.color, Theme.patterns and Theme.patterns[key])
 	title(head, 10, element.name, Theme.Legible(element.color))
 	local unfinished = EntityInfo.IN_DEVELOPMENT[key]
 	if unfinished then
-		text(head, 11, ("<b>%s</b>  %s"):format(Theme.Caps("● в разработке:"), unfinished),
-			SMALL, Theme.color.danger, Theme.font.strong)
+		rejectStamp(head.Parent, unfinished) -- head — тело шапки, печать ложится на всю шапку
 	end
 
 	if recipe then
@@ -547,15 +573,40 @@ function Detail.Element(scroll, key, ctx)
 			Theme.font.strong)
 	end
 	if ctx.onShowOnMap then
+		-- Круглая кнопка в правом нижнем углу шапки, без надписи: значок — прицел (кольцо
+		-- с точкой), «где это на карте». Поверх печати «в разработке» — это управление.
+		local size = mobile and MobileUI.MIN_TAP or 34
 		local go = Instance.new("TextButton")
-		go.LayoutOrder = 80
-		go.Size = UDim2.new(0, 170, 0, mobile and MobileUI.MIN_TAP or 26)
-		go.FontFace = Theme.font.strong
-		go.TextSize = 11
-		go.Text = Theme.Caps("показать на карте")
-		go.ZIndex = head.ZIndex + 1
-		go.Parent = head
+		go.Name = "ShowOnMap"
+		go.AnchorPoint = Vector2.new(1, 1)
+		go.Position = UDim2.new(1, -10, 1, -10)
+		go.Size = UDim2.new(0, size, 0, size)
+		go.Text = ""
+		go.ZIndex = head.Parent.ZIndex + 30
+		go.Parent = head.Parent
 		Theme.Button(go, "quiet")
+		Theme.Corner(go, size / 2)
+		local ring = Instance.new("Frame")
+		ring.AnchorPoint = Vector2.new(0.5, 0.5)
+		ring.Position = UDim2.new(0.5, 0, 0.5, 0)
+		ring.Size = UDim2.new(0, size * 0.5, 0, size * 0.5)
+		ring.BackgroundTransparency = 1
+		ring.ZIndex = go.ZIndex + 1
+		ring.Parent = go
+		Theme.Corner(ring, size)
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = go.TextColor3 -- цвет надписи кнопки из темы
+		stroke.Thickness = 2
+		stroke.Parent = ring
+		local dot = Instance.new("Frame")
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.Position = UDim2.new(0.5, 0, 0.5, 0)
+		dot.Size = UDim2.new(0, 5, 0, 5)
+		dot.BackgroundColor3 = go.TextColor3
+		dot.BorderSizePixel = 0
+		dot.ZIndex = go.ZIndex + 2
+		dot.Parent = go
+		Theme.Corner(dot, 3)
 		go.MouseButton1Click:Connect(function()
 			ctx.onShowOnMap(key)
 		end)
@@ -568,16 +619,6 @@ function Detail.Element(scroll, key, ctx)
 end
 
 -- ---------- жук ----------
-
--- Показания жука: что написано в его строке таблицы. Порядок — от того, что видно
--- в бою сразу (здоровье, скорость), к тому, что нужно для расчёта.
-local ENEMY_READINGS = {
-	{ field = "hp", label = "здоровье" },
-	{ field = "speed", label = "скорость" },
-	{ field = "armor", label = "броня" },
-	{ field = "shield", label = "щит" },
-	{ field = "matter", label = "материя за убийство" },
-}
 
 local SPIN_SPEED = math.rad(30) -- градусов в секунду: жука видно со всех сторон за 12 секунд
 local VIEW_PITCH = math.rad(22) -- взгляд чуть сверху: у жука главное — спина и лапы
@@ -663,22 +704,32 @@ function Detail.Enemy(scroll, key, ctx)
 		return
 	end
 
-	title(scroll, 10, enemy.name, enemy.color and Theme.Legible(enemy.color) or Theme.color.text,
-		("каста: %s"):format(caste))
+	-- Та же шапка, что у элемента: сверху общее для всех жуков, под разделителем — своё.
+	local color = enemy.color or Theme.color.textMute
+	local tint = Theme.Legible(color)
+	local head = patternHead(scroll, 20, color, nil)
+	title(head, 10, enemy.name, tint, ("каста: %s"):format(caste))
 
-	for index, spec in ENEMY_READINGS do
-		local value = enemy[spec.field]
-		if type(value) == "number" and value ~= 0 then
-			reading(scroll, 20 + index, spec.label, EntityInfo.Number(value))
+	local unique = {}
+	for index, row in EntityInfo.EnemyStats(enemy) do
+		if row.standard then
+			reading(head, 20 + index, row.label, Theme.Caps(row.value))
+		else
+			table.insert(unique, row)
+		end
+	end
+	local traits = EntityInfo.EnemyTraits(enemy, 99)
+	if #traits + #unique > 0 then
+		local caption = #traits > 1 and "особенности" or "особенность"
+		divider(head, 50, caption, #traits > 0 and Theme.Caps(table.concat(traits, " · ")) or nil, tint)
+		if #unique > 0 then
+			local block = effectBlock(head, 51, tint)
+			for index, row in unique do
+				reading(block, 10 + index, row.label, Theme.Caps(row.value))
+			end
 		end
 	end
 
-	local traits = EntityInfo.EnemyTraits(enemy, 99)
-	if #traits > 0 then
-		reading(scroll, 30, "особенности", Theme.Caps(table.concat(traits, " · ")), Theme.color.danger)
-	end
-
-	rule(scroll, 40)
 	local wiki = ReferenceTexts.enemies[enemy.name]
 	text(scroll, 50, wiki and wiki.text or "Описания в вики пока нет.", TEXT, Theme.color.text)
 	if wiki and wiki.lesson then

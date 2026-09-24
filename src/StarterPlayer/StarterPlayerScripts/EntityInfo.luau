@@ -25,11 +25,10 @@ EntityInfo.CASTE_NAME = {
 	[3] = "Особые",
 }
 
--- Признаки жука, которые видны игроку в бою.
+-- Признаки жука, которые видны игроку в бою. Броня и щит — не здесь: у них своя строка
+-- характеристик (EnemyStats), иначе одно и то же написано дважды.
 EntityInfo.ENEMY_TRAITS = {
 	{ field = "flying", label = "летает" },
-	{ field = "armor", label = "броня" },
-	{ field = "shield", label = "щит" },
 	{ field = "chitin", label = "хитин" },
 	{ field = "regen", label = "регенерация" },
 	{ field = "heals", label = "лечит своих" },
@@ -49,7 +48,7 @@ EntityInfo.ENEMY_TRAITS = {
 	{ field = "absorbs", label = "поглощает урон" },
 	{ field = "scavenges", label = "подбирает" },
 	{ field = "rams", label = "таранит" },
-	{ field = "charge", label = "разгон" },
+	{ field = "charge", label = "подрыв" },
 	{ field = "climbHeight", label = "лазает" },
 	{ field = "panic", label = "паникует" },
 }
@@ -497,6 +496,67 @@ end
 
 function EntityInfo.ElementEffects(key, element)
 	return collect(EntityInfo.ELEMENT_EFFECTS, key, element)
+end
+
+
+-- ============ Характеристики жука словами ============
+-- Как у элементов: оценка словом, а не число. Точка отсчёта — Стандарт (30 HP, скорость 10,
+-- грызёт на 5). Материя за убийство — числом: это деньги, как стоимость элемента.
+EntityInfo.HP_WORDS = {
+	{ upTo = 15, word = "очень мало" },
+	{ upTo = 25, word = "мало" },
+	{ upTo = 45, word = "среднее" },
+	{ upTo = 90, word = "много" },
+	{ upTo = 200, word = "очень много" },
+	{ upTo = math.huge, word = "огромное" },
+}
+EntityInfo.SPEED_WORDS = {
+	{ upTo = 0, word = "не двигается" },
+	{ upTo = 7, word = "медленная" },
+	{ upTo = 12, word = "нормальная" },
+	{ upTo = 17, word = "быстрая" },
+	{ upTo = 25, word = "очень быстрая" },
+	{ upTo = math.huge, word = "безумно быстрая" },
+}
+EntityInfo.CHEW_WORDS = {
+	{ upTo = 0, word = "нет" },
+	{ upTo = 4, word = "слабый" },
+	{ upTo = 7, word = "нормальный" },
+	{ upTo = 10, word = "сильный" },
+	{ upTo = math.huge, word = "огромный" },
+}
+EntityInfo.ARMOR_WORDS = {
+	{ upTo = 4, word = "лёгкая" },
+	{ upTo = 7, word = "средняя" },
+	{ upTo = math.huge, word = "тяжёлая" },
+}
+-- Щит — доля урона, которую он гасит спереди (shield.reduction).
+EntityInfo.SHIELD_WORDS = {
+	{ upTo = 0.5, word = "слабый" },
+	{ upTo = 0.8, word = "средний" },
+	{ upTo = math.huge, word = "крепкий" },
+}
+
+-- Строки характеристик жука: { label, value, standard }. standard — есть у каждого жука,
+-- в карточке над разделителем; остальное — под ним.
+function EntityInfo.EnemyStats(enemy)
+	local rows = {}
+	local function add(label, value, standard)
+		table.insert(rows, { label = label, value = value, standard = standard })
+	end
+	local word = EntityInfo.Word
+	add("здоровье", word(EntityInfo.HP_WORDS, enemy.hp or 0), true)
+	add("скорость", word(EntityInfo.SPEED_WORDS, enemy.speed or 0), true)
+	add("урон по постройкам", word(EntityInfo.CHEW_WORDS, enemy.chewDamage or 0), true)
+	local matter = enemy.matter or 0
+	add("награда", ("%d %s"):format(matter, plural(matter, "материя", "материи", "материи")), true)
+	if (enemy.armor or 0) > 0 then
+		add("броня", word(EntityInfo.ARMOR_WORDS, enemy.armor))
+	end
+	if type(enemy.shield) == "table" and enemy.shield.reduction then
+		add("щит", word(EntityInfo.SHIELD_WORDS, enemy.shield.reduction))
+	end
+	return rows
 end
 
 return EntityInfo
