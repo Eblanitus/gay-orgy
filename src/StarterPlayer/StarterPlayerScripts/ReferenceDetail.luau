@@ -12,6 +12,7 @@
 -- ни списка «идёт в» — иначе справочник выдал бы рецепт, который надо открыть самому
 -- (решение автора: «учи крафты»). Жук, которого ещё ни разу не убили, — так же.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Theme = require(script.Parent:WaitForChild("UITheme"))
 local EntityInfo = require(script.Parent:WaitForChild("EntityInfo"))
@@ -21,6 +22,7 @@ local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
 local Recipes = require(ReplicatedStorage:WaitForChild("Recipes"))
 local WikiTexts = require(ReplicatedStorage:WaitForChild("WikiTexts"))
+local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
 
 local Detail = {}
 
@@ -111,12 +113,6 @@ local function text(scroll, order, value, size, color, font)
 	return label
 end
 
-local function caption(scroll, order, value)
-	local label = text(scroll, order, Theme.Caps(value), SMALL, Theme.color.textMute, Theme.font.strong)
-	label.TextWrapped = false
-	return label
-end
-
 local function title(scroll, order, value, color, mark)
 	local label = text(scroll, order, Theme.Caps(value), mobile and 20 or 24, color, Theme.font.strong)
 	label.TextWrapped = false
@@ -182,6 +178,107 @@ end
 
 -- ---------- элемент ----------
 
+-- Карточка элемента делится на две вкладки: «Описание» (узор во всю ширину, показания,
+-- текст) и «В крафтах» (во что элемент идёт дальше) — просьба автора: узор и описание
+-- главное, использование в рецептах — отдельно. Выбранная вкладка помнится между
+-- элементами: листая элементы, игрок обычно смотрит одно и то же.
+local elementTab = "about"
+
+-- Кнопка вкладки карточки.
+local function tabButton(parent, caption, on, action)
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(0.5, -3, 1, 0)
+	button.FontFace = Theme.font.strong
+	button.TextSize = SMALL
+	button.Text = (on and "> " or "") .. Theme.Caps(caption)
+	button.ZIndex = parent.ZIndex + 1
+	button.Parent = parent
+	Theme.Button(button, on and "active" or "ghost")
+	button.MouseButton1Click:Connect(action)
+	return button
+end
+
+-- Узор элемента целиком: вся текстура, а не окно размером с ячейку, как в списках. Цвет —
+-- как у ячейки: фон цвета элемента, узор его светлым оттенком. Нажатие раскрывает узор
+-- на всю панель (overlay) — разглядеть детали.
+local function patternView(scroll, order, key)
+	local spec = Theme.patterns and Theme.patterns[key]
+	local element = Elements[key]
+	if not spec then
+		return
+	end
+	local ratio = spec.size.X / spec.size.Y
+
+	local function paint(frame, image)
+		frame.BackgroundColor3 = Theme.Shadowed(element.color, 0.55)
+		frame.BackgroundTransparency = 0
+		image.Image = spec.image
+		image.ImageColor3 = spec.color or Theme.PatternTint(element.color)
+		-- Прозрачнее, чем в ячейке: там узор — фон под текстом, здесь — сам предмет показа.
+		image.ImageTransparency = math.min(spec.transparency or 0.7, 0.35)
+		image.ScaleType = Enum.ScaleType.Fit
+		image.BackgroundTransparency = 1
+	end
+
+	local box = Instance.new("ImageButton")
+	box.Name = "Pattern"
+	box.LayoutOrder = order
+	box.Size = UDim2.new(1, 0, 0, 0)
+	box.AutoButtonColor = false
+	box.ZIndex = scroll.ZIndex + 1
+	box.Parent = scroll
+	Theme.Corner(box, Theme.radius.control)
+	-- Высота — в пикселях от ширины карточки: у списка с AutomaticCanvasSize высота в долях
+	-- считалась бы от холста, который сам зависит от детей. Ширина карточки меняется
+	-- (окно, поворот телефона) — высота следом.
+	local function fit()
+		local width = math.max(0, scroll.AbsoluteSize.X - 28)
+		box.Size = UDim2.new(1, 0, 0, math.floor(width / ratio))
+	end
+	fit()
+	local resized = scroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+	box.Destroying:Once(function()
+		resized:Disconnect()
+	end)
+	local image = Instance.new("ImageLabel")
+	image.Size = UDim2.new(1, 0, 1, 0)
+	image.ZIndex = box.ZIndex + 1
+	image.Parent = box
+	Theme.Corner(image, Theme.radius.control)
+	paint(box, image)
+
+	box.MouseButton1Click:Connect(function()
+		local host = scroll.Parent
+		if not host or host:FindFirstChild("PatternZoom") then
+			return
+		end
+		local zoom = Instance.new("ImageButton")
+		zoom.Name = "PatternZoom"
+		zoom.AutoButtonColor = false
+		zoom.Size = UDim2.new(1, 0, 1, 0)
+		zoom.ZIndex = scroll.ZIndex + 10
+		zoom.Parent = host
+		local big = Instance.new("ImageLabel")
+		big.Size = UDim2.new(1, -16, 1, -16)
+		big.Position = UDim2.new(0, 8, 0, 8)
+		big.ZIndex = zoom.ZIndex + 1
+		big.Parent = zoom
+		paint(zoom, big)
+		local close = text(zoom, 0, Theme.Caps("нажмите, чтобы закрыть"), SMALL, Theme.color.text, Theme.font.strong)
+		close.AutomaticSize = Enum.AutomaticSize.None
+		close.Size = UDim2.new(1, -24, 0, 18)
+		close.Position = UDim2.new(0, 12, 1, -26)
+		close.ZIndex = big.ZIndex + 1
+		zoom.MouseButton1Click:Connect(function()
+			zoom:Destroy()
+		end)
+		scroll.Destroying:Once(function()
+			zoom:Destroy()
+		end)
+	end)
+	return box
+end
+
 -- ctx: known(key) — открыт ли элемент, count(key) — сколько в инвентаре (nil — вне забега),
 -- craftable(key) — можно ли скрафтить сейчас, onPick(key) — переход к другому элементу.
 function Detail.Element(scroll, key, ctx)
@@ -202,39 +299,38 @@ function Detail.Element(scroll, key, ctx)
 	title(scroll, 10, element.name, Theme.Legible(element.color),
 		recipe and ("тир %d"):format(element.tier) or ("тир %d · базовый"):format(element.tier))
 
-	if recipe then
-		reading(scroll, 30, "рецепт", Theme.Caps(("%s + %s"):format(Elements[recipe.a].name, Elements[recipe.b].name)))
-	else
-		reading(scroll, 30, "где взять", Theme.Caps("производитель, за материю"))
-	end
-
-	local have = ctx.count and ctx.count(key)
-	if have then
-		reading(scroll, 40, "в инвентаре", tostring(have), have > 0 and Theme.color.text or Theme.color.textMute)
-	end
-	if recipe and ctx.craftable and ctx.craftable(key) then
-		text(scroll, 50, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,
-			Theme.font.strong)
-	end
-
-	local traits = EntityInfo.ElementTraits(element, 99)
-	if #traits > 0 then
-		reading(scroll, 60, "свойства", Theme.Caps(table.concat(traits, " · ")), Theme.color.accent)
-	end
-
-	rule(scroll, 70)
-	text(scroll, 80, WikiTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)
-
-	-- Во что идёт дальше. Неоткрытые рецепты не называются даже вторым ингредиентом:
-	-- «Огонь + ??? = ???» уже подсказка. Остаётся только их число.
+	local tabs = Instance.new("Frame")
+	tabs.Name = "Tabs"
+	tabs.LayoutOrder = 20
+	tabs.Size = UDim2.new(1, 0, 0, mobile and MobileUI.MIN_TAP or 26)
+	tabs.BackgroundTransparency = 1
+	tabs.ZIndex = scroll.ZIndex + 1
+	tabs.Parent = scroll
+	local tabsLayout = Instance.new("UIListLayout")
+	tabsLayout.FillDirection = Enum.FillDirection.Horizontal
+	tabsLayout.Padding = UDim.new(0, 6)
+	tabsLayout.Parent = tabs
 	local uses = Detail.UsedIn(key)
-	if #uses > 0 then
-		rule(scroll, 90)
-		caption(scroll, 100, "идёт в")
+	tabButton(tabs, "описание", elementTab == "about", function()
+		elementTab = "about"
+		Detail.Element(scroll, key, ctx)
+	end)
+	tabButton(tabs, ("в крафтах · %d"):format(#uses), elementTab == "uses", function()
+		elementTab = "uses"
+		Detail.Element(scroll, key, ctx)
+	end)
+
+	if elementTab == "uses" then
+		-- Во что идёт дальше. Неоткрытые рецепты не называются даже вторым ингредиентом:
+		-- «Огонь + ??? = ???» уже подсказка. Остаётся только их число.
+		if #uses == 0 then
+			text(scroll, 30, "Этот элемент ни в какой рецепт не идёт — это вершина ветки.", TEXT, Theme.color.textMute)
+			return
+		end
 		local hidden = 0
 		for index, use in uses do
 			if ctx.known(use.result) then
-				link(scroll, 100 + index, use.result, Theme.Caps(("%s = %s + %s"):format(
+				link(scroll, 30 + index, use.result, Theme.Caps(("%s = %s + %s"):format(
 					Elements[use.result].name, Elements[use.a].name, Elements[use.b].name
 				)), ctx)
 			else
@@ -242,11 +338,37 @@ function Detail.Element(scroll, key, ctx)
 			end
 		end
 		if hidden > 0 then
-			text(scroll, 100 + #uses + 1, Theme.Caps(("и ещё %d %s"):format(hidden,
+			text(scroll, 30 + #uses + 1, Theme.Caps(("и ещё %d %s"):format(hidden,
 				hidden == 1 and "неоткрытый рецепт" or (hidden < 5 and "неоткрытых рецепта" or "неоткрытых рецептов")
 			)), SMALL, Theme.color.textMute)
 		end
+		return
 	end
+
+	patternView(scroll, 30, key)
+
+	if recipe then
+		reading(scroll, 40, "рецепт", Theme.Caps(("%s + %s"):format(Elements[recipe.a].name, Elements[recipe.b].name)))
+	else
+		reading(scroll, 40, "где взять", Theme.Caps("производитель, за материю"))
+	end
+
+	local have = ctx.count and ctx.count(key)
+	if have then
+		reading(scroll, 50, "в инвентаре", tostring(have), have > 0 and Theme.color.text or Theme.color.textMute)
+	end
+	if recipe and ctx.craftable and ctx.craftable(key) then
+		text(scroll, 60, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,
+			Theme.font.strong)
+	end
+
+	local traits = EntityInfo.ElementTraits(element, 99)
+	if #traits > 0 then
+		reading(scroll, 70, "свойства", Theme.Caps(table.concat(traits, " · ")), Theme.color.accent)
+	end
+
+	rule(scroll, 80)
+	text(scroll, 90, WikiTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)
 end
 
 -- ---------- жук ----------
@@ -260,6 +382,75 @@ local ENEMY_READINGS = {
 	{ field = "shield", label = "щит" },
 	{ field = "matter", label = "материя за убийство" },
 }
+
+local SPIN_SPEED = math.rad(30) -- градусов в секунду: жука видно со всех сторон за 12 секунд
+local VIEW_PITCH = math.rad(22) -- взгляд чуть сверху: у жука главное — спина и лапы
+
+-- Жук, медленно вращающийся в окне (ViewportFrame). Модель — та же, что в бою
+-- (EnemyModel.Build), только стоит на месте: в окне нет физики и походки.
+local function enemyView(scroll, order, enemy)
+	local ok, model = pcall(EnemyModel.Build, enemy, enemy.scale)
+	if not ok or not model then
+		return
+	end
+
+	local view = Instance.new("ViewportFrame")
+	view.Name = "Model"
+	view.LayoutOrder = order
+	-- Окно — на всё свободное место карточки под текстом, но не ниже 220: пустое поле
+	-- под описанием и есть место для жука (просьба автора).
+	view.Size = UDim2.new(1, 0, 0, math.max(220, math.floor(scroll.AbsoluteSize.Y * 0.5)))
+	view.BackgroundColor3 = Theme.color.panel
+	view.BackgroundTransparency = 0.4
+	view.Ambient = Color3.fromRGB(150, 150, 160)
+	view.LightColor = Color3.fromRGB(255, 250, 240)
+	view.LightDirection = Vector3.new(-0.4, -1, -0.6)
+	view.ZIndex = scroll.ZIndex + 1
+	view.Parent = scroll
+	Theme.Corner(view, Theme.radius.control)
+
+	local world = Instance.new("WorldModel")
+	world.Parent = view
+	model:PivotTo(CFrame.new())
+	model.Parent = world
+
+	local camera = Instance.new("Camera")
+	camera.FieldOfView = 40
+	camera.Parent = view
+	view.CurrentCamera = camera
+
+	-- Камера смотрит в середину габарита, отступив так, чтобы жук целиком влез в кадр.
+	local box, size = model:GetBoundingBox()
+	local centre = box.Position
+	local radius = size.Magnitude / 2
+	local distance = radius / math.sin(math.rad(camera.FieldOfView / 2)) * 1.05
+	local angle = math.rad(35)
+
+	local function place()
+		local flat = Vector3.new(math.sin(angle), 0, math.cos(angle))
+		local eye = centre + (flat * math.cos(VIEW_PITCH) + Vector3.new(0, math.sin(VIEW_PITCH), 0)) * distance
+		camera.CFrame = CFrame.lookAt(eye, centre)
+	end
+	place()
+
+	-- Крутится, только пока окно на экране: закрытая лаборатория кадры не тратит.
+	local connection
+	connection = RunService.RenderStepped:Connect(function(dt)
+		if not view.Parent then
+			connection:Disconnect()
+			return
+		end
+		local screen = view:FindFirstAncestorOfClass("ScreenGui")
+		if not (screen and screen.Enabled and view.AbsoluteSize.X > 0) then
+			return
+		end
+		angle = (angle + SPIN_SPEED * dt) % (math.pi * 2)
+		place()
+	end)
+	view.Destroying:Once(function()
+		connection:Disconnect()
+	end)
+end
 
 -- ctx: met(key) — убит ли хоть раз.
 function Detail.Enemy(scroll, key, ctx)
@@ -297,6 +488,8 @@ function Detail.Enemy(scroll, key, ctx)
 	if wiki and wiki.lesson then
 		text(scroll, 60, ("<b>%s</b>  %s"):format(Theme.Caps("урок:"), wiki.lesson), TEXT, Theme.color.accent)
 	end
+
+	enemyView(scroll, 70, enemy)
 end
 
 return Detail

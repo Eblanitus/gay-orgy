@@ -1846,15 +1846,17 @@ return function(deps)
 
 	-- Строку статуса вкладке ставит CraftingUI.selectTab — общей для всего раздела.
 	-- Справочник уточняет её под свой раздел, после (defer), чтобы его строка осталась.
-	bookFrame:GetPropertyChangedSignal("Visible"):Connect(function()
-		if bookFrame.Visible then
-			task.defer(function()
-				if bookFrame.Visible then
-					Theme.Status(statusLabel, "Справочник", modeStatus())
-				end
-			end)
-		end
-	end)
+	-- Слушается и открытие окна: при повторном подходе к доске вкладка уже видима
+	-- (Visible не меняется), а selectTab снова ставит общую строку.
+	local function claimStatus()
+		task.defer(function()
+			if gui.Enabled and bookFrame.Visible then
+				Theme.Status(statusLabel, "Справочник", modeStatus())
+			end
+		end)
+	end
+	bookFrame:GetPropertyChangedSignal("Visible"):Connect(claimStatus)
+	gui:GetPropertyChangedSignal("Enabled"):Connect(claimStatus)
 
 	setMode("map")
 
