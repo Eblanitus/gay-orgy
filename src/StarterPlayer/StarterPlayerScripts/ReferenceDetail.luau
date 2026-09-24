@@ -432,7 +432,11 @@ function Detail.Element(scroll, key, ctx)
 	end
 	local effects = EntityInfo.ElementEffects(key, element)
 	if #effects > 0 then
-		reading(head, 61, "эффект", Theme.Caps(table.concat(effects, " · ")), Theme.color.accent)
+		-- *так* в подписи эффекта — выделение (EntityInfo.ELEMENT_EFFECTS). Теги — после Caps:
+		-- заглавные имена тегов RichText не понимает.
+		local value = Theme.Caps(table.concat(effects, " · ")):gsub("%*(.-)%*",
+			("<font color=\"#%s\">%%1</font>"):format(Theme.color.action:ToHex()))
+		reading(head, 61, "эффект", value, Theme.color.accent)
 	end
 	if recipe and ctx.craftable and ctx.craftable(key) then
 		text(head, 70, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,

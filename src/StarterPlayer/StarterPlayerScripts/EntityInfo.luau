@@ -226,6 +226,12 @@ function EntityInfo.ElementStats(elementKey, element)
 	local matter = EntityInfo.MatterCost(elementKey)
 	add("стоимость", ("%d %s"):format(matter, plural(matter, "материя", "материи", "материи")))
 
+	if EntityInfo.MYSTERY[elementKey] then
+		add("скорострельность", "???")
+		add("урон снаряда", "???")
+		return rows
+	end
+
 	local ramp = element.fireRateRamp
 	add("скорострельность", EntityInfo.Word(EntityInfo.RATE_WORDS,
 		ramp and (ramp.base or 1) or (1 + (element.fireRateBonus or 0))))
@@ -275,11 +281,15 @@ end
 -- притяжение, оглушение) здесь не повторяются. Порядок значим: главное — первым.
 -- label — строка или функция(значение, элемент, ключ) → строка или nil (не показывать).
 EntityInfo.ELEMENT_FEATURES = {
-	{ field = "fireRateRamp", label = "разгон" },
+	{ field = "fireRateRamp", label = function(ramp)
+		return ramp.exponent and "нелинейный разгон" or "разгон"
+	end },
 	{ field = "damageSpeedScale", label = "сильнее по быстрым" },
 	{ field = "damageRamp", label = "набирает урон" },
 	{ field = "damageRandom", label = "случайный урон" },
 	{ field = "breakthrough", label = "накопительный удар" },
+	{ field = "armorPierce", label = "бронепробитие" },
+	{ field = "knockback", label = "отталкивающий" },
 	{ field = "healer", label = "чинит постройки" },
 }
 
@@ -294,37 +304,70 @@ EntityInfo.ZONE_NAMES = {
 	Hydrosphere = "потоп на всю карту",
 	Rain = "дождевая туча",
 	Snow = "зона холода",
-	Star = "зона звезды",
+	Star = "рождение звезды",
 }
+
+-- Горение без поля chars: по вики их урон по времени — тоже Горение.
+local BURNS = { Lightning = true, Coal = true, Star = true, Island = true }
 
 local MARK_NAMES = { soil = "метка грунта", ash = "метка пепла", rust = "ржавчина" }
 
+-- *так* — выделение цветом: ReferenceDetail заменяет звёздочки на тег <font>.
 EntityInfo.ELEMENT_EFFECTS = {
 	-- chars — горящий снаряд; у Лавы и Вулкана это Плавление (conductive), не Горение.
-	{ field = "chars", label = function(_, element)
-		return not element.conductive and "горение" or nil
+	{ field = "damageType", label = function(kind, element, key)
+		if kind == "overtime" and ((element.chars and not element.conductive) or BURNS[key]) then
+			return "горение"
+		end
+		return nil
+	end },
+	{ field = "conductive", label = "плавление" },
+	{ field = "scald", label = "ошпаривание" },
+	{ field = "slowSpeedScale", label = "замедляет быстрых" },
+	-- Пар: замедление и горение одним эффектом — это и есть Ошпаривание.
+	{ field = "name", label = function(_, _, key)
+		return key == "Steam" and "ошпаривание" or nil
 	end },
 	{ field = "chain", label = function(chain)
-		return chain.requiresWet and "цепь по мокрым" or "цепь"
+		return chain.requiresWet and "цепь *по мокрым*" or "цепь"
+	end },
+	-- Микро-стан Вспышки по вики — ослепление, у Льда — заморозка.
+	{ field = "stun", label = function(stun, _, key)
+		if key == "Ice" then
+			return "заморозка"
+		end
+		return stun.duration <= 0.1 and "ослепление" or "оглушение"
+	end },
+	{ field = "chain", label = function(chain)
+		return chain.stun and "оглушение" or nil
 	end },
 	{ field = "explosion", label = "взрыв при попадании" },
 	{ field = "wet", label = "мокрый" },
-	{ field = "conductive", label = "плавление" },
-	{ field = "scald", label = "ошпаривание" },
 	{ field = "bleeds", label = "кровотечение" },
 	{ field = "debuff", label = "разъедает броню" },
-	{ field = "regen", label = function(regen)
-		if regen.block then
+	-- Ветка холода: замедляет ход, атаку и регенерацию. Ход — своей строкой характеристик,
+	-- здесь — чем элемент отличается от Холода.
+	{ field = "attackSlowPercent", label = function(_, element)
+		if (element.slowPercent or 0) <= 0 then
+			return "охлаждает, но не замедляет ход"
+		elseif element.slowDuration == math.huge then
+			return "охлаждает навсегда"
+		end
+		return "охлаждает"
+	end },
+	{ field = "regen", label = function(regen, element)
+		if element.attackSlowPercent then
+			return nil -- уже в «охлаждает»
+		elseif regen.block then
 			return "блокирует регенерацию"
 		elseif regen.slow then
 			return "замедляет регенерацию"
 		end
 		return nil
 	end },
-	{ field = "attackSlowPercent", label = "замедляет атаку" },
-	{ field = "slowGrowth", label = "замедление растёт" },
+	{ field = "slowGrowth", label = "накапливающееся замедление" },
 	{ field = "slowRamp", label = "застывание" },
-	{ field = "burnCatalyst", label = "раздувает горение" },
+	{ field = "burnCatalyst", label = "улучшает горение" },
 	{ field = "amplifier", label = "усиливает эффекты" },
 	{ field = "blind", label = "слепота" },
 	{ field = "confusion", label = "сбивает с пути" },
@@ -338,19 +381,31 @@ EntityInfo.ELEMENT_EFFECTS = {
 		return kind == "rust" and "смывает ржавчину" or nil
 	end },
 	{ field = "terrain", label = "меняет рельеф" },
+	-- Дым — удушье (разовый большой урон), Смог — взрыв с зоной слепоты.
 	{ field = "breakthrough", label = function(plan)
-		return plan.zone and "зона слепоты" or nil
+		return plan.zone and "взрыв · зона слепоты" or "удушье"
 	end },
-	{ field = "killDamage", label = "взрыв при смерти" },
+	{ field = "killDamage", label = function(plan)
+		return plan.spreadElement == "Steam" and "взрыв при смерти с ошпариванием" or "взрыв при смерти"
+	end },
 	{ field = "killZone", label = function(_, _, key)
 		return EntityInfo.ZONE_NAMES[key] or "оставляет зону"
 	end },
-	{ field = "killHeal", label = "лечащие плоды" },
+	-- Жизнь не бьёт врагов, и плодов с убитых у неё не бывает.
+	{ field = "killHeal", label = function(_, element)
+		return not element.healer and "лечащие плоды" or nil
+	end },
 	{ field = "killBarrier", label = "преграда при смерти" },
 }
 
+-- Загадка для игрока (вики): вместо характеристик — вопросы.
+EntityInfo.MYSTERY = { Antimatter = true }
+
 local function collect(list, key, element)
-	local found = {}
+	if EntityInfo.MYSTERY[key] then
+		return { "???" }
+	end
+	local found, seen = {}, {}
 	for _, trait in list do
 		local value = element[trait.field]
 		if value ~= nil and value ~= false and value ~= 0 then
@@ -358,7 +413,8 @@ local function collect(list, key, element)
 			if type(label) == "function" then
 				label = label(value, element, key)
 			end
-			if label then
+			if label and not seen[label] then
+				seen[label] = true
 				table.insert(found, label)
 			end
 		end
