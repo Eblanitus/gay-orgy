@@ -16,7 +16,7 @@
 
 | Что | Где правда | Как править |
 |---|---|---|
-| Скрипты (88 шт.) | `src/` | файлами; в Studio их переносит Rojo |
+| Скрипты (~100 шт.) | `src/` | файлами; в Studio их переносит Rojo |
 | RemoteEvent'ы | `src/ReplicatedStorage/Remotes/*.model.json` | файлами: новый remote — новый файл `Имя.model.json` с `{"className": "RemoteEvent"}` |
 | Группа звука `SoundService.Master.Music` | `src/SoundService/Master/Music.model.json` | файлом, как remote |
 | Карта, модели, шаблоны, GUI, звук, свет | только в месте Studio (`Workspace`, `ServerStorage`, `ReplicatedStorage.NormalBeetleTemplate`, `StarterGui`, `Lighting`, `SoundService`) | через MCP в Edit-режиме |

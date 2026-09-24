@@ -106,6 +106,7 @@ local function text(scroll, order, value, size, color, font)
 	label.TextYAlignment = Enum.TextYAlignment.Top
 	label.RichText = true
 	label.Text = value
+	label.ZIndex = scroll.ZIndex + 1
 	label.Parent = scroll
 	return label
 end
@@ -137,6 +138,7 @@ local function rule(scroll, order)
 	local line = Instance.new("Frame")
 	line.LayoutOrder = order
 	line.Size = UDim2.new(1, 0, 0, 1)
+	line.ZIndex = scroll.ZIndex + 1
 	line.Parent = scroll
 	Theme.Rule(line)
 	line.BackgroundTransparency = 0.6
@@ -150,6 +152,9 @@ local function link(scroll, order, key, value, ctx)
 	button.Size = UDim2.new(1, 0, 0, mobile and 32 or 24)
 	button.Text = ""
 	button.AutoButtonColor = false
+	-- Карточка лежит на плашке с высоким ZIndex (поверх карты); при общем порядке слоёв
+	-- строки с ZIndex по умолчанию ушли бы под её полупрозрачный фон и еле читались.
+	button.ZIndex = scroll.ZIndex + 1
 	button.Parent = scroll
 	Theme.ElementFill(button, Elements[key].color, { wide = true, element = key })
 
@@ -160,6 +165,7 @@ local function link(scroll, order, key, value, ctx)
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.TextTruncate = Enum.TextTruncate.AtEnd
 	label.Text = value
+	label.ZIndex = button.ZIndex + 1
 	label.Parent = button
 	Theme.Inner(label, 3)
 	local pad = Instance.new("UIPadding")

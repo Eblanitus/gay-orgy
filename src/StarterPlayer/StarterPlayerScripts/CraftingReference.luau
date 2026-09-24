@@ -1683,8 +1683,10 @@ return function(deps)
 	-- Кого игрок уже убивал — из профиля (ProfileSynced, четвёртый аргумент). Первое
 	-- убийство нового жука сервер досылает сразу (Plutonium.AwardEnemyKill).
 	local killed = {}
+	-- Промокод CODEX (PromoCode) открывает в справочнике всех жуков до выхода из игры.
+	local allEnemiesRevealed = false
 	local function isMet(key)
-		return killed[key] == true
+		return allEnemiesRevealed or killed[key] == true
 	end
 
 	local pages
@@ -1870,6 +1872,10 @@ return function(deps)
 	-- подписчиков не закреплён, поэтому перерисовка отложена до конца кадра событий.
 	Remotes:WaitForChild("RecipeLearned").OnClientEvent:Connect(function()
 		task.defer(refreshKnowledge)
+	end)
+	Remotes:WaitForChild("EnemiesRevealed").OnClientEvent:Connect(function()
+		allEnemiesRevealed = true
+		pages.enemies.refresh()
 	end)
 	Remotes:WaitForChild("ProfileSynced").OnClientEvent:Connect(function(_plutonium, _levels, _recipes, killedTypes)
 		if type(killedTypes) == "table" then

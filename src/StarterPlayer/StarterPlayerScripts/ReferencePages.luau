@@ -371,6 +371,7 @@ function Pages.Mount(parent, ctx)
 				go.FontFace = Theme.font.strong
 				go.TextSize = 11
 				go.Text = Theme.Caps("показать на карте")
+				go.ZIndex = scroll.ZIndex + 1
 				go.Parent = scroll
 				Theme.Button(go, "quiet")
 				go.MouseButton1Click:Connect(function()
