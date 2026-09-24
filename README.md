@@ -11,9 +11,12 @@
 
 ## Rojo: код из src/ в Studio
 
-1. Установить Rojo 7.6: https://github.com/rojo-rbx/rojo/releases (или `aftman`/`rokit`), плагин — **Plugins → Manage Plugins** / Toolbox «Rojo».
-2. В папке репозитория: `rojo serve`.
-3. В Studio: плагин Rojo → **Connect**.
+**Обычный запуск:** двойной клик по `start.bat`. Он запускает Rojo и раз в 30 секунд забирает изменения с GitHub — в Studio остаётся только один раз нажать **Connect**.
+
+Первая настройка:
+
+1. Скачать Rojo 7.7 (`rojo-…-windows-x86_64.zip`): https://github.com/rojo-rbx/rojo/releases и положить `rojo.exe` в папку репозитория (в Git он не попадает).
+2. Один раз дважды кликнуть `rojo.exe` — он ставит плагин в Studio.
 
 Rojo меняет только скрипты и `ReplicatedStorage.Remotes`. Карта и модели остаются как есть.
 

@@ -1,2 +1,3 @@
 *.rbxl binary
 *.rbxlx -diff
+*.bat text eol=crlf
