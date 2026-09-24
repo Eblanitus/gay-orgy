@@ -44,14 +44,14 @@ RedeemCode.OnServerEvent:Connect(function(player, code)
 
 	if upperCode == REVEAL_CODE then
 		local revealed = Crafting.RevealAll()
-		-- Жуки в справочнике открываются только на экране и до выхода из игры: в профиль
-		-- (killedTypes) их не пишем — это «убит хоть раз», и за первое убийство нового
-		-- жука начисляется плутоний (Plutonium.AwardEnemyKill); промокод съел бы награду.
+		-- Жуки и ступени карточек (Mastery) открываются только на экране и до выхода из игры:
+		-- в профиль (killedTypes, счёт убийств) их не пишем — за первое убийство нового жука
+		-- начисляется плутоний (Plutonium.AwardEnemyKill), промокод съел бы награду.
 		EnemiesRevealed:FireClient(player)
 		if #revealed == 0 then
-			Notify:FireClient(player, "Промокод принят: все рецепты уже открыты, жуки в справочнике открыты")
+			Notify:FireClient(player, "Промокод принят: справочник открыт целиком")
 		else
-			Notify:FireClient(player, ("Промокод принят: открыто рецептов — %d, жуки в справочнике открыты"):format(#revealed))
+			Notify:FireClient(player, ("Промокод принят: справочник открыт целиком, рецептов — %d"):format(#revealed))
 		end
 		return
 	end

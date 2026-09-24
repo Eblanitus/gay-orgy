@@ -534,22 +534,23 @@ return function(deps)
 	-- Кого игрок уже убивал — из профиля (ProfileSynced, четвёртый аргумент). Первое
 	-- убийство нового жука сервер досылает сразу (Plutonium.AwardEnemyKill).
 	local killed = {}
-	-- Промокод CODEX (PromoCode) открывает в справочнике всех жуков до выхода из игры.
-	local allEnemiesRevealed = false
+	-- Промокод CODEX (PromoCode) открывает справочник целиком — всех жуков и все ступени
+	-- карточек (Mastery) — до выхода из игры.
+	local codexRevealed = false
 	local function isMet(key)
-		return allEnemiesRevealed or killed[key] == true
+		return codexRevealed or killed[key] == true
 	end
 
 	-- Счёт убийств для ступеней карточек (Mastery): приходит событием ProfileStats.
 	local elementKills, enemyKills = {}, {}
 	local function killsByElement(key)
-		if allEnemiesRevealed then -- CODEX открывает все ступени и у элементов
+		if codexRevealed then
 			return math.huge
 		end
 		return elementKills[key] or 0
 	end
 	local function killsOfEnemy(key)
-		if allEnemiesRevealed then
+		if codexRevealed then
 			return math.huge
 		end
 		return math.max(enemyKills[key] or 0, killed[key] and 1 or 0)
@@ -1893,7 +1894,7 @@ return function(deps)
 		task.defer(refreshKnowledge)
 	end)
 	Remotes:WaitForChild("EnemiesRevealed").OnClientEvent:Connect(function()
-		allEnemiesRevealed = true
+		codexRevealed = true
 		refreshKnowledge()
 	end)
 	-- Перерисовка — только когда у кого-то открылась новая ступень: счёт приходит раз
