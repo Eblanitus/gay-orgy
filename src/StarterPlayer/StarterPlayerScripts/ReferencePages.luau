@@ -15,7 +15,6 @@ local Detail = require(script.Parent:WaitForChild("ReferenceDetail"))
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
-local Mastery = require(ReplicatedStorage:WaitForChild("Mastery"))
 
 local Pages = {}
 
@@ -334,8 +333,7 @@ function Pages.Mount(parent, ctx)
 			return Elements[key].name
 		end,
 		paint = function(key)
-			-- Узор в ячейке — только когда он открыт (Mastery.ELEMENT.pattern).
-			return Elements[key].color, ctx.elementKills(key) >= Mastery.ELEMENT.pattern and key or nil
+			return Elements[key].color, key
 		end,
 		show = function(scroll, key)
 			Detail.Element(scroll, key, elementCtx)

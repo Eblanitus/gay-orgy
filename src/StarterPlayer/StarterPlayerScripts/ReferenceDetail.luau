@@ -556,8 +556,7 @@ function Detail.Element(scroll, key, ctx)
 	end
 
 	-- «Описание»: шапка на узоре — от имени до «показать на карте», под ней текст.
-	local head = patternHead(scroll, 20, element.color,
-		open("pattern") and Theme.patterns and Theme.patterns[key] or nil)
+	local head = patternHead(scroll, 20, element.color, Theme.patterns and Theme.patterns[key])
 	title(head, 10, element.name, Theme.Legible(element.color))
 	local unfinished = EntityInfo.IN_DEVELOPMENT[key]
 	if unfinished then
