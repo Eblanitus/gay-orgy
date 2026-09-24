@@ -1,4 +1,10 @@
-﻿## #196 — бэкап в GitHub (2026-09-24)
+﻿## #197 — переезд на Rojo (2026-09-24)
+- default.project.json: Rojo управляет только скриптами (88) и ReplicatedStorage.Remotes (34 RemoteEvent), остальное в сервисах не трогает.
+- src/ReplicatedStorage/Remotes/*.model.json — remote'ы файлами; tools/sync умеет их в обе стороны.
+- CLAUDE.md: код правится только в src/, через MCP — не менять .Source и Remotes.
+- Проверено: rojo build 7.6.1 == place/game.rbxl по всем 122 скриптам и remote'ам. Не проверено: rojo serve в живой Studio.
+
+## #196 — бэкап в GitHub (2026-09-24)
 - place/game.rbxl — копия места, src/ — 88 скриптов текстом, tools/sync.luau — перенос src <-> place.
 
 ## #195 — вики: мыло без дубля, шапки, мебель раундом (2026-09-19)
