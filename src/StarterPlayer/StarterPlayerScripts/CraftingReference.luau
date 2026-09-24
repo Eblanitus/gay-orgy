@@ -543,6 +543,9 @@ return function(deps)
 	-- Счёт убийств для ступеней карточек (Mastery): приходит событием ProfileStats.
 	local elementKills, enemyKills = {}, {}
 	local function killsByElement(key)
+		if allEnemiesRevealed then -- CODEX открывает все ступени и у элементов
+			return math.huge
+		end
 		return elementKills[key] or 0
 	end
 	local function killsOfEnemy(key)
@@ -1891,7 +1894,7 @@ return function(deps)
 	end)
 	Remotes:WaitForChild("EnemiesRevealed").OnClientEvent:Connect(function()
 		allEnemiesRevealed = true
-		pages.enemies.refresh()
+		refreshKnowledge()
 	end)
 	-- Перерисовка — только когда у кого-то открылась новая ступень: счёт приходит раз
 	-- в пару секунд, а карточка с крутящимся жуком не должна мигать на каждое убийство.
