@@ -191,7 +191,7 @@ local function tabButton(parent, caption, on, action)
 	button.Size = UDim2.new(0.5, -3, 1, 0)
 	button.FontFace = Theme.font.strong
 	button.TextSize = SMALL
-	button.Text = (on and "> " or "") .. Theme.Caps(caption)
+	button.Text = Theme.Caps(caption)
 	button.ZIndex = parent.ZIndex + 1
 	button.Parent = parent
 	Theme.Button(button, on and "active" or "ghost")
@@ -457,7 +457,10 @@ function Detail.Element(scroll, key, ctx)
 		end)
 	end
 
-	text(scroll, 40, ReferenceTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)
+	-- Антиматерия — загадка: у неё описания нет совсем (просьба автора), без заглушки.
+	if not EntityInfo.MYSTERY[key] then
+		text(scroll, 40, ReferenceTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)
+	end
 end
 
 -- ---------- жук ----------

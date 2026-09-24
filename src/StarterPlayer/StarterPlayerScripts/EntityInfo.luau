@@ -149,7 +149,7 @@ EntityInfo.DOT_WORDS = {
 EntityInfo.PIERCE_WORDS = {
 	{ upTo = 0.55, word = "частичное" },
 	{ upTo = 0.99, word = "почти полное" },
-	{ upTo = math.huge, word = "неограниченное" },
+	{ upTo = math.huge, word = "максимальное" },
 }
 
 -- Отбрасывание и притяжение — на сколько studs (knockback.distance, pull.distance).
@@ -158,6 +158,22 @@ EntityInfo.PUSH_WORDS = {
 	{ upTo = 3, word = "среднее" },
 	{ upTo = 5, word = "сильное" },
 	{ upTo = math.huge, word = "очень сильное" },
+}
+
+-- Сила притяжения — те же пороги, что у отбрасывания, но «сила» женского рода.
+EntityInfo.PULL_FORCE_WORDS = {
+	{ upTo = 1.75, word = "слабая" },
+	{ upTo = 3, word = "средняя" },
+	{ upTo = 5, word = "сильная" },
+	{ upTo = math.huge, word = "очень сильная" },
+}
+
+-- Частота притяжения — сколько раз элемент тянет одного и того же жука (pull.shots).
+EntityInfo.PULL_WORDS = {
+	{ upTo = 1, word = "однократная" },
+	{ upTo = 3, word = "редкая" },
+	{ upTo = 4, word = "частая" },
+	{ upTo = math.huge, word = "очень частая" },
 }
 
 -- Замедление хода — доля (slowPercent).
@@ -256,14 +272,20 @@ function EntityInfo.ElementStats(elementKey, element)
 		add("урон по времени", EntityInfo.Word(EntityInfo.DOT_WORDS, element.damagePerSecond))
 	end
 	if element.armorPierce then
-		add("пробитие брони", EntityInfo.Word(EntityInfo.PIERCE_WORDS, element.armorPierce))
+		-- Кислота (и её зона у Кислотного дождя) не пробивает броню сразу, а разъедает её до нуля —
+		-- «неограниченное»; «максимальное» — сразу и полностью, как у Алмаза.
+		local corrodes = (element.debuff and element.debuff.armorShred)
+			or (element.killZone and element.killZone.spreadElement == "Acid")
+		add("пробитие брони", corrodes and "неограниченное"
+			or EntityInfo.Word(EntityInfo.PIERCE_WORDS, element.armorPierce))
 	end
 	if element.knockback then
 		local word = EntityInfo.Word(EntityInfo.PUSH_WORDS, element.knockback.distance)
 		add("отбрасывание", element.knockback.radial and (word .. ", по площади") or word)
 	end
 	if element.pull then
-		add("притяжение", EntityInfo.Word(EntityInfo.PUSH_WORDS, element.pull.distance))
+		add("сила притяжения", EntityInfo.Word(EntityInfo.PULL_FORCE_WORDS, element.pull.distance))
+		add("частота притяжения", EntityInfo.Word(EntityInfo.PULL_WORDS, element.pull.shots or 1))
 	end
 	if element.slowPercent and element.slowPercent > 0 then
 		add("замедление", EntityInfo.Word(EntityInfo.SLOW_WORDS, element.slowPercent))

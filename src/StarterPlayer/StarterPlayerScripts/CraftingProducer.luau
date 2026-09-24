@@ -664,11 +664,11 @@ return function(deps)
 			up.go.Visible = pick ~= nil or showing
 			Theme.Button(up.go, st.busy and "muted" or "action")
 
-			-- Выбранный режим — как пункт меню: вывороткой плашки и скобкой «>».
+			-- Выбранный режим — вывороткой плашки. Скобка «>» убрана: занимала место (просьба автора).
 			for _, m in MODES do
 				local on = m.id == st.mode
 				Theme.Button(modeButtons[m.id], on and "active" or "ghost")
-				modeButtons[m.id].Text = (on and "> " or "  ") .. Theme.Caps(m.name)
+				modeButtons[m.id].Text = Theme.Caps(m.name)
 			end
 			local amount = gui:GetAttribute("Matter")
 			matterBox.Visible = amount ~= nil

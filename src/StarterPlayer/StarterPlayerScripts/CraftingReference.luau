@@ -1835,7 +1835,7 @@ return function(deps)
 			local on = m.id == id
 			m.frame.Visible = on
 			chromeButton(modeButtons[m.id], on and "active" or "ghost")
-			modeButtons[m.id].Text = (on and "> " or "  ") .. Theme.Caps(m.name)
+			modeButtons[m.id].Text = Theme.Caps(m.name)
 		end
 		pagesFrame.Visible = id ~= "map"
 		applySearch()
