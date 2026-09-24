@@ -523,8 +523,7 @@ return function(deps)
 	end
 
 	-- Орбиты карты открываются поэтапно (#273, #274): пока видны ярусы до OPEN_DEPTH
-	-- включительно, дальних колец на карте нет вовсе. На открытых орбитах — только открытые
-	-- элементы: неоткрытых «???» нет, элемент появляется, когда открыт его рецепт.
+	-- включительно, дальних колец и их элементов на карте нет вовсе.
 	-- Условия открытия следующих орбит ещё не придуманы; CODEX открывает всё. Ярус — глубина по рецептам (RecipeGraph.depth),
 	-- до сборки карты — ярус из Elements.
 	local OPEN_DEPTH = 1
@@ -556,11 +555,12 @@ return function(deps)
 		return Elements[key] ~= nil and (Elements[key].tier == 0 or knownRecipes[key] == true)
 	end
 
-	-- Нарисован ли элемент на карте: орбита открыта и сам он открыт (с CODEX — все).
+	-- Нарисован ли элемент на карте: его орбита открыта. Неоткрытые элементы открытых
+	-- орбит стоят «???», как и раньше (#275).
 	-- drawnCount — сколько их нарисовано при последней сборке (-1 — ещё не собрана).
 	local drawnCount = -1
 	local function onMap(key)
-		return orbitOpen(key) and (codexRevealed or isKnown(key))
+		return orbitOpen(key)
 	end
 
 	local function countOf(key)
