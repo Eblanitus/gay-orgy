@@ -227,15 +227,217 @@ local NAMES = {
 		"CT_Glow_Core.001",
 	},}
 
+-- Те же детали по именам мешей: Import 3D называет детали то по узлу («CT_Steel_Dark.059»),
+-- то по мешу («CanLid.001»). Имена мешей стола не повторяются в других станциях файла.
+local MESH_NAMES = {
+	Dark = {
+		"CanLid.001",
+		"CanLid.003",
+		"CanLid.005",
+		"CanLid.006",
+		"CanLid.009",
+		"CanLid.024",
+		"CanLid.025",
+		"CanLid.026",
+		"CanLid.027",
+		"CanLid.028",
+		"CanLid.031",
+		"CanLid.032",
+		"CanLid.033",
+		"CanLid.034",
+		"CanLid.035",
+		"CanLid.036",
+		"CanLid.037",
+		"CanLid.038",
+		"CanLid.039",
+		"CanLid.040",
+		"CanLid.041",
+		"CanLid.042",
+		"CanLid.043",
+		"CanLid.045",
+		"CanLid.047",
+		"CanLid.049",
+		"CanLid.051",
+		"Куб.005",
+		"Куб.006",
+		"Куб.022",
+		"Куб.028",
+		"Куб.031",
+		"Куб.034",
+		"Цилиндр",
+		"Цилиндр.061",
+		"Цилиндр.062",
+		"Цилиндр.071",
+		"Цилиндр.073",
+		"Цилиндр.075",
+		"Цилиндр.082",
+		"Цилиндр.083",
+		"Цилиндр.084",
+		"Цилиндр.092",
+		"Цилиндр.093",
+		"Цилиндр.109",
+		"Цилиндр.112",
+		"Цилиндр.121",
+		"Цилиндр.125",
+		"Цилиндр.129",
+		"Цилиндр.134",
+		"Цилиндр.138",
+		"Цилиндр.143",
+		"Цилиндр.147",
+		"Цилиндр.151",
+		"Цилиндр.216",
+		"Цилиндр.218",
+		"Цилиндр.220",
+		"Цилиндр.222",
+		"Цилиндр.224",
+		"Цилиндр.226",
+		"Цилиндр.228",
+		"Цилиндр.230",
+	},
+	Mid = {
+		"CanisterEarth.043",
+		"CanisterEarth.397",
+		"CanisterEarth.398",
+		"CanisterEarth.399",
+		"CanisterEarth.400",
+		"CanisterEarth.401",
+		"CanisterEarth.402",
+		"CanisterEarth.403",
+		"CanisterEarth.404",
+		"CanisterEarth.405",
+		"CanisterEarth.406",
+		"CanisterEarth.407",
+		"CanisterEarth.411",
+		"CanisterEarth.412",
+		"CanisterEarth.413",
+		"CanisterEarth.414",
+		"CanisterEarth.428",
+		"CanisterEarth.429",
+		"CanisterEarth.430",
+		"CanisterEarth.431",
+		"CanisterEarth.432",
+	},
+	Light = {
+		"Cable.031",
+		"Cable.208",
+		"Cable.209",
+		"Cable.210",
+		"Cable.211",
+		"Cable.212",
+		"Cable.213",
+		"Cable.216",
+		"Cable.217",
+		"Cable.225",
+		"Cable.226",
+		"Cable.227",
+		"Cable.228",
+		"Cable.229",
+		"Cable.230",
+		"Cable.231",
+		"Cable.232",
+		"Cable.233",
+		"Cable.234",
+		"Куб.023",
+		"Куб.024",
+		"Куб.029",
+		"Куб.030",
+		"Куб.032",
+		"Куб.033",
+		"Куб.035",
+		"Куб.036",
+		"Тор.002",
+		"Тор.003",
+		"Тор.004",
+		"Тор.005",
+		"Тор.006",
+		"Тор.007",
+		"Тор.009",
+		"Тор.010",
+		"Тор.011",
+		"Тор.012",
+		"Тор.013",
+		"Тор.014",
+		"Тор.015",
+		"Тор.016",
+		"Тор.017",
+		"Тор.018",
+		"Тор.019",
+		"Тор.020",
+		"Тор.029",
+		"Тор.030",
+		"Тор.031",
+		"Тор.032",
+		"Тор.033",
+		"Тор.034",
+		"Тор.035",
+		"Тор.036",
+		"Цилиндр.009",
+		"Цилиндр.052",
+		"Цилиндр.053",
+		"Цилиндр.054",
+		"Цилиндр.055",
+		"Цилиндр.060",
+		"Цилиндр.063",
+		"Цилиндр.068",
+		"Цилиндр.069",
+		"Цилиндр.070",
+		"Цилиндр.076",
+		"Цилиндр.077",
+		"Цилиндр.079",
+		"Цилиндр.080",
+		"Цилиндр.085",
+		"Цилиндр.087",
+		"Цилиндр.090",
+		"Цилиндр.091",
+		"Цилиндр.096",
+		"Цилиндр.106",
+		"Цилиндр.107",
+		"Цилиндр.108",
+		"Цилиндр.110",
+		"Цилиндр.111",
+		"Цилиндр.117",
+		"Цилиндр.122",
+		"Цилиндр.126",
+		"Цилиндр.131",
+		"Цилиндр.135",
+		"Цилиндр.137",
+		"Цилиндр.139",
+		"Цилиндр.144",
+		"Цилиндр.146",
+		"Цилиндр.148",
+		"Цилиндр.152",
+		"Цилиндр.155",
+		"Цилиндр.217",
+		"Цилиндр.219",
+		"Цилиндр.221",
+		"Цилиндр.223",
+		"Цилиндр.225",
+		"Цилиндр.227",
+		"Цилиндр.229",
+		"Цилиндр.231",
+	},
+	Glass = {
+		"Цилиндр.123",
+		"Цилиндр.136",
+		"Цилиндр.145",
+		"Цилиндр.153",
+	},
+	Glow = {
+		"RetortLiquid.037",
+	},
+}
+
 -- Импорт может переименовать детали («CanLid.001» -> «CanLid_001»), поэтому сравнение без знаков.
 local function key(name)
 	return (string.lower(name):gsub("[^%w]", ""))
 end
 
 local styleOf = {}
-for style, list in NAMES do
-	for _, name in list do
-		styleOf[key(name)] = style
+for _, names in { NAMES, MESH_NAMES } do
+	for style, list in names do
+		for _, name in list do
+			styleOf[key(name)] = style
+		end
 	end
 end
 
@@ -326,6 +528,18 @@ local function getTemplate(craftTable)
 	local source = findImport()
 	if not source then
 		warn("[Стол] импорт «Алхимический хер.glb» не найден ни в Workspace, ни в ServerStorage — стол старый")
+		-- Подсказка, что лежит на сцене: по ней видно, как импорт назвал детали.
+		for _, c in Workspace:GetChildren() do
+			if c:IsA("Model") or c:IsA("Folder") then
+				local names = {}
+				for _, d in c:GetDescendants() do
+					if d:IsA("BasePart") and #names < 8 then
+						table.insert(names, d.Name)
+					end
+				end
+				print(("[Стол]   Workspace.%s (%s, %d объектов): %s"):format(c.Name, c.ClassName, #c:GetDescendants(), table.concat(names, ", ")))
+			end
+		end
 		return nil
 	end
 	print("[Стол] модель найдена: " .. source:GetFullName())
