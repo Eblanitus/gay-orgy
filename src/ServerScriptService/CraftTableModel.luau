@@ -277,36 +277,69 @@ local function paint(model)
 	end
 end
 
--- Шаблон один на сервер: ищется в ServerStorage, иначе забирается из импорта в Workspace.
-local function getTemplate()
+-- Шаблон один на сервер: ServerStorage.CraftTableTemplate, иначе — импорт, где бы он ни лежал
+-- (Workspace, ServerStorage, даже внутри стола локации). Импорт узнаётся не по имени (Import 3D
+-- называет модели по-разному), а по деталям из таблицы NAMES: берётся самая маленькая модель,
+-- в которой есть все найденные детали стола, — это и есть стол без остальных станций.
+local function findImport()
+	local counts = {}
+	local best = 0
+	for _, root in { Workspace, ServerStorage } do
+		for _, p in root:GetDescendants() do
+			if p:IsA("BasePart") and styleOf[key(p.Name)] then
+				local m = p.Parent
+				while m and m ~= root do
+					if m:IsA("Model") then
+						counts[m] = (counts[m] or 0) + 1
+						best = math.max(best, counts[m])
+					end
+					m = m.Parent
+				end
+			end
+		end
+	end
+	if best < 20 then
+		return nil
+	end
+	local source, sourceSize
+	for m, n in counts do
+		if n == best then
+			local size = #m:GetDescendants()
+			if not source or size < sourceSize then
+				source, sourceSize = m, size
+			end
+		end
+	end
+	return source
+end
+
+local function getTemplate(craftTable)
 	if template then
 		return template
 	end
 	template = ServerStorage:FindFirstChild(TEMPLATE_NAME)
 	if template then
+		print("[Стол] модель — ServerStorage." .. TEMPLATE_NAME)
 		return template
 	end
 
-	local location = Workspace:FindFirstChild("Location")
-	local source
-	for _, d in Workspace:GetDescendants() do
-		if d:IsA("Model") and d.Name == "CraftTable" and not (location and d:IsDescendantOf(location)) then
-			source = d
-			break
-		end
-	end
+	local source = findImport()
 	if not source then
+		warn("[Стол] импорт «Алхимический хер.glb» не найден ни в Workspace, ни в ServerStorage — стол старый")
 		return nil
 	end
+	print("[Стол] модель найдена: " .. source:GetFullName())
 
-	-- Импорт целиком (со станциями) уходит с карты; стол из него становится шаблоном.
+	-- Остальное из импорта (станции) — с карты в ServerStorage. Наверх идём только по моделям:
+	-- папку Location и сам стол локации не трогаем.
 	local imported = source
-	while imported.Parent ~= Workspace do
+	while imported.Parent and imported.Parent:IsA("Model") and imported.Parent ~= craftTable do
 		imported = imported.Parent
 	end
 	source.Parent = nil
-	if imported ~= source then
-		imported:Destroy()
+	if imported ~= source and imported:IsDescendantOf(Workspace) then
+		imported.Name = "Import_AlchemyStations"
+		imported.Parent = ServerStorage
 	end
 
 	source.Name = TEMPLATE_NAME
@@ -320,10 +353,13 @@ function CraftTableModel.Apply(craftTable)
 	if craftTable:GetAttribute("AuthorModel") then
 		return
 	end
-	local tpl = getTemplate()
+	local tpl = getTemplate(craftTable)
 	local root = craftTable:FindFirstChild("Root")
 	local top = craftTable:FindFirstChild("Top")
 	if not (tpl and root and top) then
+		if tpl then
+			warn("[Стол] у CraftTable нет Root или Top — модель не поставлена")
+		end
 		return
 	end
 
@@ -367,6 +403,7 @@ function CraftTableModel.Apply(craftTable)
 	top:SetAttribute("BaseTransparency", 1)
 
 	craftTable:SetAttribute("AuthorModel", true)
+	print(("[Стол] новый стол поставлен, размер %s"):format(tostring(s)))
 end
 
 return CraftTableModel
