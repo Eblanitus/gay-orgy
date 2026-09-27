@@ -214,7 +214,9 @@ local function bind()
 		location:SetAttribute("Entrance", markers:WaitForChild("Entrance").Position)
 		location:SetAttribute("Exit", markers:WaitForChild("Exit").Position)
 		local craftTable = location:WaitForChild("CraftTable")
-		location:SetAttribute("Table", craftTable:GetPivot().Position)
+		-- Авторская модель стола ставится до замера: TableHalf должен считаться по ней.
+		require(game:GetService("ServerScriptService"):WaitForChild("CraftTableModel")).Apply(craftTable)
+		location:SetAttribute("Table",craftTable:GetPivot().Position)
 		location:SetAttribute("TableHalf", worldHalf(craftTable))
 	else
 		while location:GetAttribute("FloorSize") == nil or location:GetAttribute("Exit") == nil
