@@ -445,38 +445,55 @@ local CraftTableModel = {}
 
 local template
 
+-- Деталь не нашлась по имени — стиль по цвету и прозрачности из импорта: в .glb цвет
+-- материала один на деталь (стекло прозрачное, тёмная сталь почти чёрная, «латунь» почти белая).
+local function styleByLook(part)
+	if part.Transparency > 0.3 then
+		return "Glass"
+	end
+	local _, _, v = part.Color:ToHSV()
+	if v < 0.15 then
+		return "Dark"
+	elseif v < 0.5 then
+		return "Mid"
+	end
+	return "Light"
+end
+
 local function paint(model)
-	local missed = 0
+	local byName, byLook = 0, 0
 	for _, d in model:GetDescendants() do
 		if d:IsA("JointInstance") or d:IsA("WeldConstraint") then
+			d:Destroy()
+		elseif d:IsA("SurfaceAppearance") then
 			d:Destroy()
 		elseif d:IsA("BasePart") then
 			d.Anchored = true
 			d.CanCollide = false
 			d.CanTouch = false
 			d.CanQuery = false
-			local style = STYLE[styleOf[key(d.Name)] or ""]
-			if style then
-				for _, sa in d:GetChildren() do
-					if sa:IsA("SurfaceAppearance") then
-						sa:Destroy()
-					end
-				end
-				d.Material = style.Material
-				d.Color = style.Color
-				d.Transparency = style.Transparency or 0
-				d.CastShadow = not style.Accent
-				if style.Accent then
-					d:SetAttribute("Accent", true)
-				end
+			local name = styleOf[key(d.Name)]
+			if name then
+				byName += 1
 			else
-				missed += 1
+				name = styleByLook(d)
+				byLook += 1
+			end
+			local style = STYLE[name]
+			if d:IsA("MeshPart") then
+				d.TextureID = ""
+			end
+			d.MaterialVariant = ""
+			d.Material = style.Material
+			d.Color = style.Color
+			d.Transparency = style.Transparency or 0
+			d.CastShadow = not style.Accent
+			if style.Accent then
+				d:SetAttribute("Accent", true)
 			end
 		end
 	end
-	if missed > 0 then
-		warn(("[Стол] %d деталей модели не нашлись в таблице цветов — оставлены как в импорте"):format(missed))
-	end
+	print(("[Стол] покраска: по имени %d, по цвету импорта %d"):format(byName, byLook))
 end
 
 -- Шаблон один на сервер: ServerStorage.CraftTableTemplate, иначе — импорт, где бы он ни лежал
