@@ -242,7 +242,11 @@ COLORS = dict(Fire=(255, 140, 0), Water=(40, 110, 255), Earth=(139, 90, 43), Air
               Steel=(105, 125, 155), Antimatter=(156, 149, 167), Glass=(210, 240, 245), Electricity=(120, 200, 255))
 
 if __name__ == "__main__":
-    keys = sys.argv[1:] or list(CFG)
+    # Hand-made masks (2026-09-30 redo, not from Исходники): rebuilt only when named explicitly,
+    # otherwise a plain run would overwrite them with the old source-based versions.
+    HAND = {"Air", "Ash", "Cloud", "Coal", "Drought", "Energy", "Geyser", "Hurricane", "Life", "Lightning", "Mist", "Mud",
+            "Obsidian", "Ocean", "Poison", "Pond", "Puddle", "Rain", "Smog", "Steam", "Swamp", "Tornado", "Tree", "Water", "Wind"}
+    keys = sys.argv[1:] or [k for k in CFG if k not in HAND]
     cells = [("Fire", Image.open(os.path.join(OUT, "fire_inv_1024.png")), (255, 140, 0))]
     for key in keys:
         cells.append((key, build(key), COLORS[key]))
