@@ -246,7 +246,7 @@ if __name__ == "__main__":
     # otherwise a plain run would overwrite them with the old source-based versions.
     HAND = {"Air", "Ash", "Cloud", "Coal", "Drought", "Energy", "Geyser", "Hurricane", "Life", "Lightning", "Mist", "Mud",
             "Obsidian", "Ocean", "Poison", "Pond", "Puddle", "Rain", "Smog", "Steam", "Swamp", "Tornado", "Tree", "Water", "Wind",
-        "Earth", "Rust", "Soil"}  # cropped to the unique tile: the bottom was a pasted copy of the top with a seam
+        "Earth", "Rust", "Soil"}  # replaced by the author's seamless extended versions (2026-10-01)
     keys = sys.argv[1:] or [k for k in CFG if k not in HAND]
     cells = [("Fire", Image.open(os.path.join(OUT, "fire_inv_1024.png")), (255, 140, 0))]
     for key in keys:
