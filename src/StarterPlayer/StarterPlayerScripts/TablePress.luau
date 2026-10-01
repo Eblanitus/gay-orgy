@@ -1,6 +1,7 @@
 -- Пресс алхимического стола (идея автора, #292–#294). Два поршня — слева и справа от
 -- слотов: «один пресс слева, другой справа, сливают в одну точку». Каждый поршень — корпус
--- у края верстака, хромированный шток и массивная голова с кромкой.
+-- у края верстака, шток и голова с рабочей кромкой. Рисунок плоский, как весь интерфейс:
+-- заливка панели и тонкий кант, без объёма (#295: «3д графика не вписывается»).
 --
 -- Рычаг пресс не ведёт (#294: «рукой анимация не реалистичная»): дотянули — пресс работает
 -- сам. Замах (головы чуть уходят в корпуса), удар (резко к середине, слоты сжимаются по
@@ -25,11 +26,11 @@ local Theme = require(script.Parent:WaitForChild("UITheme"))
 local Press = {}
 
 local TUNING = {
-	head = 0.2, -- толщина головы поршня: доля высоты слота
-	housing = 0.3, -- ширина корпуса: доля высоты слота
-	housingH = 0.72, -- высота корпуса: доля высоты слота
-	rod = 0.18, -- толщина штока: доля высоты слота
-	overhang = 6, -- голова выше и ниже слота на столько пикселей
+	head = 0.12, -- толщина головы поршня: доля высоты слота
+	housing = 0.14, -- ширина корпуса: доля высоты слота
+	housingH = 0.5, -- высота корпуса: доля высоты слота
+	rod = 4, -- толщина штока, пиксели
+	overhang = 4, -- голова выше и ниже слота на столько пикселей
 	gap = 4, -- в покое между головой и слотом столько пикселей
 	meet = 1, -- сжатые головы не доходят до середины на столько пикселей
 	bulge = 0.14, -- сжатый слот вспучивается по высоте на эту долю
@@ -55,11 +56,6 @@ local TUNING = {
 	flyArc = 0.35, -- дуга полёта: подъём на эту долю расстояния
 }
 
--- Металл поршней: оттенки от Theme.color.steel, чтобы не путать с кнопками.
-local STEEL = Theme.color.steel
-local METAL_DARK = Theme.color.panel:Lerp(STEEL, 0.25)
-local METAL = Theme.color.panel:Lerp(STEEL, 0.45)
-local METAL_LIGHT = Theme.color.panel:Lerp(STEEL, 0.85)
 
 local function make(name, parent, z)
 	local f = Instance.new("Frame")
@@ -77,40 +73,15 @@ local function round(f, r)
 	c.Parent = f
 end
 
--- Объём металла градиентом: края темнее, блик ближе к краю. rotation 0 — градиент идёт
--- слева направо (стоячий цилиндр), 90 — сверху вниз (лежачий).
-local function sheen(f, rotation)
-	f.BackgroundColor3 = Color3.new(1, 1, 1)
+-- Плоская деталь: заливка и тонкий кант, скругление как у кнопок.
+local function part(f, fill, edge)
+	f.BackgroundColor3 = fill
 	f.BackgroundTransparency = 0
-	local g = Instance.new("UIGradient")
-	g.Rotation = rotation
-	g.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, METAL_DARK),
-		ColorSequenceKeypoint.new(0.35, METAL_LIGHT),
-		ColorSequenceKeypoint.new(0.6, METAL),
-		ColorSequenceKeypoint.new(1, METAL_DARK),
-	})
-	g.Parent = f
-end
-
-local function outline(f, transparency)
+	round(f, UDim.new(0, Theme.radius.control))
 	local s = Instance.new("UIStroke")
-	s.Color = Color3.new(0, 0, 0)
-	s.Transparency = transparency
-	s.Thickness = 1.5
+	s.Color = edge
+	s.Thickness = 1
 	s.Parent = f
-end
-
--- Болт: светлая точка с тёмным ободком.
-local function bolt(parent, x, y, z)
-	local b = make("Bolt", parent, z)
-	b.AnchorPoint = Vector2.new(0.5, 0.5)
-	b.Position = UDim2.fromScale(x, y)
-	b.Size = UDim2.fromOffset(5, 5)
-	b.BackgroundColor3 = METAL_LIGHT
-	b.BackgroundTransparency = 0
-	round(b)
-	outline(b, 0.4)
 end
 
 function Press.Mount(page, parts)
@@ -122,28 +93,20 @@ function Press.Mount(page, parts)
 	for side = 1, 2 do
 		local p = {}
 		p.housing = make("PressHousing" .. side, page, z + 1)
-		sheen(p.housing, 90)
-		round(p.housing, UDim.new(0, 3))
-		outline(p.housing, 0.3)
-		bolt(p.housing, 0.5, 0.18, z + 1)
-		bolt(p.housing, 0.5, 0.82, z + 1)
+		part(p.housing, Theme.color.row, Theme.color.hairline)
 
 		p.rod = make("PressRod" .. side, page, z)
-		sheen(p.rod, 90)
-		outline(p.rod, 0.5)
+		p.rod.BackgroundColor3 = Theme.color.hairline
+		p.rod.BackgroundTransparency = 0
 
 		p.head = make("PressHead" .. side, page, z + 1)
-		sheen(p.head, 0)
-		round(p.head, UDim.new(0, 3))
-		outline(p.head, 0.2)
-		bolt(p.head, 0.5, 0.1, z + 1)
-		bolt(p.head, 0.5, 0.9, z + 1)
+		part(p.head, Theme.color.panelSoft, Theme.color.accentDim)
 
 		-- Кромка — рабочая грань головы, смотрит на слоты; при ударе раскаляется.
 		p.face = make("Face", p.head, z + 1)
 		p.face.AnchorPoint = Vector2.new(side == 1 and 1 or 0, 0)
 		p.face.Position = UDim2.fromScale(side == 1 and 1 or 0, 0)
-		p.face.Size = UDim2.new(0, 3, 1, 0)
+		p.face.Size = UDim2.new(0, 2, 1, 0)
 		p.face.BackgroundTransparency = 0
 		-- Отсвет кромки на слот — полоса за гранью, гаснущая наружу.
 		p.glow = make("Glow", p.head, z)
@@ -171,8 +134,8 @@ function Press.Mount(page, parts)
 			return
 		end
 		local p = holdValue.Value
-		local pw = math.max(10, math.floor(g.h * TUNING.head))
-		local hw = math.max(12, math.floor(g.h * TUNING.housing))
+		local pw = math.max(8, math.floor(g.h * TUNING.head))
+		local hw = math.max(8, math.floor(g.h * TUNING.housing))
 		local mid = (g.left + g.right) / 2
 		local rest = g.left + hw + pw -- внутренняя кромка левой головы в покое
 		local push = p * (mid - TUNING.meet - rest)
@@ -184,7 +147,7 @@ function Press.Mount(page, parts)
 		local y = g.y + dy
 		local hy, hh = math.floor(y - TUNING.overhang), g.h + TUNING.overhang * 2
 		local cy, ch = y + g.h * (1 - TUNING.housingH) / 2, math.floor(g.h * TUNING.housingH)
-		local rh = math.max(6, math.floor(g.h * TUNING.rod))
+		local rh = TUNING.rod
 		local ry = math.floor(y + (g.h - rh) / 2)
 		local faceColor = Theme.color.accentDim:Lerp(heatColor, heat)
 		for side, piston in pistons do
@@ -247,8 +210,8 @@ function Press.Mount(page, parts)
 		plus.Position = UDim2.fromOffset(math.floor(mid - g.sign / 2), g.y)
 		plus.Size = UDim2.fromOffset(g.sign, g.h)
 		-- Результат — в середине, шириной со слот в покое.
-		local pw = math.max(10, math.floor(g.h * TUNING.head))
-		local hw = math.max(12, math.floor(g.h * TUNING.housing))
+		local pw = math.max(8, math.floor(g.h * TUNING.head))
+		local hw = math.max(8, math.floor(g.h * TUNING.housing))
 		local w = math.floor(mid - g.sign / 2 - g.left - hw - pw - TUNING.gap)
 		result.Position = UDim2.fromOffset(math.floor(mid - w / 2), g.y)
 		result.Size = UDim2.fromOffset(w, g.h)
@@ -308,13 +271,13 @@ function Press.Mount(page, parts)
 		local flash = make("Flash", layer, layer.ZIndex)
 		flash.AnchorPoint = Vector2.new(0.5, 0.5)
 		flash.Position = UDim2.fromOffset(c.X, c.Y)
-		flash.Size = UDim2.fromOffset(4, g.h * 1.3)
-		flash.BackgroundColor3 = Color3.new(1, 1, 1):Lerp(mix, 0.3)
+		-- Вспышка — вертикальная черта в точке встречи, расходится в полосу и гаснет.
+		flash.Size = UDim2.fromOffset(2, g.h * 1.2)
+		flash.BackgroundColor3 = Color3.new(1, 1, 1):Lerp(mix, 0.4)
 		flash.BackgroundTransparency = 0
-		round(flash)
 		local info = TweenInfo.new(TUNING.flash, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		TweenService:Create(flash, info, {
-			Size = UDim2.fromOffset(g.h * 0.9, g.h * 1.6),
+			Size = UDim2.fromOffset(g.h * 0.35, g.h * 1.5),
 			BackgroundTransparency = 1,
 		}):Play()
 		task.delay(TUNING.flash, function()
