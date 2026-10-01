@@ -1,16 +1,16 @@
 -- Пресс алхимического стола (идея автора, #292; сменил сплетание TableFusion из #291).
--- Над двумя слотами — плита на штоках. Рычаг (TableLever) ведёт её вниз: плита ложится
--- на слоты, сплющивает их и сдвигает друг к другу. Дотянули — элементы раздавлены (брызги
--- их цветами), плита остаётся внизу и подрагивает, пока не ответит сервер. Ответ — плита
--- поднимается, под ней в середине лежит результат; неудача — осколки цвета danger.
+-- Два поршня — слева и справа от слотов (просьба автора: «один пресс слева, другой справа,
+-- сливают в одну точку»). Рычаг (TableLever) ведёт их к середине: слоты сжимаются по
+-- ширине, пока поршни не сойдутся. Дотянули — элементы раздавлены (брызги их цветами вверх
+-- и вниз), поршни сжаты и подрагивают, пока не ответит сервер. Ответ — поршни расходятся,
+-- в середине лежит результат; неудача — осколки цвета danger.
 -- Забранный результат летит дугой в свою ячейку инвентаря.
 --
 -- Press.Mount(page, parts) — parts: { slotA, slotB, plus, result }. Возвращает:
---   room(h)      — сколько места оставить над слотами высотой h;
---   layout(g)    — g: { ax, bx, y, w, h, top } — где слоты в покое и верх верстака;
+--   layout(g)    — g: { left, right, y, h, sign } — ряд слотов: края, верх, высота, место «+»;
 --   lever(pos)   — положение ручки рычага, 0..1;
---   hold()       — плита остаётся внизу (ждём сервер);
---   release(fn)  — плита поднимается; fn() — когда открылась середина;
+--   hold()       — поршни остаются сжатыми (ждём сервер);
+--   release(fn)  — поршни расходятся; fn() — когда открылась середина;
 --   slam(fn)     — быстрый удар без рычага (пачка, шаги цепочки); fn() — в миг удара;
 --   crush(cA, cB) — брызги раздавленных элементов;
 --   crack()      — осколки неудачи из середины;
@@ -23,15 +23,15 @@ local Theme = require(script.Parent:WaitForChild("UITheme"))
 local Press = {}
 
 local TUNING = {
-	plate = 0.16, -- толщина плиты: доля высоты слота
-	gap = 4, -- в покое плита висит над слотами на столько пикселей
-	squash = 0.62, -- дотянули — слот сплющен на эту долю высоты
-	converge = 0.3, -- слоты сдвигаются к середине на эту долю ширины слота (поверх зазора)
-	rods = 0.18, -- штоки: на этой доле ширины плиты от краёв
-	wobble = 2, -- дрожь плиты в ожидании, пиксели
-	lift = 0.4, -- подъём после ответа, секунды
-	slamDown = 0.1, -- удар: вниз, секунды
-	slamUp = 0.22, -- удар: вверх, секунды
+	plate = 0.16, -- толщина поршня: доля высоты слота
+	overhang = 4, -- поршень выше и ниже слота на столько пикселей
+	gap = 4, -- в покое между поршнем и слотом столько пикселей
+	meet = 2, -- сжатые поршни не доходят до середины на столько пикселей
+	rods = 0.3, -- штоки: на этой доле высоты поршня от краёв
+	wobble = 2, -- дрожь поршней в ожидании, пиксели
+	lift = 0.4, -- расход после ответа, секунды
+	slamDown = 0.1, -- удар: сжатие, секунды
+	slamUp = 0.22, -- удар: расход, секунды
 	drops = 7, -- брызг от каждого раздавленного элемента
 	dropFly = 0.55, -- брызги летят, секунды
 	shards = 10, -- осколков неудачи
@@ -59,30 +59,35 @@ function Press.Mount(page, parts)
 	local slotA, slotB, plus, result = parts.slotA, parts.slotB, parts.plus, parts.result
 	local z = slotA.ZIndex + 3
 
-	local plate = make("PressPlate", page, z)
-	plate.BackgroundColor3 = Theme.color.panelSoft
-	plate.BackgroundTransparency = 0.05
-	round(plate, UDim.new(0, 4))
-	local plateStroke = Instance.new("UIStroke")
-	plateStroke.Color = Theme.color.grid
-	plateStroke.Thickness = 2
-	plateStroke.Parent = plate
-	-- Насечки по плите — чтобы читалась как металл, а не как кнопка.
-	for i = 1, 3 do
-		local line = make("Rib", plate, z)
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.Position = UDim2.fromScale(0.5, i / 4)
-		line.Size = UDim2.new(0.9, 0, 0, 1)
-		line.BackgroundColor3 = Theme.color.grid
-		line.BackgroundTransparency = 0.5
-	end
-	local rods = {}
-	for i = 1, 2 do
-		local rod = make("Rod" .. i, page, z - 1)
-		rod.AnchorPoint = Vector2.new(0.5, 0)
-		rod.BackgroundColor3 = Theme.color.grid
-		rod.BackgroundTransparency = 0.2
-		rods[i] = rod
+	local plates, rods = {}, {}
+	for side = 1, 2 do
+		local plate = make("PressPlate" .. side, page, z)
+		plate.BackgroundColor3 = Theme.color.panelSoft
+		plate.BackgroundTransparency = 0.05
+		round(plate, UDim.new(0, 4))
+		local plateStroke = Instance.new("UIStroke")
+		plateStroke.Color = Theme.color.textDim
+		plateStroke.Thickness = 2
+		plateStroke.Parent = plate
+		-- Насечки поперёк поршня — чтобы читался как металл, а не как кнопка.
+		for i = 1, 3 do
+			local line = make("Rib", plate, z)
+			line.AnchorPoint = Vector2.new(0.5, 0.5)
+			line.Position = UDim2.fromScale(i / 4, 0.5)
+			line.Size = UDim2.new(0, 1, 0.8, 0)
+			line.BackgroundColor3 = Theme.color.textDim
+			line.BackgroundTransparency = 0.5
+		end
+		plates[side] = plate
+		-- Штоки: от края верстака к поршню, видны, когда поршень выехал.
+		rods[side] = {}
+		for i = 1, 2 do
+			local rod = make("Rod", page, z - 1)
+			rod.AnchorPoint = Vector2.new(0, 0.5)
+			rod.BackgroundColor3 = Theme.color.textDim
+			rod.BackgroundTransparency = 0.3
+			rods[side][i] = rod
+		end
 	end
 
 	local layer = make("PressFx", page, z + 2)
@@ -97,28 +102,42 @@ function Press.Mount(page, parts)
 			return
 		end
 		local p = math.max(leverPos, holdValue.Value)
-		local ph = math.max(6, math.floor(g.h * TUNING.plate))
-		local drop = g.h * TUNING.squash
-		local bottom = g.y - TUNING.gap + p * (drop + TUNING.gap)
+		local pw = math.max(8, math.floor(g.h * TUNING.plate))
+		local mid = (g.left + g.right) / 2
+		-- Внутренние кромки поршней: в покое у краёв, дотянули — почти в середине.
+		local push = p * (mid - TUNING.meet - g.left - pw)
 		if waiting then
-			bottom += math.sin(clock * 40) * TUNING.wobble * 0.5
+			push += math.sin(clock * 40) * TUNING.wobble * 0.5
 		end
-		local left, right = g.ax, g.bx + g.w
-		plate.Position = UDim2.fromOffset(left, math.floor(bottom - ph))
-		plate.Size = UDim2.fromOffset(right - left, ph)
-		for i, rod in rods do
-			local x = left + (right - left) * (i == 1 and TUNING.rods or 1 - TUNING.rods)
-			rod.Position = UDim2.fromOffset(math.floor(x), g.top)
-			rod.Size = UDim2.fromOffset(3, math.max(0, math.floor(bottom - ph - g.top)))
+		local edgeL, edgeR = g.left + pw + push, g.right - pw - push
+		local py, ph = g.y - TUNING.overhang, g.h + TUNING.overhang * 2
+		plates[1].Position = UDim2.fromOffset(math.floor(edgeL - pw), py)
+		plates[2].Position = UDim2.fromOffset(math.floor(edgeR), py)
+		for side = 1, 2 do
+			plates[side].Size = UDim2.fromOffset(pw, ph)
+			for i, rod in rods[side] do
+				local y = math.floor(py + ph * (i == 1 and TUNING.rods or 1 - TUNING.rods))
+				local x0 = side == 1 and g.left or math.floor(edgeR + pw)
+				local x1 = side == 1 and math.floor(edgeL - pw) or g.right
+				rod.Position = UDim2.fromOffset(x0, y)
+				rod.Size = UDim2.fromOffset(math.max(0, x1 - x0), 3)
+			end
 		end
-		local squash = math.max(0, bottom - g.y)
-		local shift = p * ((g.bx - g.ax - g.w) / 2 + g.w * TUNING.converge)
-		local h = math.max(2, g.h - squash)
-		slotA.Position = UDim2.fromOffset(math.floor(g.ax + shift), math.floor(g.y + squash))
-		slotB.Position = UDim2.fromOffset(math.floor(g.bx - shift), math.floor(g.y + squash))
-		slotA.Size = UDim2.fromOffset(g.w, math.floor(h))
-		slotB.Size = slotA.Size
-		plus.TextTransparency = math.clamp(p * 2, 0, 1)
+		-- Слоты зажаты между поршнем и «+»: сжимаются по ширине, «+» исчезает.
+		local gap, half = TUNING.gap * (1 - p), g.sign / 2 * (1 - p)
+		local wA = math.max(0, mid - half - (edgeL + gap))
+		slotA.Position = UDim2.fromOffset(math.floor(edgeL + gap), g.y)
+		slotB.Position = UDim2.fromOffset(math.floor(mid + half), g.y)
+		slotA.Size = UDim2.fromOffset(math.floor(wA), g.h)
+		slotB.Size = UDim2.fromOffset(math.floor(math.max(0, edgeR - gap - (mid + half))), g.h)
+		local fade = math.clamp(p * 2, 0, 1)
+		plus.TextTransparency = fade
+		for _, slot in { slotA, slotB } do
+			local caption = slot:FindFirstChild("Caption")
+			if caption then
+				caption.TextTransparency = fade
+			end
+		end
 	end
 	holdValue.Changed:Connect(apply)
 
@@ -133,17 +152,15 @@ function Press.Mount(page, parts)
 
 	function self.layout(geom)
 		g = geom
-		plus.Position = UDim2.fromOffset(g.ax + g.w, g.y)
-		plus.Size = UDim2.fromOffset(g.bx - g.ax - g.w, g.h)
-		local mid = (g.ax + g.bx + g.w) / 2
-		result.Position = UDim2.fromOffset(math.floor(mid - g.w / 2), g.y)
-		result.Size = UDim2.fromOffset(g.w, g.h)
+		local mid = (g.left + g.right) / 2
+		plus.Position = UDim2.fromOffset(math.floor(mid - g.sign / 2), g.y)
+		plus.Size = UDim2.fromOffset(g.sign, g.h)
+		-- Результат — в середине, шириной со слот в покое.
+		local pw = math.max(8, math.floor(g.h * TUNING.plate))
+		local w = math.floor(mid - g.sign / 2 - g.left - pw - TUNING.gap)
+		result.Position = UDim2.fromOffset(math.floor(mid - w / 2), g.y)
+		result.Size = UDim2.fromOffset(w, g.h)
 		apply()
-	end
-
-	-- Сколько места над слотами нужно плите и штокам при высоте слота h.
-	function self.room(h)
-		return math.max(6, math.floor(h * TUNING.plate)) + TUNING.gap + 6
 	end
 
 	function self.lever(pos)
@@ -180,7 +197,7 @@ function Press.Mount(page, parts)
 		waiting = false
 		to(0, TUNING.lift, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 		if done then
-			-- Середина открывается, когда плита поднялась над слотами наполовину.
+			-- Середина открывается, когда поршни чуть разошлись.
 			task.delay(TUNING.lift * 0.35, done)
 		end
 	end
@@ -235,9 +252,9 @@ function Press.Mount(page, parts)
 			local color = i == 1 and colorA or colorB
 			if color then
 				for _ = 1, TUNING.drops do
-					-- Брызги — вбок и чуть вверх: плита давит сверху.
-					local side = rng:NextNumber(-1, 1)
-					local by = Vector2.new(side * g.w * 0.6, -rng:NextNumber(0.05, 0.45) * g.h)
+					-- Брызги — вверх и вниз: поршни давят с боков.
+					local up = rng:NextNumber() < 0.5 and -1 or 1
+					local by = Vector2.new(rng:NextNumber(-0.25, 0.25) * g.h, up * rng:NextNumber(0.4, 0.8) * g.h)
 					particle(c, by, color, rng:NextNumber(5, 11), TUNING.dropFly)
 				end
 			end

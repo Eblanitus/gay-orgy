@@ -1,12 +1,12 @@
 -- Страница «Крафт» алхимического стола (#282–#284, #290–#292).
--- Верх — верстак на стеклянной плашке: «пусто + пусто» под плитой пресса (TablePress) и рычаг
+-- Верх — верстак на стеклянной плашке: «пусто + пусто» между поршнями пресса (TablePress) и рычаг
 -- с иконкой колбы (TableLever); под слотами строка инструментов: обмен, сброс, случайная
 -- проба, сортировка и крафт пачкой. Ниже — инвентарь: имя и запас.
 --
 -- Положенный в слот элемент — одна штука из запаса (#292): ячейка показывает на одну меньше,
 -- последняя штука прячет ячейку. Это только показ: сервер списывает при крафте сам.
 -- Результата заранее не видно. Рычаг давит пресс; дотянули — элементы раздавлены, слоты
--- пусты, ушёл запрос. Ответ — плита поднимается, в середине лежит результат; его надо
+-- пусты, ушёл запрос. Ответ — поршни расходятся, в середине лежит результат; его надо
 -- забрать щелчком, и он летит в свою ячейку. Неудача — осколки, а элементы возвращаются в
 -- инвентарь: сервер при неудаче ничего не списывает (Crafting.Craft).
 -- T — общее состояние стола (CraftingCraftTab), page — рамка страницы.
@@ -139,7 +139,7 @@ return function(T, page)
 		end
 	end
 	-- Кнопка — жёлоб рычага: колба переезжает в ручку, дотянули до низа — крафт.
-	-- Ручка ведёт плиту пресса.
+	-- Ручка ведёт поршни пресса.
 	lever = Lever.Mount(craftButton, flask, function()
 		craft()
 	end, press.lever)
@@ -197,15 +197,13 @@ return function(T, page)
 		local craftW = compact and 112 or math.clamp(math.floor(W * 0.17), 170, 260)
 		local signW = by(18, 34)
 
-		-- Над слотами — место для плиты пресса; слоты и «+» ставит сам пресс.
-		local room = press.room(slotH)
-		local sy = pad + room
+		-- Ряд слотов с поршнями по краям: слоты, «+» и поршни ставит сам пресс.
+		local sy = pad
 		local benchH = sy + slotH + gap + toolH + pad
 		place(benchPlate, 0, 0, W, benchH)
-		local slotW = math.floor((W - pad * 2 - craftW - gap - signW) / 2)
-		press.layout({ ax = pad, bx = pad + slotW + signW, y = sy, w = slotW, h = slotH, top = pad })
+		press.layout({ left = pad, right = W - pad - craftW - gap, y = sy, h = slotH, sign = signW })
 		-- Рычаг — во всю высоту верстака, чтобы было куда тянуть.
-		place(craftButton, W - pad - craftW, pad, craftW, room + slotH + gap + toolH)
+		place(craftButton, W - pad - craftW, pad, craftW, slotH + gap + toolH)
 
 		local big = slotH >= 110
 		for _, s in { slotA, slotB, resultSlot } do
@@ -245,7 +243,7 @@ return function(T, page)
 	page:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
 
 	-- ---------- верстак ----------
-	-- Сколько штук key лежит на столе: в слотах, под плитой и результатом. Это резерв:
+	-- Сколько штук key лежит на столе: в слотах, под прессом и в результате. Это резерв:
 	-- инвентарь показывает запас за его вычетом. Больше запаса резерв не бывает — слот без
 	-- штуки (рецепт из «Рецептов», на который не хватает) только призрак цепочки.
 	local function slotUses(key)
@@ -459,7 +457,7 @@ return function(T, page)
 
 	local function refresh()
 		-- Ответа так и не было (стол сбросил ожидание): раздавленное вернулось в запас,
-		-- плита поднимается.
+		-- поршни расходятся.
 		if pressed and not T.busy() then
 			pressed = nil
 			run = nil
@@ -598,7 +596,7 @@ return function(T, page)
 
 	-- ---------- крафт ----------
 	-- Подтверждения нет (#291): рычаг сам и есть «точно?» — его надо дотянуть. Дотянули —
-	-- пресс раздавил пару (#292): слоты пусты, плита ждёт внизу ответа сервера.
+	-- пресс раздавил пару (#292): слоты пусты, поршни сжаты до ответа сервера.
 	function craft()
 		local a, b = slots[1], slots[2]
 		if not (a and b) or locked() then
@@ -748,6 +746,12 @@ return function(T, page)
 		end)
 	end
 
+	-- Пока в середине лежит результат, пустые слоты и «+» спрятаны: поршни разошлись,
+	-- между ними только он.
+	local function bare(on)
+		slotA.Visible, slotB.Visible, plusLabel.Visible = not on, not on, not on
+	end
+
 	local function showResult(key)
 		local color = Elements[key].color
 		resultSlot.Text = Theme.Caps(Elements[key].name)
@@ -766,6 +770,7 @@ return function(T, page)
 			return
 		end
 		resultSlot.Visible = false
+		bare(false)
 		if instant or not onScreen() then
 			held = nil
 			refreshBench()
@@ -834,7 +839,7 @@ return function(T, page)
 			return
 		end
 
-		-- Одиночный крафт или конец цепочки: плита поднимается, под ней результат.
+		-- Одиночный крафт или конец цепочки: поршни расходятся, в середине результат.
 		pressed = nil
 		if e.ok then
 			held = e.result
@@ -848,6 +853,9 @@ return function(T, page)
 		end
 		refreshBench()
 		rebuild()
+		if e.ok then
+			bare(true)
+		end
 		press.release(function()
 			if e.ok then
 				if held == e.result then
