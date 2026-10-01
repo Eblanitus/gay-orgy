@@ -45,6 +45,7 @@ return function(T, page)
 	local sortIndex = 1
 	local query = ""
 	local state = "empty" -- что лежит на столе: empty, known, unknown, failed
+	local chain = nil -- открытый рецепт, на который не хватает: шаги цепочки, если она есть
 
 	-- Стеклянные плашки — первыми детьми: из равных по ZIndex позже рисуется тот, кто позже в дереве.
 	local benchPlate = make("Frame", "BenchPlate", page)
@@ -232,10 +233,12 @@ return function(T, page)
 		local n = (a and b) and T.times(a, b) or 0
 		local left = T.batchLeft()
 		local busy = T.pending or left > 0
-		local ready = (state == "known" or state == "unknown") and n > 0 and not busy
+		chain = (state == "known" and n < 1) and T.plan(result) or nil
+		local ready = ((state == "known" or state == "unknown") and n > 0 or chain ~= nil) and not busy
 		Theme.Button(craftButton, ready and "action" or "muted")
 		craftButton.Text = busy and (left > 0 and ("ЕЩЁ ×" .. left) or "…")
 			or state == "failed" and "НЕЛЬЗЯ"
+			or chain and ("СОБРАТЬ ×" .. #chain)
 			or (a and b and n < 1) and "НЕ ХВАТАЕТ"
 			or state == "unknown" and "ПРОБОВАТЬ"
 			or "СКРЕСТИТЬ"
@@ -250,6 +253,8 @@ return function(T, page)
 				Theme.color.textMute)
 		elseif state == "failed" then
 			setHint("уже пробовали — не смешиваются", Theme.color.danger)
+		elseif chain then
+			setHint(("не хватает: %s — соберу цепочкой из %d шагов"):format(lack(a, b), #chain), Theme.color.energy)
 		elseif n < 1 then
 			setHint("не хватает: " .. lack(a, b), Theme.color.warn)
 		elseif state == "known" then
@@ -540,6 +545,10 @@ return function(T, page)
 	local function craft()
 		local a, b = slots[1], slots[2]
 		if not (a and b) or overlay.Visible or T.pending or T.batchLeft() > 0 then
+			return
+		end
+		if chain then
+			T.run(chain)
 			return
 		end
 		if state == "failed" or T.times(a, b) < 1 then

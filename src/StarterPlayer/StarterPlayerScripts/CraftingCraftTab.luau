@@ -26,6 +26,8 @@ return function(deps)
 		batchPause = 0.15, -- пауза между крафтами пачкой, секунды
 		batchSize = 5, -- кнопка «×5»
 		batchMax = 50, -- «МАКС» за один раз не больше
+		chainDepth = 6, -- цепочка: насколько глубоко собирать недостающее
+		chainMax = 30, -- цепочка: шагов не больше
 		journalMax = 60, -- строк в журнале
 		bannerTime = 2.6, -- сколько висит «новый рецепт», секунды
 		pendingTimeout = 3, -- ответа нет столько секунд — стол снова принимает крафт
@@ -59,6 +61,7 @@ return function(deps)
 		inventory = deps.inventory,
 		known = deps.knownRecipes,
 		failed = {}, -- ключ пары → true: пара уже не смешалась (на эту игру)
+		fresh = {}, -- ключ результата → true: рецепт открыт за эту игру (звезда в «Рецептах»)
 		history = {}, -- журнал, свежее первым
 		stats = { crafted = 0, found = 0, failed = 0 },
 		pending = false, -- запрос ушёл, ответа ещё нет
@@ -108,9 +111,10 @@ return function(deps)
 		return query == "" or string.find(Detail.Lower(Elements[key].name), query, 1, true) ~= nil
 	end
 
-	-- Крафт пачкой: n раз подряд, следующий запрос — только после ответа на предыдущий.
-	-- Каждый раз сервер проверяет заново, клиент ничего не списывает сам.
-	local batch = nil
+	-- Очередь крафтов: пачка (одна пара n раз) или цепочка (промежуточные элементы, потом
+	-- цель). Следующий запрос — только после ответа на предыдущий: каждый раз сервер
+	-- проверяет заново, клиент ничего не списывает сам. Очередь — список пар { a, b }.
+	local queue = {}
 	local pendingId = 0
 
 	local function send(a, b)
@@ -122,27 +126,77 @@ return function(deps)
 		task.delay(TUNING.pendingTimeout, function()
 			if T.pending and pendingId == id then
 				T.pending = false
-				batch = nil
+				queue = {}
 				T.refresh()
 			end
 		end)
 	end
 
-	function T.craft(a, b, n)
-		if T.pending then
+	-- steps — список пар { a, b } по порядку.
+	function T.run(steps)
+		if T.pending or #steps == 0 then
 			return
 		end
-		batch = { a = a, b = b, left = math.max(0, (n or 1) - 1) }
-		send(a, b)
+		queue = table.clone(steps)
+		local first = table.remove(queue, 1)
+		send(first[1], first[2])
 		T.refresh()
 	end
 
+	function T.craft(a, b, n)
+		local steps = {}
+		for _ = 1, math.max(1, n or 1) do
+			table.insert(steps, { a, b })
+		end
+		T.run(steps)
+	end
+
 	function T.batchLeft()
-		return batch and batch.left or 0
+		return #queue
 	end
 
 	function T.stopBatch()
-		batch = nil
+		queue = {}
+	end
+
+	-- Цепочка: как собрать target из запаса только открытыми рецептами. Не хватает
+	-- ингредиента — он собирается сам тем же способом (глубина ограничена). Возвращает
+	-- список шагов (последний — сама цель) либо nil. Запас при расчёте — копия.
+	local byResult = {}
+	for _, recipe in Recipes.List do
+		byResult[recipe.result] = recipe
+	end
+
+	function T.plan(target)
+		local have = table.clone(T.inventory)
+		local steps = {}
+		local produce
+
+		local function take(key, depth)
+			if (have[key] or 0) > 0 then
+				have[key] -= 1
+				return true
+			end
+			return produce(key, depth) and take(key, depth)
+		end
+
+		function produce(key, depth)
+			local recipe = byResult[key]
+			if not recipe or not T.known[key] or depth > TUNING.chainDepth then
+				return false
+			end
+			if not (take(recipe.a, depth + 1) and take(recipe.b, depth + 1)) then
+				return false
+			end
+			table.insert(steps, { recipe.a, recipe.b })
+			have[key] = (have[key] or 0) + 1
+			return #steps <= TUNING.chainMax
+		end
+
+		if produce(target, 0) then
+			return steps
+		end
+		return nil
 	end
 
 	-- ---------- страницы ----------
@@ -161,9 +215,14 @@ return function(deps)
 	local journalPage = require(script.Parent:WaitForChild("TableJournalPage"))(T, pageFrame("JournalPage"))
 	local pages = { craft = craftPage, recipes = recipesPage, journal = journalPage }
 
+	local badge
+
 	function T.refresh()
 		craftPage.refresh()
 		recipesPage.refresh()
+		if badge then
+			badge()
+		end
 	end
 
 	-- ---------- режимы и поиск ----------
@@ -172,9 +231,23 @@ return function(deps)
 	local modeButtons = window.modeButtons
 	local searchBox = window.searchBox
 
-	local function badge()
+	-- Сколько открытых рецептов можно скрестить прямо сейчас (без цепочек).
+	local function readyCount()
+		local n = 0
+		for _, recipe in Recipes.List do
+			if T.known[recipe.result] and T.times(recipe.a, recipe.b) > 0 then
+				n += 1
+			end
+		end
+		return n
+	end
+
+	-- На пунктах подвала: у журнала — непрочитанные «+N», у рецептов — «● N» готовых.
+	function badge()
 		local b = modeButtons.journal
 		b.Text = Theme.Caps("Журнал") .. (unseen > 0 and ("  +" .. unseen) or "")
+		local ready = readyCount()
+		modeButtons.recipes.Text = Theme.Caps("Рецепты") .. (ready > 0 and ("  ● " .. ready) or "")
 	end
 
 	local function applySearch()
@@ -239,6 +312,7 @@ return function(deps)
 			if entry.first then
 				T.stats.found += 1
 				T.known[result] = true
+				T.fresh[result] = true
 			end
 		else
 			entry.kind = extra
@@ -257,31 +331,33 @@ return function(deps)
 			badge()
 		end
 
-		-- Пачка: следующий раз — после паузы, если ещё хватает и окно открыто.
-		if batch and batch.a == a and batch.b == b then
-			if entry.ok and batch.left > 0 and gui.Enabled and T.times(a, b) > 0 then
-				batch.left -= 1
-				local mine = batch
+		-- Очередь: следующий шаг — после паузы, если этот удался, на него хватает и окно открыто.
+		if #queue > 0 then
+			local nextStep = queue[1]
+			if entry.ok and gui.Enabled and T.times(nextStep[1], nextStep[2]) > 0 then
+				table.remove(queue, 1)
+				local mine = queue
 				task.delay(TUNING.batchPause, function()
-					if batch == mine and not T.pending then
-						send(a, b)
+					if queue == mine and not T.pending then
+						send(nextStep[1], nextStep[2])
 						T.refresh()
 					end
 				end)
 			else
-				batch = nil
+				queue = {}
 			end
 		end
 
 		craftPage.onResult(entry)
 		recipesPage.refresh()
 		journalPage.refresh()
+		badge()
 	end)
 
 	-- Закрыли окно — пачка останавливается.
 	gui:GetPropertyChangedSignal("Enabled"):Connect(function()
 		if not gui.Enabled then
-			batch = nil
+			queue = {}
 			craftPage.closeConfirm()
 		end
 	end)

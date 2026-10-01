@@ -96,7 +96,8 @@ return function(T, page)
 		for _, recipe in Recipes.List do
 			if T.known[recipe.result] and matches(recipe) then
 				local n = T.times(recipe.a, recipe.b)
-				if not onlyReady or n > 0 then
+				local chain = n < 1 and T.plan(recipe.result) or nil
+				if not onlyReady or n > 0 or chain then
 					shown += 1
 					local data = Elements[recipe.result]
 					local btn = make("TextButton", recipe.result, list)
@@ -106,10 +107,16 @@ return function(T, page)
 					btn.RichText = true
 					btn.TextXAlignment = Enum.TextXAlignment.Left
 					btn.Text = Theme.Caps(data.name)
-					Theme.ElementButton(btn, data.color, { wide = true, element = recipe.result, dim = n < 1 })
+					Theme.ElementButton(btn, data.color, { wide = true, element = recipe.result, dim = n < 1 and not chain })
+					-- Хватает — «×N»; не хватает, но соберётся из запаса цепочкой — «цепочка K»;
+					-- иначе прочерк. Открытый за эту игру рецепт — со звездой.
 					local count = n > 0
 							and ('<font color="%s">×%d</font>'):format(Theme.Hex(Theme.color.action), n)
+						or chain and ('<font color="%s">цепочка %d</font>'):format(Theme.Hex(Theme.color.energy), #chain)
 						or ('<font color="%s">—</font>'):format(Theme.Hex(Theme.color.textMute))
+					if T.fresh[recipe.result] then
+						count ..= ('   <font color="%s">★</font>'):format(Theme.Hex(Theme.color.energy))
+					end
 					Theme.SetCellText(btn, ('%s   <font size="11" color="%s">%s + %s</font>   %s'):format(
 						Theme.Caps(data.name),
 						Theme.Hex(Theme.color.textDim),
@@ -117,6 +124,9 @@ return function(T, page)
 						Elements[recipe.b].name,
 						count
 					))
+					if (n > 0 or chain) and not onlyReady then
+						btn.LayoutOrder = shown - 1000 -- что можно сделать сейчас — наверху
+					end
 					btn.MouseButton1Click:Connect(function()
 						if Theme.WasDragged(list) then
 							return
