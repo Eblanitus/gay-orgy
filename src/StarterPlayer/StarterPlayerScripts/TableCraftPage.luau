@@ -1,8 +1,8 @@
--- Страница «Крафт» алхимического стола (#282–#285).
--- Верх — верстак на стеклянной плашке: два слота, «+», «=», слот результата и кнопка крафта;
--- под ними строка инструментов: обмен, сброс, случайная проба, подсказка и крафт пачкой.
--- Ниже — инвентарь с подсказками: пока в слоте один элемент, у каждого другого видно,
--- что выйдет из пары (если рецепт открыт), что пара уже не смешалась или что её не пробовали.
+-- Страница «Крафт» алхимического стола (#282–#284, #290).
+-- Верх — верстак на стеклянной плашке: два слота, «+», «=», слот результата и кнопка крафта
+-- с иконкой колбы; под ними строка инструментов: обмен, сброс, случайная проба, сортировка
+-- и крафт пачкой. Ниже — инвентарь: имя и запас; пока в слоте один элемент, ячейки, с
+-- которыми пара уже не смешалась, притенены.
 -- Ответ сервера играется на самом столе: вспышка, «+1», баннер нового рецепта, дрожь неудачи.
 -- T — общее состояние стола (CraftingCraftTab), page — рамка страницы.
 return function(T, page)
@@ -60,7 +60,65 @@ return function(T, page)
 	local resultSlot = make("TextButton", "Result", page)
 	resultSlot.AutoButtonColor = false
 	resultSlot.FontFace = Theme.font.strong
-	local craftButton = button("Craft", page, "СКРЕСТИТЬ", "muted")
+	local craftButton = button("Craft", page, "", "muted")
+
+	-- Иконка вместо надписи «СКРЕСТИТЬ» (просьба автора, #290): круглая колба с узким
+	-- горлом, налитая до половины. Нарисована кадрами, как лупа поиска; цвет — цвет текста
+	-- кнопки (Theme.Button), то есть готова кнопка или нет.
+	local flask = make("Frame", "Flask", craftButton, craftButton.ZIndex + 1)
+	flask.AnchorPoint = Vector2.new(0.5, 0.5)
+	flask.Position = UDim2.fromScale(0.5, 0.5)
+	flask.Size = UDim2.fromScale(0.6, 0.6)
+	local aspect = Instance.new("UIAspectRatioConstraint")
+	aspect.AspectType = Enum.AspectType.FitWithinMaxSize
+	aspect.Parent = flask
+	local flaskParts = {}
+	do
+		local z = flask.ZIndex
+		local body = make("Frame", "Body", flask, z)
+		body.AnchorPoint = Vector2.new(0.5, 0.5)
+		body.Position = UDim2.fromScale(0.5, 0.66)
+		body.Size = UDim2.fromScale(0.66, 0.66)
+		Theme.Corner(body, UDim.new(0.5, 0))
+		local bodyStroke = Instance.new("UIStroke")
+		bodyStroke.Thickness = 2
+		bodyStroke.Parent = body
+		table.insert(flaskParts, { bodyStroke, "Color" })
+
+		-- Жидкость — нижняя половина круга поменьше, обрезанная рамкой.
+		local clip = make("Frame", "Liquid", body, z)
+		clip.Position = UDim2.fromScale(0, 0.52)
+		clip.Size = UDim2.fromScale(1, 0.48)
+		clip.ClipsDescendants = true
+		local liquid = make("Frame", "Fill", clip, z)
+		liquid.AnchorPoint = Vector2.new(0.5, 0.5)
+		liquid.Position = UDim2.new(0.5, 0, 0, -1)
+		liquid.Size = UDim2.fromScale(0.74, 0.74 / 0.48)
+		liquid.BackgroundTransparency = 0.35
+		Theme.Corner(liquid, UDim.new(0.5, 0))
+		table.insert(flaskParts, { liquid, "BackgroundColor3" })
+
+		-- Горло — две стенки от плеч колбы вверх и кромка поперёк.
+		for _, x in { 0.38, 0.62 } do
+			local wall = make("Frame", "Wall", flask, z)
+			wall.AnchorPoint = Vector2.new(0.5, 0)
+			wall.Position = UDim2.fromScale(x, 0.1)
+			wall.Size = UDim2.new(0, 2, 0.28, 0)
+			wall.BackgroundTransparency = 0
+			table.insert(flaskParts, { wall, "BackgroundColor3" })
+		end
+		local rim = make("Frame", "Rim", flask, z)
+		rim.AnchorPoint = Vector2.new(0.5, 0)
+		rim.Position = UDim2.fromScale(0.5, 0.1)
+		rim.Size = UDim2.new(0.36, 0, 0, 2)
+		rim.BackgroundTransparency = 0
+		table.insert(flaskParts, { rim, "BackgroundColor3" })
+	end
+	local function paintFlask()
+		for _, part in flaskParts do
+			part[1][part[2]] = craftButton.TextColor3
+		end
+	end
 
 	for _, l in { plusLabel, eqLabel } do
 		l.FontFace = Theme.font.strong
@@ -78,16 +136,7 @@ return function(T, page)
 	local randomButton = button("Random", page, "НАУГАД", "quiet")
 	local fiveButton = button("Five", page, "×" .. T.TUNING.batchSize, "quiet")
 	local maxButton = button("Max", page, "МАКС", "quiet")
-	local hintLabel = make("TextLabel", "Hint", page)
-	hintLabel.FontFace = Theme.font.body
-	hintLabel.TextXAlignment = Enum.TextXAlignment.Left
-	hintLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	hintLabel.RichText = true
-
-	local invSection = make("TextLabel", "Section", page)
-	invSection.TextSize = 11
-	Theme.Section(invSection, "инвентарь", 0)
-	local sortButton = button("Sort", page, "", "ghost")
+	local sortButton = button("Sort", page, "", "quiet")
 
 	local invList = make("ScrollingFrame", "Inventory", page)
 	invList.ScrollBarThickness = 6
@@ -142,33 +191,26 @@ return function(T, page)
 		for _, s in { slotA, slotB, resultSlot } do
 			setCellTextSize(s, big and 24 or by(14, 16))
 		end
-		craftButton.TextSize = big and 20 or by(13, 16)
 		plusLabel.TextSize = big and 32 or 22
 		eqLabel.TextSize = plusLabel.TextSize
 
-		-- Строка инструментов: слева обмен, сброс, наугад; справа пачка; между ними подсказка.
+		-- Строка инструментов: слева обмен, сброс, наугад, сортировка; справа пачка.
+		-- Мелких подписей нет (просьба автора, #290): только кнопки.
 		local ty = pad + slotH + gap
-		local toolW = by(70, 104)
+		local toolW = by(78, 120)
 		local batchW = by(54, 80)
 		for i, b in { swapButton, clearButton, randomButton } do
 			place(b, pad + (i - 1) * (toolW + gap), ty, toolW, toolH)
-			b.TextSize = by(12, 14)
 		end
+		local sortW = by(110, 170)
+		place(sortButton, pad + (toolW + gap) * 3, ty, sortW, toolH)
 		place(maxButton, W - pad - batchW, ty, batchW, toolH)
 		place(fiveButton, W - pad - batchW * 2 - gap, ty, batchW, toolH)
-		fiveButton.TextSize, maxButton.TextSize = by(12, 14), by(12, 14)
-		local hintX = pad + (toolW + gap) * 3 + by(4, 8)
-		place(hintLabel, hintX, ty, W - pad - batchW * 2 - gap * 2 - hintX, toolH)
-		hintLabel.TextSize = by(12, 15)
+		for _, b in { swapButton, clearButton, randomButton, sortButton, fiveButton, maxButton } do
+			b.TextSize = by(14, 16)
+		end
 
-		-- Подпись инвентаря и сортировка.
-		local sy = benchH + gap
-		local sortW = by(110, 150)
-		place(sortButton, W - sortW, sy, sortW, toolH)
-		sortButton.TextSize = by(11, 13)
-		place(invSection, 0, sy + math.floor((toolH - 16) / 2), W - sortW - gap, 16)
-
-		local ly = sy + toolH + by(4, 6)
+		local ly = benchH + gap
 		place(invPlate, 0, ly, W, H - ly)
 		place(invList, pad, ly + pad, W - pad * 2, H - ly - pad * 2)
 		place(emptyLabel, pad * 3, ly + pad * 3, W - pad * 6, 60)
@@ -186,24 +228,6 @@ return function(T, page)
 		b.Text = key and Theme.Caps(Elements[key].name) or "— ПУСТО —"
 		-- Цветная полоса смотрит в сторону «+» (решение автора, #105).
 		Theme.ElementButton(b, key and Elements[key].color or nil, { right = b == slotA, element = key })
-	end
-
-	local function lack(a, b)
-		if a == b then
-			return Elements[a].name
-		end
-		local names = {}
-		for _, k in { a, b } do
-			if T.count(k) < 1 then
-				table.insert(names, Elements[k].name)
-			end
-		end
-		return table.concat(names, ", ")
-	end
-
-	local function setHint(text, color)
-		hintLabel.Text = text
-		hintLabel.TextColor3 = color
 	end
 
 	local function refreshBench()
@@ -236,32 +260,16 @@ return function(T, page)
 		chain = (state == "known" and n < 1) and T.plan(result) or nil
 		local ready = ((state == "known" or state == "unknown") and n > 0 or chain ~= nil) and not busy
 		Theme.Button(craftButton, ready and "action" or "muted")
-		craftButton.Text = busy and (left > 0 and ("ЕЩЁ ×" .. left) or "…")
-			or state == "failed" and "НЕЛЬЗЯ"
-			or chain and ("СОБРАТЬ ×" .. #chain)
-			or (a and b and n < 1) and "НЕ ХВАТАЕТ"
-			or state == "unknown" and "ПРОБОВАТЬ"
-			or "СКРЕСТИТЬ"
+		if state == "failed" then
+			craftButton.TextColor3 = Theme.color.danger
+		end
+		paintFlask()
 
 		local canBatch = state == "known" and n >= 2 and not busy
 		fiveButton.Visible, maxButton.Visible = canBatch, canBatch
 		Theme.Button(swapButton, (a or b) and "quiet" or "muted")
 		Theme.Button(clearButton, (a or b) and "quiet" or "muted")
 
-		if state == "empty" then
-			setHint((a or b) and "выберите второй элемент" or "клик по элементу — в слот, по слоту — убрать",
-				Theme.color.textMute)
-		elseif state == "failed" then
-			setHint("уже пробовали — не смешиваются", Theme.color.danger)
-		elseif chain then
-			setHint(("не хватает: %s — соберу цепочкой из %d шагов"):format(lack(a, b), #chain), Theme.color.energy)
-		elseif n < 1 then
-			setHint("не хватает: " .. lack(a, b), Theme.color.warn)
-		elseif state == "known" then
-			setHint(("хватит на ×%d"):format(n), Theme.color.action)
-		else
-			setHint("пара не пробовалась — спрошу подтверждение", Theme.color.textDim)
-		end
 	end
 
 	-- ---------- инвентарь ----------
@@ -278,25 +286,16 @@ return function(T, page)
 		return nil
 	end
 
+	-- Ячейка — имя и запас тем же кеглем, без мелких подписей (#290). Пара с элементом
+	-- в слоте уже не смешалась — ячейка притенена.
 	local function cellText(key, partner)
 		local data = Elements[key]
-		local text = ("%s   %s"):format(
+		local text = ('%s   <font color="%s">%d</font>'):format(
 			Theme.Caps(data.name),
-			Theme.Readout("шт", T.count(key), Theme.Legible(data.color), 10)
+			Theme.Hex(Theme.Legible(data.color)),
+			T.count(key)
 		)
-		if not partner then
-			return text, false
-		end
-		local r = T.knownResult(partner, key)
-		local tag, color, dim
-		if r then
-			tag, color = "→ " .. Theme.Caps(Elements[r].name), Theme.Legible(Elements[r].color)
-		elseif T.isFailed(partner, key) then
-			tag, color, dim = "✕", Theme.color.danger, true
-		else
-			tag, color = "?", Theme.color.textMute
-		end
-		return ('%s   <font size="11" color="%s">%s</font>'):format(text, Theme.Hex(color), tag), dim
+		return text, partner ~= nil and T.isFailed(partner, key)
 	end
 
 	-- Подсказки и отметки — без пересборки сетки: щелчок по ячейке не должен её перерисовывать.
@@ -349,8 +348,7 @@ return function(T, page)
 			end
 		end
 		sortKeys(keys)
-		Theme.Section(invSection, "инвентарь", query ~= "" and (#keys .. " / " .. total) or total)
-		sortButton.Text = "СОРТ: " .. Theme.Caps(SORTS[sortIndex].name)
+		sortButton.Text = "↕ " .. Theme.Caps(SORTS[sortIndex].name)
 
 		emptyLabel.Visible = #keys == 0
 		emptyLabel.Text = total == 0 and "Класть в слоты пока нечего. Базовые элементы — у производителя."
@@ -471,7 +469,6 @@ return function(T, page)
 			end
 		end
 		if #pool == 0 then
-			setHint("все пары из запаса уже пробовали", Theme.color.warn)
 			Show.Shake(randomButton, 5, 0.3)
 			return
 		end
@@ -560,8 +557,7 @@ return function(T, page)
 			T.craft(a, b, 1)
 			return
 		end
-		confirmLabel.Text = ("Скрестить %s + %s?\n<font size=\"13\" color=\"%s\">Пару ещё не пробовали. Не смешаются — ничего не сгорит.</font>")
-			:format(Elements[a].name, Elements[b].name, Theme.Hex(Theme.color.textMute))
+		confirmLabel.Text = ("Скрестить %s + %s?"):format(Elements[a].name, Elements[b].name)
 		overlay.Visible = true
 		Theme.Open(box)
 	end

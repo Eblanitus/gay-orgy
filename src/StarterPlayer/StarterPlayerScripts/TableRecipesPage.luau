@@ -1,5 +1,5 @@
 -- Страница «Рецепты» алхимического стола (#286): открытые рецепты сеткой.
--- Ячейка — результат его цветом, из чего он и на сколько крафтов хватает запаса.
+-- Ячейка — результат его цветом и на сколько крафтов хватает запаса (#290: без мелких подписей).
 -- Щелчок кладёт пару на стол и переключает на «Крафт». Кнопка «МОЖНО» оставляет только
 -- то, на что хватает запаса. Неоткрытые рецепты не показываются: стол не подсказывает.
 return function(T, page)
@@ -27,9 +27,6 @@ return function(T, page)
 	local plate = make("Frame", "Plate", page)
 	T.glass(plate)
 
-	local section = make("TextLabel", "Section", page)
-	section.TextSize = 11
-
 	local readyButton = make("TextButton", "Ready", page)
 	readyButton.FontFace = Theme.font.strong
 	Show.Press(readyButton)
@@ -55,10 +52,9 @@ return function(T, page)
 		local compact = mobile or H < 420 or W < 760
 		local pad = compact and 6 or 12
 		local rowH = compact and 30 or 36
-		local btnW = compact and 120 or 170
-		place(readyButton, W - btnW, 0, btnW, rowH)
-		readyButton.TextSize = compact and 11 or 13
-		place(section, 0, math.floor((rowH - 16) / 2), W - btnW - pad, 16)
+		local btnW = compact and 150 or 200
+		place(readyButton, 0, 0, btnW, rowH)
+		readyButton.TextSize = compact and 14 or 16
 		local ly = rowH + (compact and 4 or 6)
 		place(plate, 0, ly, W, H - ly)
 		place(list, pad, ly + pad, W - pad * 2, H - ly - pad * 2)
@@ -88,7 +84,6 @@ return function(T, page)
 		list:ClearAllChildren()
 		local grid = Theme.Grid(list, mobile and 48 or 44, 360, 6)
 		local known = T.knownCount()
-		Theme.Section(section, "рецепты", ("%d / %d"):format(known, T.total))
 		readyButton.Text = onlyReady and "ВСЕ РЕЦЕПТЫ" or "ТОЛЬКО МОЖНО"
 		Theme.Button(readyButton, onlyReady and "active" or "ghost")
 
@@ -108,22 +103,16 @@ return function(T, page)
 					btn.TextXAlignment = Enum.TextXAlignment.Left
 					btn.Text = Theme.Caps(data.name)
 					Theme.ElementButton(btn, data.color, { wide = true, element = recipe.result, dim = n < 1 and not chain })
-					-- Хватает — «×N»; не хватает, но соберётся из запаса цепочкой — «цепочка K»;
-					-- иначе прочерк. Открытый за эту игру рецепт — со звездой.
-					local count = n > 0
-							and ('<font color="%s">×%d</font>'):format(Theme.Hex(Theme.color.action), n)
-						or chain and ('<font color="%s">цепочка %d</font>'):format(Theme.Hex(Theme.color.energy), #chain)
-						or ('<font color="%s">—</font>'):format(Theme.Hex(Theme.color.textMute))
-					if T.fresh[recipe.result] then
-						count ..= ('   <font color="%s">★</font>'):format(Theme.Hex(Theme.color.energy))
+					-- Только имя тем же кеглем (без мелких подписей, #290): хватает запаса —
+					-- «×N», открыт за эту игру — звезда. Из чего рецепт — видно на столе.
+					local text = Theme.Caps(data.name)
+					if n > 0 then
+						text ..= ('   <font color="%s">×%d</font>'):format(Theme.Hex(Theme.color.action), n)
 					end
-					Theme.SetCellText(btn, ('%s   <font size="11" color="%s">%s + %s</font>   %s'):format(
-						Theme.Caps(data.name),
-						Theme.Hex(Theme.color.textDim),
-						Elements[recipe.a].name,
-						Elements[recipe.b].name,
-						count
-					))
+					if T.fresh[recipe.result] then
+						text ..= ('   <font color="%s">★</font>'):format(Theme.Hex(Theme.color.energy))
+					end
+					Theme.SetCellText(btn, text)
 					if (n > 0 or chain) and not onlyReady then
 						btn.LayoutOrder = shown - 1000 -- что можно сделать сейчас — наверху
 					end

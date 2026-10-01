@@ -29,6 +29,7 @@ return function(T, page)
 	local summary = make("TextLabel", "Summary", page)
 	summary.FontFace = Theme.font.strong
 	summary.RichText = true
+	summary.TextColor3 = Theme.color.textDim
 	summary.TextXAlignment = Enum.TextXAlignment.Left
 	summary.TextTruncate = Enum.TextTruncate.AtEnd
 
@@ -40,14 +41,6 @@ return function(T, page)
 	fill.BackgroundColor3 = Theme.color.accent
 	fill.BackgroundTransparency = 0
 	Theme.Corner(fill, Theme.radius.mark)
-
-	-- Под полосой — то же по ярусам: сколько рецептов каждого яруса открыто.
-	local tiers = make("TextLabel", "Tiers", page)
-	tiers.FontFace = Theme.font.body
-	tiers.RichText = true
-	tiers.TextXAlignment = Enum.TextXAlignment.Left
-	tiers.TextTruncate = Enum.TextTruncate.AtEnd
-	tiers.TextColor3 = Theme.color.textMute
 
 	local list = make("ScrollingFrame", "List", page)
 	list.ScrollBarThickness = 6
@@ -73,12 +66,9 @@ return function(T, page)
 		local pad = compact and 6 or 12
 		local headH = compact and 24 or 30
 		place(summary, 0, 0, W, headH)
-		summary.TextSize = compact and 13 or 16
+		summary.TextSize = compact and 15 or 18
 		place(bar, 0, headH + 2, W, 4)
-		local tierH = compact and 16 or 20
-		place(tiers, 0, headH + 8, W, tierH)
-		tiers.TextSize = compact and 11 or 13
-		local ly = headH + tierH + (compact and 12 or 16)
+		local ly = headH + (compact and 12 or 16)
 		place(plate, 0, ly, W, H - ly)
 		place(list, pad, ly + pad, W - pad * 2, H - ly - pad * 2)
 		place(emptyLabel, pad * 3, ly + pad * 3, W - pad * 6, 60)
@@ -113,34 +103,18 @@ return function(T, page)
 	local function refresh()
 		local s = T.stats
 		local known = T.knownCount()
-		summary.Text = ("%s     %s     %s     %s"):format(
-			Theme.Readout("крафтов", s.crafted, Theme.color.action, 10),
-			Theme.Readout("новых", s.found, Theme.color.energy, 10),
-			Theme.Readout("неудач", s.failed, Theme.color.danger, 10),
-			Theme.Readout("открыто", ("%d / %d"):format(known, T.total), Theme.color.accent, 10)
-		)
+		-- Сводка одним кеглем, без мелких подписей (#290): слово и число его цветом.
+		local function part(word, value, color)
+			return ('%s <font color="%s">%s</font>'):format(word, Theme.Hex(color), tostring(value))
+		end
+		summary.Text = table.concat({
+			part("КРАФТОВ", s.crafted, Theme.color.action),
+			part("НОВЫХ", s.found, Theme.color.energy),
+			part("НЕУДАЧ", s.failed, Theme.color.danger),
+			part("ОТКРЫТО", ("%d / %d"):format(known, T.total), Theme.color.accent),
+		}, "      ")
 		fill.Size = UDim2.fromScale(T.total > 0 and known / T.total or 0, 1)
 
-		local byTier, order = {}, {}
-		for _, recipe in T.Recipes.List do
-			local tier = Elements[recipe.result].tier or 0
-			if not byTier[tier] then
-				byTier[tier] = { known = 0, total = 0 }
-				table.insert(order, tier)
-			end
-			byTier[tier].total += 1
-			if T.known[recipe.result] then
-				byTier[tier].known += 1
-			end
-		end
-		table.sort(order)
-		local parts = {}
-		for _, tier in order do
-			local t = byTier[tier]
-			local color = t.known == t.total and Theme.color.action or Theme.color.textDim
-			table.insert(parts, ('ярус %d  <font color="%s">%d / %d</font>'):format(tier, Theme.Hex(color), t.known, t.total))
-		end
-		tiers.Text = table.concat(parts, "     ")
 
 		list:ClearAllChildren()
 		local lay = Instance.new("UIListLayout")
@@ -169,21 +143,12 @@ return function(T, page)
 					or e.kind == "nomix" and Theme.color.danger
 					or Theme.color.warn
 
-				local time = make("TextLabel", "Time", row)
-				time.Position = UDim2.fromOffset(12, 0)
-				time.Size = UDim2.new(0, mobile and 44 or 56, 1, 0)
-				time.FontFace = Theme.font.body
-				time.TextSize = mobile and 11 or 13
-				time.TextColor3 = Theme.color.textMute
-				time.TextXAlignment = Enum.TextXAlignment.Left
-				time.Text = os.date("%H:%M", e.time)
-
 				local text = make("TextLabel", "Text", row)
-				local tx = 12 + (mobile and 48 or 62)
+				local tx = 14
 				text.Position = UDim2.fromOffset(tx, 0)
 				text.Size = UDim2.new(1, -(tx + 8), 1, 0)
 				text.FontFace = Theme.font.strong
-				text.TextSize = mobile and 13 or 15
+				text.TextSize = mobile and 15 or 16
 				text.RichText = true
 				text.TextColor3 = Theme.color.text
 				text.TextXAlignment = Enum.TextXAlignment.Left
