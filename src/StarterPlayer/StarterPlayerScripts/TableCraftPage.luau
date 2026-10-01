@@ -1,16 +1,20 @@
--- Страница «Крафт» алхимического стола (#282–#284, #290, #291).
--- Верх — верстак на стеклянной плашке: два слота, «+», «=», слот результата и рычаг крафта
--- с иконкой колбы (TableLever: тянут вниз, подтверждения нет); под слотами строка
--- инструментов: обмен, сброс, случайная проба, сортировка и крафт пачкой. Ниже — инвентарь:
--- имя и запас; пока в слоте один элемент, ячейки, с которыми пара уже не смешалась, притенены.
--- Дёрнули рычаг — элементы сплетаются (TableFusion), по ответу сервера новый элемент рождается
--- в слоте результата: вспышка, «+1», баннер нового рецепта; неудача — распад и дрожь.
+-- Страница «Крафт» алхимического стола (#282–#284, #290–#292).
+-- Верх — верстак на стеклянной плашке: «пусто + пусто» под плитой пресса (TablePress) и рычаг
+-- с иконкой колбы (TableLever); под слотами строка инструментов: обмен, сброс, случайная
+-- проба, сортировка и крафт пачкой. Ниже — инвентарь: имя и запас.
+--
+-- Положенный в слот элемент — одна штука из запаса (#292): ячейка показывает на одну меньше,
+-- последняя штука прячет ячейку. Это только показ: сервер списывает при крафте сам.
+-- Результата заранее не видно. Рычаг давит пресс; дотянули — элементы раздавлены, слоты
+-- пусты, ушёл запрос. Ответ — плита поднимается, в середине лежит результат; его надо
+-- забрать щелчком, и он летит в свою ячейку. Неудача — осколки, а элементы возвращаются в
+-- инвентарь: сервер при неудаче ничего не списывает (Crafting.Craft).
 -- T — общее состояние стола (CraftingCraftTab), page — рамка страницы.
 return function(T, page)
 	local Theme, Elements, MobileUI, Show, UISound = T.Theme, T.Elements, T.MobileUI, T.Show, T.UISound
 	local UserInputService = game:GetService("UserInputService")
 	local Lever = require(script.Parent:WaitForChild("TableLever"))
-	local Fusion = require(script.Parent:WaitForChild("TableFusion"))
+	local Press = require(script.Parent:WaitForChild("TablePress"))
 	local mobile = MobileUI.isMobile
 
 	local function make(className, name, parent, z)
@@ -49,6 +53,9 @@ return function(T, page)
 	local query = ""
 	local state = "empty" -- что лежит на столе: empty, known, unknown, failed
 	local chain = nil -- открытый рецепт, на который не хватает: шаги цепочки, если она есть
+	local pressed = nil -- { a, b }: раздавлены рычагом, ответа ещё нет
+	local held = nil -- ключ результата под прессом: ещё не забран
+	local run = nil -- что сейчас крафтится: "single", "chain" или "batch"
 
 	-- Стеклянные плашки — первыми детьми: из равных по ZIndex позже рисуется тот, кто позже в дереве.
 	local benchPlate = make("Frame", "BenchPlate", page)
@@ -59,10 +66,13 @@ return function(T, page)
 	local slotA = button("SlotA", page, "", "muted")
 	local plusLabel = make("TextLabel", "Plus", page)
 	local slotB = button("SlotB", page, "", "muted")
-	local eqLabel = make("TextLabel", "Equals", page)
+	-- Результат — не слот, а то, что лежит под прессом после крафта: виден, пока не забран.
 	local resultSlot = make("TextButton", "Result", page)
 	resultSlot.AutoButtonColor = false
 	resultSlot.FontFace = Theme.font.strong
+	resultSlot.Text = ""
+	resultSlot.Visible = false
+	local press = Press.Mount(page, { slotA = slotA, slotB = slotB, plus = plusLabel, result = resultSlot })
 	local craftButton = button("Craft", page, "", "muted")
 	craftButton.AutoButtonColor = false
 	local craft -- объявлена ниже, рычаг зовёт её
@@ -129,16 +139,14 @@ return function(T, page)
 		end
 	end
 	-- Кнопка — жёлоб рычага: колба переезжает в ручку, дотянули до низа — крафт.
+	-- Ручка ведёт плиту пресса.
 	lever = Lever.Mount(craftButton, flask, function()
 		craft()
-	end)
+	end, press.lever)
 
-	for _, l in { plusLabel, eqLabel } do
-		l.FontFace = Theme.font.strong
-		l.TextColor3 = Theme.color.textDim
-	end
+	plusLabel.FontFace = Theme.font.strong
+	plusLabel.TextColor3 = Theme.color.textDim
 	plusLabel.Text = "+"
-	eqLabel.Text = "="
 	for _, s in { slotA, slotB, resultSlot } do
 		s.FontFace = Theme.font.strong
 		s.TextWrapped = true
@@ -189,28 +197,25 @@ return function(T, page)
 		local craftW = compact and 112 or math.clamp(math.floor(W * 0.17), 170, 260)
 		local signW = by(18, 34)
 
-		local benchH = pad + slotH + gap + toolH + pad
+		-- Над слотами — место для плиты пресса; слоты и «+» ставит сам пресс.
+		local room = press.room(slotH)
+		local sy = pad + room
+		local benchH = sy + slotH + gap + toolH + pad
 		place(benchPlate, 0, 0, W, benchH)
-		local slotW = (W - pad * 2 - craftW - gap - signW * 2) / 3
-		local x = pad
-		place(slotA, x, pad, slotW, slotH)
-		place(plusLabel, x + slotW, pad, signW, slotH)
-		place(slotB, x + slotW + signW, pad, slotW, slotH)
-		place(eqLabel, x + slotW * 2 + signW, pad, signW, slotH)
-		place(resultSlot, x + slotW * 2 + signW * 2, pad, slotW, slotH)
+		local slotW = math.floor((W - pad * 2 - craftW - gap - signW) / 2)
+		press.layout({ ax = pad, bx = pad + slotW + signW, y = sy, w = slotW, h = slotH, top = pad })
 		-- Рычаг — во всю высоту верстака, чтобы было куда тянуть.
-		place(craftButton, W - pad - craftW, pad, craftW, slotH + gap + toolH)
+		place(craftButton, W - pad - craftW, pad, craftW, room + slotH + gap + toolH)
 
 		local big = slotH >= 110
 		for _, s in { slotA, slotB, resultSlot } do
 			setCellTextSize(s, big and 24 or by(14, 16))
 		end
 		plusLabel.TextSize = big and 32 or 22
-		eqLabel.TextSize = plusLabel.TextSize
 
 		-- Строка инструментов: слева обмен, сброс, наугад, сортировка; справа пачка.
 		-- Мелких подписей нет (просьба автора, #290): только кнопки.
-		local ty = pad + slotH + gap
+		local ty = sy + slotH + gap
 		local toolW = by(78, 120)
 		local batchW = by(54, 80)
 		for i, b in { swapButton, clearButton, randomButton } do
@@ -240,10 +245,46 @@ return function(T, page)
 	page:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
 
 	-- ---------- верстак ----------
-	local function renderSlot(b, key)
-		b.Text = key and Theme.Caps(Elements[key].name) or "— ПУСТО —"
-		-- Цветная полоса смотрит в сторону «+» (решение автора, #105).
-		Theme.ElementButton(b, key and Elements[key].color or nil, { right = b == slotA, element = key })
+	-- Сколько штук key лежит на столе: в слотах, под плитой и результатом. Это резерв:
+	-- инвентарь показывает запас за его вычетом. Больше запаса резерв не бывает — слот без
+	-- штуки (рецепт из «Рецептов», на который не хватает) только призрак цепочки.
+	local function slotUses(key)
+		return (slots[1] == key and 1 or 0) + (slots[2] == key and 1 or 0)
+	end
+
+	local function uses(key)
+		local n = slotUses(key)
+		-- Раздавленное держится, пока сервер его не списал: запас упал ниже снимка — уже списано.
+		if pressed and T.count(key) >= (pressed.base[key] or 0) then
+			n += (pressed[1] == key and 1 or 0) + (pressed[2] == key and 1 or 0)
+		end
+		return n + (held == key and 1 or 0)
+	end
+
+	-- Сколько штук key показывает инвентарь.
+	local function avail(key)
+		local have = T.count(key)
+		return have - math.min(have, uses(key))
+	end
+
+	-- Стол занят: идёт крафт или под прессом лежит результат.
+	local function locked()
+		return T.busy() or pressed ~= nil or held ~= nil
+	end
+
+	local drawn = {} -- номер слота → что нарисовано: перерисовка только при перемене
+	local function renderSlot(i)
+		local b = i == 1 and slotA or slotB
+		local key = slots[i]
+		local ghost = key ~= nil and T.count(key) < slotUses(key)
+		local sig = tostring(key) .. (ghost and "~" or "")
+		if drawn[i] == sig then
+			return
+		end
+		drawn[i] = sig
+		b.Text = key and Theme.Caps(Elements[key].name) or "ПУСТО"
+		-- Цветная полоса смотрит в сторону «+» (решение автора, #105). Призрак — притушен.
+		Theme.ElementButton(b, key and Elements[key].color or nil, { right = i == 1, element = key, dim = ghost })
 	end
 
 	local function refreshBench()
@@ -256,24 +297,29 @@ return function(T, page)
 			state = result and "known" or T.isFailed(a, b) and "failed" or "unknown"
 		end
 
-		-- Слот результата: открытый рецепт — сам элемент; неизвестная пара — «???»;
-		-- пара, которая уже не смешалась, — так и написано.
-		resultSlot.Text = state == "known" and Theme.Caps(Elements[result].name)
-			or state == "failed" and "НЕ СМЕШИВАЮТСЯ"
-			or state == "unknown" and "???"
-			or "= ?"
-		Theme.ElementButton(resultSlot, result and Elements[result].color or nil, { element = result })
-		local caption = resultSlot:FindFirstChild("Caption")
-		if caption and not result then
-			caption.TextColor3 = state == "failed" and Theme.color.danger
-				or state == "unknown" and Theme.color.accent
-				or Theme.buttonKind.muted.text
-		end
-
 		local n = (a and b) and T.times(a, b) or 0
-		local left = T.batchLeft()
-		local busy = T.pending or left > 0
+		local busy = locked()
 		chain = (state == "known" and n < 1) and T.plan(result) or nil
+
+		-- Запас ушёл (его потратил другой игрок): штука без покрытия снимается со слота.
+		-- Не трогаем во время крафта и когда на столе цель цепочки.
+		if not busy and not chain then
+			local changed = false
+			for i = 2, 1, -1 do
+				local key = slots[i]
+				if key and T.count(key) < slotUses(key) then
+					slots[i] = nil
+					changed = true
+				end
+			end
+			if changed then
+				refreshBench()
+				return
+			end
+		end
+		renderSlot(1)
+		renderSlot(2)
+
 		local ready = ((state == "known" or state == "unknown") and n > 0 or chain ~= nil) and not busy
 		Theme.Button(craftButton, ready and "action" or "muted")
 		if state == "failed" then
@@ -283,9 +329,8 @@ return function(T, page)
 
 		local canBatch = state == "known" and n >= 2 and not busy
 		fiveButton.Visible, maxButton.Visible = canBatch, canBatch
-		Theme.Button(swapButton, (a or b) and "quiet" or "muted")
-		Theme.Button(clearButton, (a or b) and "quiet" or "muted")
-
+		Theme.Button(swapButton, (a or b) and not busy and "quiet" or "muted")
+		Theme.Button(clearButton, (a or b) and not busy and "quiet" or "muted")
 	end
 
 	-- ---------- инвентарь ----------
@@ -309,7 +354,7 @@ return function(T, page)
 		local text = ('%s   <font color="%s">%d</font>'):format(
 			Theme.Caps(data.name),
 			Theme.Hex(Theme.Legible(data.color)),
-			T.count(key)
+			avail(key)
 		)
 		return text, partner ~= nil and T.isFailed(partner, key)
 	end
@@ -355,8 +400,8 @@ return function(T, page)
 		local grid = Theme.Grid(invList, mobile and 48 or 40, 300, 6)
 
 		local keys, total = {}, 0
-		for key, count in T.inventory do
-			if count > 0 and Elements[key] then
+		for key in T.inventory do
+			if Elements[key] and avail(key) > 0 then
 				total += 1
 				if T.matches(key, query) then
 					table.insert(keys, key)
@@ -413,27 +458,59 @@ return function(T, page)
 	end
 
 	local function refresh()
+		-- Ответа так и не было (стол сбросил ожидание): раздавленное вернулось в запас,
+		-- плита поднимается.
+		if pressed and not T.busy() then
+			pressed = nil
+			run = nil
+			press.release()
+		end
 		refreshBench()
 		rebuild()
 	end
 
 	-- ---------- действия ----------
-	local function setSlots(a, b)
-		slots[1], slots[2] = a, b
-		renderSlot(slotA, a)
-		renderSlot(slotB, b)
-		refreshBench()
-		refreshCells()
+	-- Ячейка появилась или пропала (последняя штука ушла в слот, вернулась) — сетка
+	-- пересобирается; иначе хватит подписей.
+	local function shownChanged(keys)
+		for _, key in keys do
+			if key and (avail(key) > 0 and T.matches(key, query)) ~= (cells[key] ~= nil) then
+				return true
+			end
+		end
+		return false
 	end
 
-	-- Пустой слот заполняется первым. Оба заняты — меняется второй: первый остаётся
-	-- «якорем», и перебирать ему пары можно одними щелчками по инвентарю.
-	function assignToSlot(key)
-		local target
-		if slots[1] == nil then
-			target = 1
+	local function setSlots(a, b)
+		local was = { slots[1] or false, slots[2] or false }
+		slots[1], slots[2] = a, b
+		refreshBench()
+		if shownChanged({ was[1], was[2], a or false, b or false }) then
+			rebuild()
 		else
-			target = 2
+			refreshCells()
+		end
+	end
+
+	-- Стол занят — щелчки по слотам и инвентарю не проходят. Лежит результат — он
+	-- подпрыгивает: «сначала забери».
+	local function refuse()
+		if held then
+			Show.Pop(resultSlot, 0.12, 0.3)
+		end
+	end
+
+	-- Пустой слот заполняется первым. Оба заняты — меняется второй (прежний возвращается
+	-- в запас): первый остаётся «якорем», и перебирать ему пары можно одними щелчками.
+	-- Со стола в слот уходит ровно одна штука.
+	function assignToSlot(key)
+		if locked() then
+			refuse()
+			return
+		end
+		local target = slots[1] == nil and 1 or 2
+		if slots[target] ~= key and avail(key) < 1 then
+			return
 		end
 		if target == 1 then
 			setSlots(key, slots[2])
@@ -443,22 +520,35 @@ return function(T, page)
 		Show.Pop(target == 1 and slotA or slotB, 0.08, 0.22)
 	end
 
+	-- Щелчок по слоту — штука возвращается в инвентарь.
 	slotA.MouseButton1Click:Connect(function()
+		if locked() then
+			refuse()
+			return
+		end
 		setSlots(nil, slots[2])
 	end)
 	slotB.MouseButton1Click:Connect(function()
+		if locked() then
+			refuse()
+			return
+		end
 		setSlots(slots[1], nil)
 	end)
 
 	swapButton.MouseButton1Click:Connect(function()
-		if slots[1] or slots[2] then
+		if (slots[1] or slots[2]) and not locked() then
 			setSlots(slots[2], slots[1])
-			Show.Slide(slotA, 1)
-			Show.Slide(slotB, -1)
+			Show.Pop(slotA, 0.08, 0.22)
+			Show.Pop(slotB, 0.08, 0.22)
 		end
 	end)
 
 	clearButton.MouseButton1Click:Connect(function()
+		if locked() then
+			refuse()
+			return
+		end
 		setSlots(nil, nil)
 	end)
 
@@ -466,6 +556,10 @@ return function(T, page)
 	-- Занят один слот — партнёр подбирается к нему. Подсказкой это не служит: среди
 	-- непробованных пар есть и пустые.
 	randomButton.MouseButton1Click:Connect(function()
+		if locked() then
+			refuse()
+			return
+		end
 		local keys = {}
 		for key, count in T.inventory do
 			if count > 0 and Elements[key] then
@@ -503,31 +597,37 @@ return function(T, page)
 	end)
 
 	-- ---------- крафт ----------
-	-- Подтверждения нет (#291): рычаг сам и есть «точно?» — его надо дотянуть. Одиночный
-	-- крафт играет сплетание: шары из слотов сходятся, ответ сервера его доигрывает.
-	local fusion = nil
-
+	-- Подтверждения нет (#291): рычаг сам и есть «точно?» — его надо дотянуть. Дотянули —
+	-- пресс раздавил пару (#292): слоты пусты, плита ждёт внизу ответа сервера.
 	function craft()
 		local a, b = slots[1], slots[2]
-		if not (a and b) or T.pending or T.batchLeft() > 0 then
+		if not (a and b) or locked() then
+			refuse()
 			return
 		end
+		local steps
 		if chain then
-			T.run(chain)
-			return
-		end
-		if state == "failed" or T.times(a, b) < 1 then
+			steps = chain
+		elseif state == "failed" or T.times(a, b) < 1 then
 			Show.Shake(craftButton, 6, 0.3)
 			UISound.Play("Fail")
 			return
+		else
+			steps = { { a, b } }
 		end
-		fusion = Fusion.Play(page, slotA, slotB, resultSlot, Elements[a].color, Elements[b].color)
-		T.craft(a, b, 1)
+		run = chain and "chain" or "single"
+		pressed = { a, b, base = { [a] = T.count(a), [b] = T.count(b) } }
+		slots[1], slots[2] = nil, nil
+		press.hold()
+		press.crush(Elements[a].color, Elements[b].color)
+		T.run(steps) -- сам зовёт T.refresh: слоты и инвентарь перерисуются
 	end
 
+	-- Пачка: пара остаётся на столе, пресс бьёт на каждый шаг, результаты летят сами.
 	local function batchOf(n)
 		local a, b = slots[1], slots[2]
-		if a and b and state == "known" then
+		if a and b and state == "known" and not locked() then
+			run = "batch"
 			T.craft(a, b, math.min(n, T.times(a, b), T.TUNING.batchMax))
 		end
 	end
@@ -560,7 +660,7 @@ return function(T, page)
 		local k = input.KeyCode
 		if k == Enum.KeyCode.Return or k == Enum.KeyCode.KeypadEnter then
 			lever.pull()
-		elseif k == Enum.KeyCode.Backspace then
+		elseif k == Enum.KeyCode.Backspace and not locked() then
 			setSlots(nil, nil)
 		end
 	end)
@@ -590,7 +690,7 @@ return function(T, page)
 		head.Position = UDim2.new(0, 0, 0, mobile and 10 or 16)
 		head.Size = UDim2.new(1, 0, 0, mobile and 18 or 22)
 		head.FontFace = Theme.font.body
-		head.TextSize = mobile and 13 or 16
+		head.TextSize = mobile and 14 or 16
 		head.TextColor3 = Theme.color.energy
 		head.Text = "★  НОВЫЙ РЕЦЕПТ  ★"
 
@@ -608,7 +708,7 @@ return function(T, page)
 		from.Position = UDim2.new(0, 0, 1, mobile and -26 or -36)
 		from.Size = UDim2.new(1, 0, 0, mobile and 18 or 24)
 		from.FontFace = Theme.font.body
-		from.TextSize = mobile and 12 or 15
+		from.TextSize = mobile and 14 or 15
 		from.TextColor3 = Theme.color.textDim
 		from.Text = ("%s + %s"):format(Elements[e.a].name, Elements[e.b].name)
 
@@ -620,44 +720,152 @@ return function(T, page)
 		end)
 	end
 
-	local function feedback(e)
-		if e.ok then
-			local color = Elements[e.result].color
-			Show.Flash(slotA, color, 0.45)
-			Show.Flash(slotB, color, 0.45)
-			Show.Flash(resultSlot, color, 0.6)
-			Show.Pop(resultSlot, 0.12, 0.3)
-			Show.Float(resultSlot, "+1 " .. Theme.Caps(Elements[e.result].name), Theme.Legible(color), mobile and 16 or 22)
-			if e.first then
-				banner(e)
-			else
-				UISound.Play("Gain")
+	-- Куда лететь элементу key: его ячейка, если она видна в списке, иначе сам список.
+	local function home(key)
+		local c = cells[key]
+		if c then
+			local p, s = c.btn.AbsolutePosition + c.btn.AbsoluteSize / 2, invList.AbsolutePosition
+			local e = s + invList.AbsoluteSize
+			if p.X >= s.X and p.Y >= s.Y and p.X <= e.X and p.Y <= e.Y then
+				return c.btn
 			end
-		else
-			Show.Shake(slotA, 7, 0.35)
-			Show.Shake(slotB, 7, 0.35)
-			Show.Flash(resultSlot, Theme.color.danger, 0.5)
-			UISound.Play("Fail")
+		end
+		return invList
+	end
+
+	local function landed(key)
+		local c = cells[key]
+		if c then
+			Show.Flash(c.btn, Elements[key].color, 0.5)
+			Show.Pop(c.btn, 0.1, 0.25)
 		end
 	end
 
-	-- Ответ сервера. Шло сплетание — отклик в миг рождения (или распада), иначе сразу.
-	local function onResult(e)
-		refreshBench()
-		rebuild()
-		local play = fusion
-		fusion = nil
-		if not onScreen() then
+	-- Результат шага пачки летит из-под пресса в инвентарь сам.
+	local function flyHome(key)
+		press.fly(resultSlot, home(key), Elements[key].color, function()
+			landed(key)
+		end)
+	end
+
+	local function showResult(key)
+		local color = Elements[key].color
+		resultSlot.Text = Theme.Caps(Elements[key].name)
+		Theme.ElementButton(resultSlot, color, { element = key })
+		resultSlot.Visible = true
+		Show.Pop(resultSlot, 0.18, 0.4)
+		Show.Flash(resultSlot, color, 0.6)
+	end
+
+	-- Забрать результат: летит дугой в свою ячейку, там вспышка и запас +1. instant — без
+	-- полёта (окно закрыли, со стола взяли другой рецепт).
+	local taking = false
+	local function take(instant)
+		local key = held
+		if not key or taking then
 			return
 		end
-		local function after()
-			feedback(e)
+		resultSlot.Visible = false
+		if instant or not onScreen() then
+			held = nil
+			refreshBench()
+			rebuild()
+			return
 		end
-		if play then
-			play(e.ok, e.ok and Elements[e.result].color or Theme.color.danger, after)
-		else
-			after()
+		UISound.Play("Click")
+		taking = true
+		-- Ячейки ещё нет (такого элемента не было): запас открывается сразу, чтобы было куда лететь.
+		if not cells[key] then
+			held = nil
+			rebuild()
 		end
+		press.fly(resultSlot, home(key), Elements[key].color, function()
+			taking = false
+			held = nil
+			refreshBench()
+			rebuild()
+			landed(key)
+			local c = cells[key]
+			if c then
+				Show.Float(c.btn, "+1", Theme.Legible(Elements[key].color), mobile and 16 or 20)
+			end
+		end)
+	end
+	resultSlot.MouseButton1Click:Connect(function()
+		take(false)
+	end)
+
+	-- Ответ сервера.
+	local function onResult(e)
+		local mode = run
+		local last = not T.busy()
+		if last then
+			run = nil
+		end
+
+		-- Шаг пачки или промежуточный шаг цепочки: удар пресса, результат летит сам.
+		if mode == "batch" or (mode == "chain" and not last and e.ok) then
+			if mode == "batch" and last then
+				slots[1], slots[2] = nil, nil -- пачка кончилась: пара раздавлена
+			end
+			refreshBench()
+			rebuild()
+			if not onScreen() then
+				return
+			end
+			if e.ok then
+				press.slam(function()
+					flyHome(e.result)
+				end)
+				if e.first then
+					banner(e)
+				end
+			else
+				press.crack()
+				UISound.Play("Fail")
+			end
+			return
+		end
+
+		-- Ответ не на рычаг (стол уже сбросил ожидание) — только перерисовать.
+		if not mode then
+			refreshBench()
+			rebuild()
+			return
+		end
+
+		-- Одиночный крафт или конец цепочки: плита поднимается, под ней результат.
+		pressed = nil
+		if e.ok then
+			held = e.result
+		end
+		if not onScreen() then
+			held = nil
+			press.release()
+			refreshBench()
+			rebuild()
+			return
+		end
+		refreshBench()
+		rebuild()
+		press.release(function()
+			if e.ok then
+				if held == e.result then
+					showResult(e.result)
+				end
+				if e.first then
+					banner(e)
+				else
+					UISound.Play("Gain")
+				end
+			else
+				-- Неудача: осколки; элементы уже вернулись в инвентарь (сервер их не списал).
+				press.crack()
+				Show.Float(resultSlot, e.kind == "nomix" and "НЕ СМЕШИВАЮТСЯ" or "НЕ ХВАТАЕТ",
+					Theme.color.danger, mobile and 16 or 20)
+				UISound.Play("Fail")
+			end
+		end)
 	end
 
 	page:GetPropertyChangedSignal("Visible"):Connect(function()
@@ -666,8 +874,6 @@ return function(T, page)
 		end
 	end)
 
-	renderSlot(slotA, nil)
-	renderSlot(slotB, nil)
 	layout()
 	refresh()
 
@@ -675,6 +881,10 @@ return function(T, page)
 		frame = page,
 		refresh = refresh,
 		onResult = onResult,
+		-- Окно закрыли: результат из-под пресса забирается сам.
+		close = function()
+			take(true)
+		end,
 		filter = function(text)
 			if text ~= query then
 				query = text
@@ -682,6 +892,10 @@ return function(T, page)
 			end
 		end,
 		fill = function(a, b)
+			if T.busy() or pressed then
+				return
+			end
+			take(true)
 			setSlots(a, b)
 			Show.Pop(slotA, 0.08, 0.22)
 			Show.Pop(slotB, 0.08, 0.22)

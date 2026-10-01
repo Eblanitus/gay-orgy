@@ -1,4 +1,4 @@
--- Алхимический стол (#282–#286). Своё окно-монитор, как у производителя и справочника: рамка
+-- Алхимический стол (#282–#286, #292). Своё окно-монитор, как у производителя и справочника: рамка
 -- ReferenceFrame, фон — кипящая колба (TableBubbles, #286), поиск в шапке, режимы в подвале —
 -- «Крафт», «Рецепты», «Журнал».
 -- Страницы собирают модули TableCraftPage, TableRecipesPage и TableJournalPage. Общее
@@ -157,6 +157,15 @@ return function(deps)
 
 	function T.batchLeft()
 		return #queue
+	end
+
+	-- Следующий шаг очереди уже назначен (пауза между крафтами): стол ещё занят, хотя
+	-- в очереди пусто и запроса нет.
+	local scheduled = false
+
+	-- Стол занят: ждём ответ, в очереди есть шаги или следующий вот-вот уйдёт.
+	function T.busy()
+		return T.pending or #queue > 0 or scheduled
 	end
 
 	function T.stopBatch()
@@ -342,7 +351,9 @@ return function(deps)
 			if entry.ok and gui.Enabled and T.times(nextStep[1], nextStep[2]) > 0 then
 				table.remove(queue, 1)
 				local mine = queue
+				scheduled = true
 				task.delay(TUNING.batchPause, function()
+					scheduled = false
 					if queue == mine and not T.pending then
 						send(nextStep[1], nextStep[2])
 						T.refresh()
@@ -363,6 +374,7 @@ return function(deps)
 	gui:GetPropertyChangedSignal("Enabled"):Connect(function()
 		if not gui.Enabled then
 			queue = {}
+			craftPage.close()
 		end
 	end)
 

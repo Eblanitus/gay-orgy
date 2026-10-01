@@ -4,8 +4,9 @@
 -- ручку; второй щелчок подряд — значит, игрок не понял: рядом всплывает «ТЯНИ ВНИЗ»,
 -- стрелки разгораются.
 --
--- Lever.Mount(button, flask, onPull) — button — кнопка-жёлоб, flask — иконка (переезжает
--- в ручку), onPull() — дотянули. Возвращает { paint(color), pull() }: pull — тот же ход
+-- Lever.Mount(button, flask, onPull, onMove) — button — кнопка-жёлоб, flask — иконка
+-- (переезжает в ручку), onPull() — дотянули, onMove(pos) — ручка сдвинулась (0 — верх,
+-- 1 — низ; по нему ходит пресс, #292). Возвращает { paint(color), pull() }: pull — тот же ход
 -- рычага без мыши (Enter на ПК).
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -39,7 +40,7 @@ local function frame(name, parent, z)
 	return f
 end
 
-function Lever.Mount(button, flask, onPull)
+function Lever.Mount(button, flask, onPull, onMove)
 	local z = button.ZIndex + 1
 
 	-- Жёлоб — тонкая линия по середине, внизу засечка «сюда».
@@ -120,6 +121,9 @@ function Lever.Mount(button, flask, onPull)
 
 	local function place()
 		knob.Position = UDim2.new(0.5, 0, 0, margin + pos * travel)
+		if onMove then
+			onMove(pos)
+		end
 	end
 
 	local function layout()
