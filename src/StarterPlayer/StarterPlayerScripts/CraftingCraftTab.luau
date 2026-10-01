@@ -1,5 +1,6 @@
--- Алхимический стол (#282–#287). Своё окно-монитор, как у производителя и справочника: рамка
--- ReferenceFrame, фон точками, поиск в шапке, режимы в подвале — «Крафт», «Рецепты», «Журнал».
+-- Алхимический стол (#282–#286). Своё окно-монитор, как у производителя и справочника: рамка
+-- ReferenceFrame, фон — кипящая колба (TableBubbles, #286), поиск в шапке, режимы в подвале —
+-- «Крафт», «Рецепты», «Журнал».
 -- Страницы собирают модули TableCraftPage, TableRecipesPage и TableJournalPage. Общее
 -- состояние стола (запас, открытые рецепты, несмешиваемые пары, журнал) — таблица T.
 --
@@ -20,6 +21,7 @@ return function(deps)
 	local Show = require(script.Parent:WaitForChild("ProducerShow"))
 	local UISound = require(script.Parent:WaitForChild("UISound"))
 	local CraftResult = Remotes:WaitForChild("CraftResult")
+	local Bubbles = require(script.Parent:WaitForChild("TableBubbles"))
 
 	-- Числа стола — здесь, а не в коде страниц.
 	local TUNING = {
@@ -42,7 +44,9 @@ return function(deps)
 		title = "АЛХИМИЧЕСКИЙ СТОЛ",
 		placeholder = "элемент…",
 		name = "TableTab",
-		backdrop = "dots",
+		backdrop = function(mon, isOn)
+			return Bubbles.Mount(mon, isOn, 1)
+		end,
 	})
 	tabFrames["Крафт"] = window.bookFrame
 
@@ -314,6 +318,7 @@ return function(deps)
 				T.known[result] = true
 				T.fresh[result] = true
 			end
+			window.backdrop.burst(Elements[result].color, entry.first and 2 or 1)
 		else
 			entry.kind = extra
 			entry.reason = typeof(result) == "string" and result or ""

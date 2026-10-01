@@ -28,7 +28,8 @@ end
 
 -- root — окно лаборатории, gui — его ScreenGui, modes — { id, name } по порядку подвала.
 -- opts (необязательно; той же рамкой собран и стол, #282): title — заголовок, placeholder —
--- подсказка поиска, name — имя вкладки, backdrop = "dots" — фон точками вместо звёзд.
+-- подсказка поиска, name — имя вкладки, backdrop(mon, isOn) — свой фон вместо звёзд:
+-- возвращает { paint(w, h), frost(plate, layer) } (пузырьки стола, TableBubbles).
 function Frame.Build(root, gui, modes, opts)
 	opts = opts or {}
 	-- Вкладка лежит прямо на root и сама глухая, как у производителя: закрывает фон окна
@@ -54,10 +55,11 @@ function Frame.Build(root, gui, modes, opts)
 	Theme.Brackets(mon)
 	-- Фон окна — редкие тусклые звёзды (Theme.Stars, #270, #271): свой узор у каждого
 	-- окна. Первым ребёнком рамки, под всем содержимым.
-	local paintDots = opts.backdrop == "dots"
-			and Theme.Dots(mon, { zIndex = 1, step = 22, size = 2, transparency = 0.55 })
-		or Theme.Stars(mon, { zIndex = 1 })
-	local glass = Glass.Mount(mon)
+	local backdrop = opts.backdrop and opts.backdrop(mon, function()
+		return gui.Enabled and bookFrame.Visible
+	end)
+	local paintBackdrop = backdrop and backdrop.paint or Theme.Stars(mon, { zIndex = 1 })
+	local glass = Glass.Mount(mon, backdrop and backdrop.frost)
 
 	local head = make("TextLabel", "Title", mon, 3)
 	head.FontFace = Theme.font.strong
@@ -161,7 +163,7 @@ function Frame.Build(root, gui, modes, opts)
 		local CH = AH - CY - below
 		local MW, MH = CW + px * 2, CY + CH + below
 		place(mon, margin + math.floor((AW - MW) / 2), top + math.floor((AH - MH) / 2), MW, MH)
-		paintDots(math.floor(MW), math.floor(MH))
+		paintBackdrop(math.floor(MW), math.floor(MH))
 
 		local closeW, closeH = by(52, 44), by(34, 44)
 		local closeY = pt + math.max(0, math.floor((titleH - closeH) / 2))
@@ -212,6 +214,7 @@ function Frame.Build(root, gui, modes, opts)
 		glass = glass,
 		mon = mon,
 		close = close,
+		backdrop = backdrop,
 	}
 end
 

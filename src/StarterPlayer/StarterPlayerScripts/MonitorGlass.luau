@@ -59,11 +59,17 @@ end
 -- mon — рамка окна, у которой уже есть точки (Theme.Dots) или созвездия (Theme.Stars). Возвращает glass(plate):
 -- превращает плашку в стекло. Слой Frost ложится ребёнком плашки на её ZIndex, поэтому
 -- содержимое плашки должно быть на слой выше или создано после слоя.
-function Glass.Mount(mon)
+-- custom(plate, layer) — свой узор под стеклом (пузырьки стола, TableBubbles): тогда
+-- слой Frost заполняет он.
+function Glass.Mount(mon, custom)
 	local monDots = mon:FindFirstChild("Dots")
 	local stars = mon:FindFirstChild("Stars")
 	local frosted = {}
 	local function frost(plate, layer)
+		if custom then
+			custom(plate, layer)
+			return
+		end
 		if stars then
 			frostStars(mon, stars, plate, layer)
 			return
@@ -102,7 +108,9 @@ function Glass.Mount(mon)
 			frost(plate, layer)
 		end
 	end
-	if stars then
+	if custom then
+		-- свой узор следит за плашками сам
+	elseif stars then
 		stars:GetAttributeChangedSignal("Version"):Connect(refrostAll)
 	else
 		monDots:GetAttributeChangedSignal("OriginX"):Connect(refrostAll)
