@@ -245,7 +245,8 @@ if __name__ == "__main__":
     # Hand-made masks (2026-09-30 redo, not from Исходники): rebuilt only when named explicitly,
     # otherwise a plain run would overwrite them with the old source-based versions.
     HAND = {"Air", "Ash", "Cloud", "Coal", "Drought", "Energy", "Geyser", "Hurricane", "Life", "Lightning", "Mist", "Mud",
-            "Obsidian", "Ocean", "Poison", "Pond", "Puddle", "Rain", "Smog", "Steam", "Swamp", "Tornado", "Tree", "Water", "Wind"}
+            "Obsidian", "Ocean", "Poison", "Pond", "Puddle", "Rain", "Smog", "Steam", "Swamp", "Tornado", "Tree", "Water", "Wind",
+        "Earth", "Rust", "Soil"}  # cropped to the unique tile: the bottom was a pasted copy of the top with a seam
     keys = sys.argv[1:] or [k for k in CFG if k not in HAND]
     cells = [("Fire", Image.open(os.path.join(OUT, "fire_inv_1024.png")), (255, 140, 0))]
     for key in keys:
