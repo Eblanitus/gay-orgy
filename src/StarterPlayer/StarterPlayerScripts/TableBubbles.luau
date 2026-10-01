@@ -1,8 +1,9 @@
 -- Фон окна алхимического стола: колба кипит (просьба автора — у каждого окна свой узор;
 -- точки у производителя, звёзды у справочника). Со дна окна всплывают пузырьки-кольца
 -- с бликом, покачиваются, по дороге понемногу растут и лопаются каждый на своей высоте —
--- кольцо разлетается и гаснет. Удачный крафт — струя пузырьков цветом результата, новый
--- рецепт — струя вдвое гуще.
+-- кольцо разлетается и гаснет. Удачный крафт — «отходы»: пузырьки цветом результата, новый
+-- рецепт — вдвое больше. Они встают в очередь и выходят ровным потоком по всей ширине дна,
+-- а не пачкой в середине (#296, #297).
 --
 -- Под стеклянными плашками (MonitorGlass) пузырёк виден мягким пятном: Bubbles.frost кладёт
 -- в слой Frost каждой плашки по пятну на пузырёк и двигает их вместе с пузырьками. Пятно —
@@ -31,11 +32,13 @@ local TUNING = {
 	-- Пятно: доля поперечника, толщина (пиксели) и прозрачность каждого из трёх колец,
 	-- от внешнего к внутреннему.
 	frostRings = { { 1, 3, 0.94 }, { 0.82, 2, 0.88 }, { 0.64, 3, 0.94 } },
-	burst = 8, -- пузырьков в струе за крафт
-	burstMax = 24, -- живых пузырьков струи не больше: лишние старые лопаются раньше
-	burstSpeed = 5, -- струя быстрее покоя во столько раз
-	burstSpread = 0.6, -- струя бьёт из середины дна: ширина — доля окна
-	burstPop = { 0.05, 0.3 }, -- струя лопается выше: доля высоты окна от верха
+	burst = 8, -- цветных пузырьков за крафт
+	burstMax = 60, -- живых цветных не больше: остальные ждут в очереди
+	burstQueue = 90, -- очередь не длиннее: лишние старые выбрасываются
+	burstRate = 5, -- выходят по столько в секунду
+	burstSpeed = 2.5, -- цветные быстрее покоя во столько раз
+	burstJitter = 0.04, -- разброс места выхода: доля ширины окна
+	burstPop = { 0.05, 0.45 }, -- цветные лопаются выше: доля высоты окна от верха
 }
 
 local function rand(rng, range)
@@ -100,6 +103,10 @@ function Bubbles.Mount(mon, isOn, zIndex)
 	local list = {} -- пузырьки: ring, x, y, x0, size0, top, speed, rate, phase, color, burst, blobs
 	local plates = {} -- слой Frost → плашка
 	local offsets = {} -- слой Frost видимой плашки → её сдвиг от слоя пузырьков
+	local queue = {} -- цвета цветных пузырьков, ждущих выхода
+	local bursts = 0 -- живых цветных
+	local emit = 0 -- накопленная доля следующего выхода
+	local step = 0 -- номер выхода: место по золотому сечению, ровно по всей ширине
 
 	local function spawn(b, fromBottom)
 		b.size0 = rand(rng, TUNING.size)
@@ -132,6 +139,9 @@ function Bubbles.Mount(mon, isOn, zIndex)
 		glint.Position = UDim2.fromScale(0.22, 0.2)
 		glint.Size = UDim2.fromScale(0.22, 0.22)
 		local b = { ring = ring, burst = burst, blobs = {} }
+		if burst then
+			bursts += 1
+		end
 		for plateLayer in plates do
 			b.blobs[plateLayer] = soft(plateLayer)
 		end
@@ -141,6 +151,9 @@ function Bubbles.Mount(mon, isOn, zIndex)
 
 	local function remove(i)
 		local b = table.remove(list, i)
+		if b.burst then
+			bursts -= 1
+		end
 		b.ring:Destroy()
 		for _, blob in b.blobs do
 			blob:Destroy()
@@ -182,12 +195,38 @@ function Bubbles.Mount(mon, isOn, zIndex)
 		end)
 	end
 
+	-- Один цветной пузырёк со дна: места идут по золотому сечению — ровно по всей ширине,
+	-- без столба в середине.
+	local function release(color)
+		local b = make(true)
+		spawn(b, true)
+		step += 1
+		local u = (step * 0.6180339887) % 1 + rng:NextNumber(-1, 1) * TUNING.burstJitter
+		b.x0 = math.clamp(u, 0.02, 0.98) * W
+		b.x = b.x0
+		b.top = H * rand(rng, TUNING.burstPop)
+		b.speed *= TUNING.burstSpeed
+		b.color = color
+		b.ring.Stroke.Color = color
+		for _, blob in b.blobs do
+			tint(blob, color)
+		end
+	end
+
 	local t = 0
 	RunService.Heartbeat:Connect(function(dt)
 		if W < 1 or not isOn() then
 			return
 		end
 		t += dt
+		if #queue > 0 then
+			emit += dt * TUNING.burstRate
+			while emit >= 1 and #queue > 0 and bursts < TUNING.burstMax do
+				emit -= 1
+				release(table.remove(queue, 1))
+			end
+		end
+		emit = math.min(emit, 1)
 		local open = mon:FindFirstChild("OpenScale")
 		local scale = open and open.Scale or 1
 		-- Где каждая видимая плашка относительно слоя пузырьков, в пикселях окна.
@@ -264,43 +303,15 @@ function Bubbles.Mount(mon, isOn, zIndex)
 		end
 	end
 
-	-- Струя со дна цветом результата; scale — во сколько раз гуще (новый рецепт — 2).
+	-- Отходы крафта цветом результата; scale — во сколько раз больше (новый рецепт — 2).
+	-- Встают в очередь, выходят ровным потоком.
 	function self.burst(color, scale)
-		if W < 1 then
-			return
-		end
 		local n = math.max(1, math.floor(TUNING.burst * (scale or 1) + 0.5))
-		-- Пачка крафтов не копит столб: сверх burstMax старые пузырьки струи лопаются сразу (#296).
-		local alive = 0
-		for _, b in list do
-			if b.burst then
-				alive += 1
-			end
-		end
-		local extra = alive + n - TUNING.burstMax
-		local i = 1
-		while extra > 0 and i <= #list do
-			if list[i].burst then
-				pop(list[i])
-				remove(i)
-				extra -= 1
-			else
-				i += 1
-			end
-		end
 		for _ = 1, n do
-			local b = make(true)
-			spawn(b, true)
-			b.top = H * rand(rng, TUNING.burstPop)
-			b.x0 = W / 2 + rng:NextNumber(-0.5, 0.5) * W * TUNING.burstSpread
-			b.x = b.x0
-			b.y += rng:NextNumber(0, H * 0.25) -- не стеной, а вразнобой
-			b.speed *= TUNING.burstSpeed
-			b.color = color
-			b.ring.Stroke.Color = color
-			for _, blob in b.blobs do
-				tint(blob, color)
-			end
+			table.insert(queue, color)
+		end
+		while #queue > TUNING.burstQueue do
+			table.remove(queue, 1)
 		end
 	end
 

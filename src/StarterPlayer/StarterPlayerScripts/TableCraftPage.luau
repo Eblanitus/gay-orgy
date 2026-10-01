@@ -15,6 +15,7 @@ return function(T, page)
 	local UserInputService = game:GetService("UserInputService")
 	local Lever = require(script.Parent:WaitForChild("TableLever"))
 	local Press = require(script.Parent:WaitForChild("TablePress"))
+	local Tray = require(script.Parent:WaitForChild("TableTray"))
 	local mobile = MobileUI.isMobile
 
 	local function make(className, name, parent, z)
@@ -55,6 +56,8 @@ return function(T, page)
 	local chain = nil -- открытый рецепт, на который не хватает: шаги цепочки, если она есть
 	local pressed = nil -- { a, b }: раздавлены рычагом, ответа ещё нет
 	local held = nil -- ключ результата под прессом: ещё не забран
+	local TAKE_AFTER = 3 -- не забрал сам — через столько секунд стол забирает (#297)
+	local shown = 0 -- номер показа результата: старый отсчёт не забирает новый результат
 	local frozen = false -- пресс идёт к удару: слоты ещё рисуют раздавливаемую пару
 	local run = nil -- что сейчас крафтится: "single", "chain" или "batch"
 
@@ -74,6 +77,7 @@ return function(T, page)
 	resultSlot.Text = ""
 	resultSlot.Visible = false
 	local press = Press.Mount(page, { slotA = slotA, slotB = slotB, plus = plusLabel, result = resultSlot })
+	local tray = Tray.Mount(page, resultSlot)
 	local craftButton = button("Craft", page, "", "muted")
 	craftButton.AutoButtonColor = false
 	local craft -- объявлена ниже, рычаг зовёт её
@@ -202,7 +206,7 @@ return function(T, page)
 		local sy = pad
 		local benchH = sy + slotH + gap + toolH + pad
 		place(benchPlate, 0, 0, W, benchH)
-		press.layout({ left = pad, right = W - pad - craftW - gap, y = sy, h = slotH, sign = signW })
+		tray.layout(press.layout({ left = pad, right = W - pad - craftW - gap, y = sy, h = slotH, sign = signW }))
 		-- Рычаг — во всю высоту верстака, чтобы было куда тянуть.
 		place(craftButton, W - pad - craftW, pad, craftW, slotH + gap + toolH)
 
@@ -761,6 +765,7 @@ return function(T, page)
 		slotA.Visible, slotB.Visible, plusLabel.Visible = not on, not on, not on
 	end
 
+	local take -- объявлена ниже: отсчёт лотка зовёт её
 	local function showResult(key)
 		local color = Elements[key].color
 		resultSlot.Text = Theme.Caps(Elements[key].name)
@@ -768,17 +773,26 @@ return function(T, page)
 		resultSlot.Visible = true
 		Show.Pop(resultSlot, 0.18, 0.4)
 		Show.Flash(resultSlot, color, 0.6)
+		tray.show(color, TAKE_AFTER)
+		shown += 1
+		local mine = shown
+		task.delay(TAKE_AFTER, function()
+			if mine == shown and held == key and resultSlot.Visible then
+				take(false)
+			end
+		end)
 	end
 
 	-- Забрать результат: летит дугой в свою ячейку, там вспышка и запас +1. instant — без
 	-- полёта (окно закрыли, со стола взяли другой рецепт).
 	local taking = false
-	local function take(instant)
+	function take(instant)
 		local key = held
 		if not key or taking then
 			return
 		end
 		resultSlot.Visible = false
+		tray.hide()
 		bare(false)
 		if instant or not onScreen() then
 			held = nil

@@ -4,6 +4,11 @@
 -- ручку; второй щелчок подряд — значит, игрок не понял: рядом всплывает «ТЯНИ ВНИЗ»,
 -- стрелки разгораются.
 --
+-- Вид терминальный (#297: «выглядит не в терминально»): прямые углы, кант в пиксель.
+-- Ручка — плашка во всю ширину с рифлением по бокам; по краям жёлоба шкала из засечек —
+-- пройденные загораются; внизу уголками размечено место, куда тянуть; стрелки — пиксельные
+-- уголки из квадратиков, а не повёрнутые черты.
+--
 -- Lever.Mount(button, flask, onPull, onMove) — button — кнопка-жёлоб, flask — иконка
 -- (переезжает в ручку), onPull() — дотянули, onMove(pos) — ручка сдвинулась (0 — верх,
 -- 1 — низ; необязательный). Возвращает { paint(color), pull() }: pull — тот же ход
@@ -17,13 +22,16 @@ local Theme = require(script.Parent:WaitForChild("UITheme"))
 local Lever = {}
 
 local TUNING = {
-	knob = 0.5, -- ручка: доля высоты жёлоба (и не шире 0.7 его ширины)
+	knob = 0.3, -- ручка: доля высоты жёлоба (и не выше половины его ширины)
 	margin = 6, -- зазор ручки от краёв жёлоба, пиксели
+	tick = 8, -- шаг засечек шкалы, пиксели
+	major = 4, -- каждая такая засечка длиннее
+	pixel = 3, -- квадратик стрелки, пиксели
 	fire = 0.92, -- на какой доле хода срабатывает
 	back = 0.45, -- пружина обратно, секунды
 	nudge = 0.22, -- щелчок качает ручку на эту долю хода
 	auto = 0.18, -- ход вниз при pull(), секунды
-	arrows = 3, -- стрелок вниз по жёлобу
+	arrows = 2, -- стрелок вниз по жёлобу
 	arrowRate = 3, -- бег стрелок, радиан в секунду
 	confusedTaps = 2, -- столько щелчков без хода подряд — показать подсказку
 	confusedWindow = 4, -- щелчки считаются подряд, если между ними меньше стольких секунд
@@ -43,36 +51,62 @@ end
 function Lever.Mount(button, flask, onPull, onMove)
 	local z = button.ZIndex + 1
 
-	-- Жёлоб — тонкая линия по середине, внизу засечка «сюда».
+	-- Жёлоб — линия в пиксель по середине.
 	local groove = frame("Groove", button, z)
 	groove.AnchorPoint = Vector2.new(0.5, 0)
-	groove.BackgroundTransparency = 0.75
-	local notch = frame("Notch", button, z)
-	notch.AnchorPoint = Vector2.new(0.5, 0.5)
-	notch.BackgroundTransparency = 0.5
+	groove.BackgroundTransparency = 0.7
 
+	-- Место, куда тянуть: уголки по краям нижнего положения ручки.
+	local target = frame("Target", button, z)
+	local corners = {}
+	for _, c in { Vector2.new(0, 0), Vector2.new(1, 0), Vector2.new(0, 1), Vector2.new(1, 1) } do
+		for axis = 1, 2 do
+			local bar = frame("Corner", target, z)
+			bar.AnchorPoint = c
+			bar.Position = UDim2.fromScale(c.X, c.Y)
+			bar.Size = axis == 1 and UDim2.fromOffset(8, 1) or UDim2.fromOffset(1, 8)
+			bar.BackgroundTransparency = 0.3
+			table.insert(corners, bar)
+		end
+	end
+
+	-- Шкала: засечки по обоим краям жёлоба, пересобираются при смене размера.
+	local scale = frame("Scale", button, z)
+	scale.Size = UDim2.fromScale(1, 1)
+	local ticks = {} -- { bar, y }
+
+	-- Ручка: плашка с кантом, по бокам от колбы рифление — три черты.
 	local knob = frame("Knob", button, z + 1)
 	knob.AnchorPoint = Vector2.new(0.5, 0)
-	knob.BackgroundTransparency = 0.15
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0.2, 0)
-	corner.Parent = knob
+	knob.BackgroundTransparency = 0
 	local stroke = Instance.new("UIStroke")
-	stroke.Thickness = 2
+	stroke.Thickness = 1
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	stroke.Parent = knob
+	local grips = {}
+	for side = 0, 1 do
+		for row = 1, 3 do
+			local line = frame("Grip", knob, z + 1)
+			line.AnchorPoint = Vector2.new(side, 0.5)
+			line.Position = UDim2.new(side, side == 0 and 6 or -6, 0.5, (row - 2) * 4)
+			line.Size = UDim2.new(0.18, 0, 0, 1)
+			line.BackgroundTransparency = 0.45
+			table.insert(grips, line)
+		end
+	end
 
-	-- Стрелки вниз: шевроны по жёлобу под ручкой, каждый — две черты буквой V.
+	-- Стрелки вниз: уголок из пяти квадратиков, как пиксельная «v».
 	local arrows = {}
 	for i = 1, TUNING.arrows do
 		local holder = frame("Arrow" .. i, button, z)
 		holder.AnchorPoint = Vector2.new(0.5, 0.5)
+		local px = TUNING.pixel
+		holder.Size = UDim2.fromOffset(px * 5, px * 3)
 		local bars = {}
-		for side, rot in { -1, 1 } do
-			local bar = frame("Bar", holder, z)
-			bar.AnchorPoint = Vector2.new(0.5, 0.5)
-			bar.Position = UDim2.fromScale(side == 1 and 0.32 or 0.68, 0.5)
-			bar.Size = UDim2.new(0.62, 0, 0, 2)
-			bar.Rotation = -rot * 38
+		for k, off in { { -2, 0 }, { -1, 1 }, { 0, 2 }, { 1, 1 }, { 2, 0 } } do
+			local bar = frame("Px" .. k, holder, z)
+			bar.Position = UDim2.fromOffset((off[1] + 2) * px, off[2] * px)
+			bar.Size = UDim2.fromOffset(px, px)
 			bar.BackgroundTransparency = 0.5
 			table.insert(bars, bar)
 		end
@@ -98,11 +132,8 @@ function Lever.Mount(button, flask, onPull, onMove)
 	hintPad.PaddingLeft = UDim.new(0, 14)
 	hintPad.PaddingRight = UDim.new(0, 14)
 	hintPad.Parent = hint
-	local hintCorner = Instance.new("UICorner")
-	hintCorner.CornerRadius = UDim.new(0, 6)
-	hintCorner.Parent = hint
 	local hintStroke = Instance.new("UIStroke")
-	hintStroke.Thickness = 1.5
+	hintStroke.Thickness = 1
 	hintStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	hintStroke.Parent = hint
 	hint.Parent = button.Parent
@@ -119,8 +150,14 @@ function Lever.Mount(button, flask, onPull, onMove)
 	local pos = 0 -- ход ручки, 0 — верх, 1 — низ
 	local k, travel, margin = 0, 0, TUNING.margin
 
+	local color = Theme.color.textMute
 	local function place()
 		knob.Position = UDim2.new(0.5, 0, 0, margin + pos * travel)
+		-- Пройденные засечки (выше низа ручки) горят.
+		local bottom = margin + pos * travel + k
+		for _, tk in ticks do
+			tk.bar.BackgroundTransparency = tk.y <= bottom and 0.15 or 0.7
+		end
 		if onMove then
 			onMove(pos)
 		end
@@ -128,17 +165,35 @@ function Lever.Mount(button, flask, onPull, onMove)
 
 	local function layout()
 		local W, H = button.AbsoluteSize.X, button.AbsoluteSize.Y
-		k = math.floor(math.min(W * 0.7, H * TUNING.knob))
+		local kw = math.max(0, math.floor(W - margin * 2 - 16))
+		k = math.floor(math.min(W * 0.5, H * TUNING.knob))
 		travel = math.max(0, H - margin * 2 - k)
-		knob.Size = UDim2.fromOffset(k, k)
+		knob.Size = UDim2.fromOffset(kw, k)
 		groove.Position = UDim2.new(0.5, 0, 0, margin + k / 2)
-		groove.Size = UDim2.new(0, 2, 0, travel)
-		notch.Position = UDim2.new(0.5, 0, 0, margin + k / 2 + travel)
-		notch.Size = UDim2.fromOffset(math.floor(k * 0.6), 2)
-		local c = math.floor(k * 0.42)
+		groove.Size = UDim2.new(0, 1, 0, travel)
+		target.AnchorPoint = Vector2.new(0.5, 0)
+		target.Position = UDim2.new(0.5, 0, 0, margin + travel - 3)
+		target.Size = UDim2.fromOffset(kw + 6, k + 6)
+		local gap = math.max(1, travel - k) -- между ручкой в покое и местом внизу
 		for i, arrow in arrows do
-			arrow.holder.Size = UDim2.fromOffset(c, math.floor(c * 0.6))
-			arrow.holder.Position = UDim2.new(0.5, 0, 0, margin + k + (travel - margin) * (i - 0.5) / #arrows)
+			arrow.holder.Position = UDim2.new(0.5, 0, 0, margin + k + gap * i / (#arrows + 1))
+		end
+		for _, tk in ticks do
+			tk.bar:Destroy()
+		end
+		table.clear(ticks)
+		local n = math.floor((H - margin * 2) / TUNING.tick)
+		for i = 0, n do
+			local y = margin + i * TUNING.tick
+			local long = i % TUNING.major == 0
+			for side = 0, 1 do
+				local bar = frame("Tick", scale, z)
+				bar.AnchorPoint = Vector2.new(side, 0)
+				bar.Position = UDim2.new(side, side == 0 and 2 or -2, 0, y)
+				bar.Size = UDim2.fromOffset(long and 6 or 3, 1)
+				bar.BackgroundColor3 = color
+				table.insert(ticks, { bar = bar, y = y })
+			end
 		end
 		place()
 	end
@@ -269,11 +324,20 @@ function Lever.Mount(button, flask, onPull, onMove)
 
 	local self = {}
 
-	function self.paint(color)
+	function self.paint(c)
+		color = c
 		stroke.Color = color
-		knob.BackgroundColor3 = Color3.new(0, 0, 0):Lerp(color, 0.12)
+		knob.BackgroundColor3 = Theme.color.panel:Lerp(color, 0.1)
 		groove.BackgroundColor3 = color
-		notch.BackgroundColor3 = color
+		for _, bar in corners do
+			bar.BackgroundColor3 = color
+		end
+		for _, line in grips do
+			line.BackgroundColor3 = color
+		end
+		for _, tk in ticks do
+			tk.bar.BackgroundColor3 = color
+		end
 		hintStroke.Color = color
 		hint.TextColor3 = color
 		for _, arrow in arrows do

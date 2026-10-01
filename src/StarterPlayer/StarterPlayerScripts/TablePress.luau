@@ -11,6 +11,7 @@
 --
 -- Press.Mount(page, parts) — parts: { slotA, slotB, plus, result }. Возвращает:
 --   layout(g)    — g: { left, right, y, h, sign } — ряд слотов: края, верх, высота, место «+»;
+--                  возвращает внутренние кромки левой и правой головы в покое;
 --   squeeze(cA, cB, onImpact) — полный ход: замах, удар, поршни остаются сжатыми;
 --                  onImpact() — в миг удара;
 --   release(fn, start) — поршни расходятся (если удар ещё идёт — после него); start() —
@@ -216,6 +217,8 @@ function Press.Mount(page, parts)
 		result.Position = UDim2.fromOffset(math.floor(mid - w / 2), g.y)
 		result.Size = UDim2.fromOffset(w, g.h)
 		apply()
+		-- Внутренние кромки голов в покое — до них тянутся направляющие у результата (TableTray).
+		return g.left + hw + pw, g.right - hw - pw
 	end
 
 	local tween

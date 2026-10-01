@@ -329,7 +329,7 @@ return function(deps)
 			end
 			-- Впереди ещё шаги пачки или цепочки — струя слабее, полная на последнем (#296).
 			local more = T.batchLeft() > 0
-			window.backdrop.burst(Elements[result].color, (entry.first and 2 or 1) * (more and 0.35 or 1))
+			window.backdrop.burst(Elements[result].color, (entry.first and 2 or 1) * (more and 0.5 or 1))
 		else
 			entry.kind = extra
 			entry.reason = typeof(result) == "string" and result or ""
