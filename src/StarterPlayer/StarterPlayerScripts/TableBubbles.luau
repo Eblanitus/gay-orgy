@@ -31,9 +31,11 @@ local TUNING = {
 	-- Пятно: доля поперечника, толщина (пиксели) и прозрачность каждого из трёх колец,
 	-- от внешнего к внутреннему.
 	frostRings = { { 1, 3, 0.94 }, { 0.82, 2, 0.88 }, { 0.64, 3, 0.94 } },
-	burst = 12, -- пузырьков в струе за крафт
-	burstSpeed = 1.8, -- струя быстрее покоя во столько раз
-	burstSpread = 0.18, -- струя бьёт из середины дна: ширина — доля окна
+	burst = 8, -- пузырьков в струе за крафт
+	burstMax = 24, -- живых пузырьков струи не больше: лишние старые лопаются раньше
+	burstSpeed = 5, -- струя быстрее покоя во столько раз
+	burstSpread = 0.6, -- струя бьёт из середины дна: ширина — доля окна
+	burstPop = { 0.05, 0.3 }, -- струя лопается выше: доля высоты окна от верха
 }
 
 local function rand(rng, range)
@@ -267,9 +269,29 @@ function Bubbles.Mount(mon, isOn, zIndex)
 		if W < 1 then
 			return
 		end
-		for _ = 1, math.floor(TUNING.burst * (scale or 1)) do
+		local n = math.max(1, math.floor(TUNING.burst * (scale or 1) + 0.5))
+		-- Пачка крафтов не копит столб: сверх burstMax старые пузырьки струи лопаются сразу (#296).
+		local alive = 0
+		for _, b in list do
+			if b.burst then
+				alive += 1
+			end
+		end
+		local extra = alive + n - TUNING.burstMax
+		local i = 1
+		while extra > 0 and i <= #list do
+			if list[i].burst then
+				pop(list[i])
+				remove(i)
+				extra -= 1
+			else
+				i += 1
+			end
+		end
+		for _ = 1, n do
 			local b = make(true)
 			spawn(b, true)
+			b.top = H * rand(rng, TUNING.burstPop)
 			b.x0 = W / 2 + rng:NextNumber(-0.5, 0.5) * W * TUNING.burstSpread
 			b.x = b.x0
 			b.y += rng:NextNumber(0, H * 0.25) -- не стеной, а вразнобой

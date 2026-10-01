@@ -327,7 +327,9 @@ return function(deps)
 				T.known[result] = true
 				T.fresh[result] = true
 			end
-			window.backdrop.burst(Elements[result].color, entry.first and 2 or 1)
+			-- Впереди ещё шаги пачки или цепочки — струя слабее, полная на последнем (#296).
+			local more = T.batchLeft() > 0
+			window.backdrop.burst(Elements[result].color, (entry.first and 2 or 1) * (more and 0.35 or 1))
 		else
 			entry.kind = extra
 			entry.reason = typeof(result) == "string" and result or ""
