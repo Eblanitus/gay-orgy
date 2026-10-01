@@ -6,7 +6,8 @@
 --
 -- Под стеклянными плашками (MonitorGlass) пузырёк виден мягким пятном: Bubbles.frost кладёт
 -- в слой Frost каждой плашки по пятну на пузырёк и двигает их вместе с пузырьками. Пятно —
--- три круга друг в друге, к середине плотнее: так край размыт, а не обрезан (#287).
+-- три кольца друг в друге: среднее плотнее, крайние бледнее, середина пустая. Пузырёк —
+-- кольцо, и размытым он остаётся кольцом; залитые круги давали белую середину (#289).
 -- Пока окно закрыто, ничего не движется.
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -27,8 +28,9 @@ local TUNING = {
 	popTime = 1.2, -- и гаснет за столько секунд
 	ring = 0.55, -- прозрачность кольца
 	frostSpread = 1.8, -- пятно под стеклом шире пузырька во столько раз
-	-- Пятно: доля поперечника и прозрачность каждого из трёх кругов, от внешнего к середине.
-	frostRings = { { 1, 0.94 }, { 0.68, 0.9 }, { 0.38, 0.86 } },
+	-- Пятно: доля поперечника, толщина (пиксели) и прозрачность каждого из трёх колец,
+	-- от внешнего к внутреннему.
+	frostRings = { { 1, 3, 0.94 }, { 0.82, 2, 0.88 }, { 0.64, 3, 0.94 } },
 	burst = 12, -- пузырьков в струе за крафт
 	burstSpeed = 1.8, -- струя быстрее покоя во столько раз
 	burstSpread = 0.18, -- струя бьёт из середины дна: ширина — доля окна
@@ -50,7 +52,7 @@ local function circle(parent, z)
 	return f
 end
 
--- Мягкое пятно: прозрачная рамка с тремя кругами по центру.
+-- Мягкое пятно: прозрачная рамка с тремя кольцами по центру.
 local function soft(parent)
 	local holder = Instance.new("Frame")
 	holder.BackgroundTransparency = 1
@@ -64,14 +66,17 @@ local function soft(parent)
 		c.AnchorPoint = Vector2.new(0.5, 0.5)
 		c.Position = UDim2.fromScale(0.5, 0.5)
 		c.Size = UDim2.fromScale(spec[1], spec[1])
-		c.BackgroundTransparency = spec[2]
+		local stroke = Instance.new("UIStroke")
+		stroke.Thickness = spec[2]
+		stroke.Transparency = spec[3]
+		stroke.Parent = c
 	end
 	return holder
 end
 
 local function tint(holder, color)
 	for _, c in holder:GetChildren() do
-		c.BackgroundColor3 = color
+		c.UIStroke.Color = color
 	end
 end
 
@@ -165,7 +170,7 @@ function Bubbles.Mount(mon, isOn, zIndex)
 			blob.Size = UDim2.fromOffset(fs, fs)
 			TweenService:Create(blob, info, { Size = UDim2.fromOffset(fs * TUNING.popGrow, fs * TUNING.popGrow) }):Play()
 			for _, c in blob:GetChildren() do
-				TweenService:Create(c, info, { BackgroundTransparency = 1 }):Play()
+				TweenService:Create(c.UIStroke, info, { Transparency = 1 }):Play()
 			end
 		end
 		task.delay(TUNING.popTime, function()
