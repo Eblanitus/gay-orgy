@@ -6,7 +6,7 @@
 --
 -- Lever.Mount(button, flask, onPull, onMove) — button — кнопка-жёлоб, flask — иконка
 -- (переезжает в ручку), onPull() — дотянули, onMove(pos) — ручка сдвинулась (0 — верх,
--- 1 — низ; по нему ходят поршни пресса, #292). Возвращает { paint(color), pull() }: pull — тот же ход
+-- 1 — низ; необязательный). Возвращает { paint(color), pull() }: pull — тот же ход
 -- рычага без мыши (Enter на ПК).
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")

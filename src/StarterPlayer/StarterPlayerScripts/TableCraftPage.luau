@@ -1,11 +1,11 @@
--- Страница «Крафт» алхимического стола (#282–#284, #290–#292).
+-- Страница «Крафт» алхимического стола (#282–#284, #290–#294).
 -- Верх — верстак на стеклянной плашке: «пусто + пусто» между поршнями пресса (TablePress) и рычаг
 -- с иконкой колбы (TableLever); под слотами строка инструментов: обмен, сброс, случайная
 -- проба, сортировка и крафт пачкой. Ниже — инвентарь: имя и запас.
 --
 -- Положенный в слот элемент — одна штука из запаса (#292): ячейка показывает на одну меньше,
 -- последняя штука прячет ячейку. Это только показ: сервер списывает при крафте сам.
--- Результата заранее не видно. Рычаг давит пресс; дотянули — элементы раздавлены, слоты
+-- Результата заранее не видно. Рычаг запускает пресс, бьёт он сам (#294): элементы раздавлены, слоты
 -- пусты, ушёл запрос. Ответ — поршни расходятся, в середине лежит результат; его надо
 -- забрать щелчком, и он летит в свою ячейку. Неудача — осколки, а элементы возвращаются в
 -- инвентарь: сервер при неудаче ничего не списывает (Crafting.Craft).
@@ -55,6 +55,7 @@ return function(T, page)
 	local chain = nil -- открытый рецепт, на который не хватает: шаги цепочки, если она есть
 	local pressed = nil -- { a, b }: раздавлены рычагом, ответа ещё нет
 	local held = nil -- ключ результата под прессом: ещё не забран
+	local frozen = false -- пресс идёт к удару: слоты ещё рисуют раздавливаемую пару
 	local run = nil -- что сейчас крафтится: "single", "chain" или "batch"
 
 	-- Стеклянные плашки — первыми детьми: из равных по ZIndex позже рисуется тот, кто позже в дереве.
@@ -139,10 +140,10 @@ return function(T, page)
 		end
 	end
 	-- Кнопка — жёлоб рычага: колба переезжает в ручку, дотянули до низа — крафт.
-	-- Ручка ведёт поршни пресса.
+	-- Рычаг только запускает: пресс бьёт сам (#294).
 	lever = Lever.Mount(craftButton, flask, function()
 		craft()
-	end, press.lever)
+	end)
 
 	plusLabel.FontFace = Theme.font.strong
 	plusLabel.TextColor3 = Theme.color.textDim
@@ -272,6 +273,9 @@ return function(T, page)
 
 	local drawn = {} -- номер слота → что нарисовано: перерисовка только при перемене
 	local function renderSlot(i)
+		if frozen then
+			return
+		end
 		local b = i == 1 and slotA or slotB
 		local key = slots[i]
 		local ghost = key ~= nil and T.count(key) < slotUses(key)
@@ -616,8 +620,13 @@ return function(T, page)
 		run = chain and "chain" or "single"
 		pressed = { a, b, base = { [a] = T.count(a), [b] = T.count(b) } }
 		slots[1], slots[2] = nil, nil
-		press.hold()
-		press.crush(Elements[a].color, Elements[b].color)
+		-- Слоты пусты сразу (резерв держит pressed), но до удара рисуют пару: её и давят.
+		frozen = true
+		press.squeeze(Elements[a].color, Elements[b].color, function()
+			frozen = false
+			UISound.Play("Stop")
+			refreshBench()
+		end)
 		T.run(steps) -- сам зовёт T.refresh: слоты и инвентарь перерисуются
 	end
 
@@ -819,7 +828,8 @@ return function(T, page)
 				return
 			end
 			if e.ok then
-				press.slam(function()
+				press.slam(Elements[e.a].color, Elements[e.b].color, function()
+					UISound.Play("Stop")
 					flyHome(e.result)
 				end)
 				if e.first then
@@ -853,9 +863,6 @@ return function(T, page)
 		end
 		refreshBench()
 		rebuild()
-		if e.ok then
-			bare(true)
-		end
 		press.release(function()
 			if e.ok then
 				if held == e.result then
@@ -872,6 +879,11 @@ return function(T, page)
 				Show.Float(resultSlot, e.kind == "nomix" and "НЕ СМЕШИВАЮТСЯ" or "НЕ ХВАТАЕТ",
 					Theme.color.danger, mobile and 16 or 20)
 				UISound.Play("Fail")
+			end
+		end, function()
+			-- Поршни пошли: пустые слоты прячутся, между поршнями только результат.
+			if e.ok and held == e.result then
+				bare(true)
 			end
 		end)
 	end

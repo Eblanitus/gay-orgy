@@ -1,18 +1,20 @@
--- Пресс алхимического стола (идея автора, #292; сменил сплетание TableFusion из #291).
--- Два поршня — слева и справа от слотов (просьба автора: «один пресс слева, другой справа,
--- сливают в одну точку»). Рычаг (TableLever) ведёт их к середине: слоты сжимаются по
--- ширине, пока поршни не сойдутся. Дотянули — элементы раздавлены (брызги их цветами вверх
--- и вниз), поршни сжаты и подрагивают, пока не ответит сервер. Ответ — поршни расходятся,
--- в середине лежит результат; неудача — осколки цвета danger.
--- Забранный результат летит дугой в свою ячейку инвентаря.
+-- Пресс алхимического стола (идея автора, #292–#294). Два поршня — слева и справа от
+-- слотов: «один пресс слева, другой справа, сливают в одну точку». Каждый поршень — корпус
+-- у края верстака, хромированный шток и массивная голова с кромкой.
+--
+-- Рычаг пресс не ведёт (#294: «рукой анимация не реалистичная»): дотянули — пресс работает
+-- сам. Замах (головы чуть уходят в корпуса), удар (резко к середине, слоты сжимаются по
+-- ширине и вспучиваются), отскок, вспышка в точке встречи, брызги цветами элементов,
+-- тряска верстака, кромки раскалены смешанным цветом. Дальше поршни сжаты и подрагивают,
+-- пока не ответит сервер. Ответ — поршни расходятся, в середине лежит результат.
 --
 -- Press.Mount(page, parts) — parts: { slotA, slotB, plus, result }. Возвращает:
 --   layout(g)    — g: { left, right, y, h, sign } — ряд слотов: края, верх, высота, место «+»;
---   lever(pos)   — положение ручки рычага, 0..1;
---   hold()       — поршни остаются сжатыми (ждём сервер);
---   release(fn)  — поршни расходятся; fn() — когда открылась середина;
---   slam(fn)     — быстрый удар без рычага (пачка, шаги цепочки); fn() — в миг удара;
---   crush(cA, cB) — брызги раздавленных элементов;
+--   squeeze(cA, cB, onImpact) — полный ход: замах, удар, поршни остаются сжатыми;
+--                  onImpact() — в миг удара;
+--   release(fn, start) — поршни расходятся (если удар ещё идёт — после него); start() —
+--                  в миг, когда пошли, fn() — когда открылась середина;
+--   slam(cA, cB, fn) — короткий удар туда-обратно (пачка, шаги цепочки); fn() — в миг удара;
 --   crack()      — осколки неудачи из середины;
 --   fly(from, to, color, done) — шар из середины from (GuiObject) в середину to.
 local RunService = game:GetService("RunService")
@@ -23,21 +25,41 @@ local Theme = require(script.Parent:WaitForChild("UITheme"))
 local Press = {}
 
 local TUNING = {
-	plate = 0.16, -- толщина поршня: доля высоты слота
-	overhang = 4, -- поршень выше и ниже слота на столько пикселей
-	gap = 4, -- в покое между поршнем и слотом столько пикселей
-	meet = 2, -- сжатые поршни не доходят до середины на столько пикселей
-	rods = 0.3, -- штоки: на этой доле высоты поршня от краёв
-	wobble = 2, -- дрожь поршней в ожидании, пиксели
-	lift = 0.4, -- расход после ответа, секунды
-	slamDown = 0.1, -- удар: сжатие, секунды
-	slamUp = 0.22, -- удар: расход, секунды
-	drops = 7, -- брызг от каждого раздавленного элемента
+	head = 0.2, -- толщина головы поршня: доля высоты слота
+	housing = 0.3, -- ширина корпуса: доля высоты слота
+	housingH = 0.72, -- высота корпуса: доля высоты слота
+	rod = 0.18, -- толщина штока: доля высоты слота
+	overhang = 6, -- голова выше и ниже слота на столько пикселей
+	gap = 4, -- в покое между головой и слотом столько пикселей
+	meet = 1, -- сжатые головы не доходят до середины на столько пикселей
+	bulge = 0.14, -- сжатый слот вспучивается по высоте на эту долю
+	windup = -0.07, -- замах: головы уходят в корпус на эту долю хода
+	windupTime = 0.16, -- замах, секунды
+	strikeTime = 0.2, -- удар, секунды
+	rebound = 0.9, -- отскок после удара: до этой доли хода
+	reboundTime = 0.06, -- отскок, секунды
+	settleTime = 0.14, -- обратно в упор, секунды
+	minClosed = 0.25, -- сжатыми не меньше, секунды (ответ сервера пришёл раньше удара)
+	shake = 5, -- тряска при ударе, пиксели
+	shakeDecay = 0.3, -- тряска гаснет за столько секунд
+	wobble = 1.5, -- дрожь сжатых поршней в ожидании, пиксели
+	lift = 0.45, -- расход после ответа, секунды
+	slamWindup = 0.08, -- пачка: замах, секунды
+	slamTime = 0.12, -- пачка: удар, секунды
+	slamBack = 0.24, -- пачка: расход, секунды
+	flash = 0.35, -- вспышка в точке встречи, секунды
+	drops = 8, -- брызг от каждого раздавленного элемента
 	dropFly = 0.55, -- брызги летят, секунды
 	shards = 10, -- осколков неудачи
 	flyTime = 0.55, -- полёт результата в инвентарь, секунды
 	flyArc = 0.35, -- дуга полёта: подъём на эту долю расстояния
 }
+
+-- Металл поршней: оттенки от Theme.color.steel, чтобы не путать с кнопками.
+local STEEL = Theme.color.steel
+local METAL_DARK = Theme.color.panel:Lerp(STEEL, 0.25)
+local METAL = Theme.color.panel:Lerp(STEEL, 0.45)
+local METAL_LIGHT = Theme.color.panel:Lerp(STEEL, 0.85)
 
 local function make(name, parent, z)
 	local f = Instance.new("Frame")
@@ -55,82 +77,142 @@ local function round(f, r)
 	c.Parent = f
 end
 
+-- Объём металла градиентом: края темнее, блик ближе к краю. rotation 0 — градиент идёт
+-- слева направо (стоячий цилиндр), 90 — сверху вниз (лежачий).
+local function sheen(f, rotation)
+	f.BackgroundColor3 = Color3.new(1, 1, 1)
+	f.BackgroundTransparency = 0
+	local g = Instance.new("UIGradient")
+	g.Rotation = rotation
+	g.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, METAL_DARK),
+		ColorSequenceKeypoint.new(0.35, METAL_LIGHT),
+		ColorSequenceKeypoint.new(0.6, METAL),
+		ColorSequenceKeypoint.new(1, METAL_DARK),
+	})
+	g.Parent = f
+end
+
+local function outline(f, transparency)
+	local s = Instance.new("UIStroke")
+	s.Color = Color3.new(0, 0, 0)
+	s.Transparency = transparency
+	s.Thickness = 1.5
+	s.Parent = f
+end
+
+-- Болт: светлая точка с тёмным ободком.
+local function bolt(parent, x, y, z)
+	local b = make("Bolt", parent, z)
+	b.AnchorPoint = Vector2.new(0.5, 0.5)
+	b.Position = UDim2.fromScale(x, y)
+	b.Size = UDim2.fromOffset(5, 5)
+	b.BackgroundColor3 = METAL_LIGHT
+	b.BackgroundTransparency = 0
+	round(b)
+	outline(b, 0.4)
+end
+
 function Press.Mount(page, parts)
 	local slotA, slotB, plus, result = parts.slotA, parts.slotB, parts.plus, parts.result
 	local z = slotA.ZIndex + 3
 
-	local plates, rods = {}, {}
+	-- side 1 — левый поршень, 2 — правый.
+	local pistons = {}
 	for side = 1, 2 do
-		local plate = make("PressPlate" .. side, page, z)
-		plate.BackgroundColor3 = Theme.color.panelSoft
-		plate.BackgroundTransparency = 0.05
-		round(plate, UDim.new(0, 4))
-		local plateStroke = Instance.new("UIStroke")
-		plateStroke.Color = Theme.color.textDim
-		plateStroke.Thickness = 2
-		plateStroke.Parent = plate
-		-- Насечки поперёк поршня — чтобы читался как металл, а не как кнопка.
-		for i = 1, 3 do
-			local line = make("Rib", plate, z)
-			line.AnchorPoint = Vector2.new(0.5, 0.5)
-			line.Position = UDim2.fromScale(i / 4, 0.5)
-			line.Size = UDim2.new(0, 1, 0.8, 0)
-			line.BackgroundColor3 = Theme.color.textDim
-			line.BackgroundTransparency = 0.5
-		end
-		plates[side] = plate
-		-- Штоки: от края верстака к поршню, видны, когда поршень выехал.
-		rods[side] = {}
-		for i = 1, 2 do
-			local rod = make("Rod", page, z - 1)
-			rod.AnchorPoint = Vector2.new(0, 0.5)
-			rod.BackgroundColor3 = Theme.color.textDim
-			rod.BackgroundTransparency = 0.3
-			rods[side][i] = rod
-		end
+		local p = {}
+		p.housing = make("PressHousing" .. side, page, z + 1)
+		sheen(p.housing, 90)
+		round(p.housing, UDim.new(0, 3))
+		outline(p.housing, 0.3)
+		bolt(p.housing, 0.5, 0.18, z + 1)
+		bolt(p.housing, 0.5, 0.82, z + 1)
+
+		p.rod = make("PressRod" .. side, page, z)
+		sheen(p.rod, 90)
+		outline(p.rod, 0.5)
+
+		p.head = make("PressHead" .. side, page, z + 1)
+		sheen(p.head, 0)
+		round(p.head, UDim.new(0, 3))
+		outline(p.head, 0.2)
+		bolt(p.head, 0.5, 0.1, z + 1)
+		bolt(p.head, 0.5, 0.9, z + 1)
+
+		-- Кромка — рабочая грань головы, смотрит на слоты; при ударе раскаляется.
+		p.face = make("Face", p.head, z + 1)
+		p.face.AnchorPoint = Vector2.new(side == 1 and 1 or 0, 0)
+		p.face.Position = UDim2.fromScale(side == 1 and 1 or 0, 0)
+		p.face.Size = UDim2.new(0, 3, 1, 0)
+		p.face.BackgroundTransparency = 0
+		-- Отсвет кромки на слот — полоса за гранью, гаснущая наружу.
+		p.glow = make("Glow", p.head, z)
+		p.glow.AnchorPoint = Vector2.new(side == 1 and 0 or 1, 0)
+		p.glow.Position = UDim2.fromScale(side == 1 and 1 or 0, 0)
+		p.glow.Size = UDim2.new(0, 14, 1, 0)
+		p.glow.BackgroundTransparency = 0
+		local fadeOut = Instance.new("UIGradient")
+		fadeOut.Rotation = side == 1 and 0 or 180
+		fadeOut.Transparency = NumberSequence.new(0.2, 1)
+		fadeOut.Parent = p.glow
+		pistons[side] = p
 	end
 
-	local layer = make("PressFx", page, z + 2)
+	local layer = make("PressFx", page, z + 3)
 	layer.Size = UDim2.fromScale(1, 1)
 
 	local g = nil
-	local leverPos, holdValue, waiting = 0, Instance.new("NumberValue"), false
-	local clock = 0
+	local holdValue = Instance.new("NumberValue")
+	local waiting, clock = false, 0
+	local shake, heat, heatColor = 0, 0, Theme.color.energy
 
 	local function apply()
 		if not g then
 			return
 		end
-		local p = math.max(leverPos, holdValue.Value)
-		local pw = math.max(8, math.floor(g.h * TUNING.plate))
+		local p = holdValue.Value
+		local pw = math.max(10, math.floor(g.h * TUNING.head))
+		local hw = math.max(12, math.floor(g.h * TUNING.housing))
 		local mid = (g.left + g.right) / 2
-		-- Внутренние кромки поршней: в покое у краёв, дотянули — почти в середине.
-		local push = p * (mid - TUNING.meet - g.left - pw)
+		local rest = g.left + hw + pw -- внутренняя кромка левой головы в покое
+		local push = p * (mid - TUNING.meet - rest)
 		if waiting then
 			push += math.sin(clock * 40) * TUNING.wobble * 0.5
 		end
-		local edgeL, edgeR = g.left + pw + push, g.right - pw - push
-		local py, ph = g.y - TUNING.overhang, g.h + TUNING.overhang * 2
-		plates[1].Position = UDim2.fromOffset(math.floor(edgeL - pw), py)
-		plates[2].Position = UDim2.fromOffset(math.floor(edgeR), py)
-		for side = 1, 2 do
-			plates[side].Size = UDim2.fromOffset(pw, ph)
-			for i, rod in rods[side] do
-				local y = math.floor(py + ph * (i == 1 and TUNING.rods or 1 - TUNING.rods))
-				local x0 = side == 1 and g.left or math.floor(edgeR + pw)
-				local x1 = side == 1 and math.floor(edgeL - pw) or g.right
-				rod.Position = UDim2.fromOffset(x0, y)
-				rod.Size = UDim2.fromOffset(math.max(0, x1 - x0), 3)
-			end
+		local dy = shake > 0 and (math.random() * 2 - 1) * shake or 0
+		local edgeL, edgeR = rest + push, g.right - (rest - g.left) - push
+		local y = g.y + dy
+		local hy, hh = math.floor(y - TUNING.overhang), g.h + TUNING.overhang * 2
+		local cy, ch = y + g.h * (1 - TUNING.housingH) / 2, math.floor(g.h * TUNING.housingH)
+		local rh = math.max(6, math.floor(g.h * TUNING.rod))
+		local ry = math.floor(y + (g.h - rh) / 2)
+		local faceColor = Theme.color.accentDim:Lerp(heatColor, heat)
+		for side, piston in pistons do
+			local headX = side == 1 and edgeL - pw or edgeR
+			local housingX = side == 1 and g.left or g.right - hw
+			piston.head.Position = UDim2.fromOffset(math.floor(headX), hy)
+			piston.head.Size = UDim2.fromOffset(pw, hh)
+			piston.housing.Position = UDim2.fromOffset(housingX, math.floor(cy))
+			piston.housing.Size = UDim2.fromOffset(hw, ch)
+			local x0 = side == 1 and g.left + hw or math.floor(edgeR + pw)
+			local x1 = side == 1 and math.floor(edgeL - pw) or g.right - hw
+			piston.rod.Position = UDim2.fromOffset(x0, ry)
+			piston.rod.Size = UDim2.fromOffset(math.max(0, x1 - x0), rh)
+			piston.face.BackgroundColor3 = faceColor
+			piston.glow.BackgroundColor3 = faceColor
+			piston.glow.Visible = heat > 0.02
+			piston.glow.BackgroundTransparency = 1 - heat * 0.7
 		end
-		-- Слоты зажаты между поршнем и «+»: сжимаются по ширине, «+» исчезает.
-		local gap, half = TUNING.gap * (1 - p), g.sign / 2 * (1 - p)
-		local wA = math.max(0, mid - half - (edgeL + gap))
-		slotA.Position = UDim2.fromOffset(math.floor(edgeL + gap), g.y)
-		slotB.Position = UDim2.fromOffset(math.floor(mid + half), g.y)
-		slotA.Size = UDim2.fromOffset(math.floor(wA), g.h)
-		slotB.Size = UDim2.fromOffset(math.floor(math.max(0, edgeR - gap - (mid + half))), g.h)
-		local fade = math.clamp(p * 2, 0, 1)
+		-- Слоты зажаты между головами и «+»: сжимаются по ширине и вспучиваются по высоте.
+		local q = math.max(0, p)
+		local gap, half = TUNING.gap * (1 - q), g.sign / 2 * (1 - q)
+		local sh = math.floor(g.h * (1 + TUNING.bulge * q))
+		local sy = math.floor(y - (sh - g.h) / 2)
+		slotA.Position = UDim2.fromOffset(math.floor(edgeL + gap), sy)
+		slotB.Position = UDim2.fromOffset(math.floor(mid + half), sy)
+		slotA.Size = UDim2.fromOffset(math.floor(math.max(0, mid - half - (edgeL + gap))), sh)
+		slotB.Size = UDim2.fromOffset(math.floor(math.max(0, edgeR - gap - (mid + half))), sh)
+		local fade = math.clamp(q * 2, 0, 1)
 		plus.TextTransparency = fade
 		for _, slot in { slotA, slotB } do
 			local caption = slot:FindFirstChild("Caption")
@@ -142,8 +224,17 @@ function Press.Mount(page, parts)
 	holdValue.Changed:Connect(apply)
 
 	RunService.Heartbeat:Connect(function(dt)
+		local moving = waiting or shake > 0 or heat > 0
 		if waiting then
 			clock += dt
+		end
+		if shake > 0 then
+			shake = math.max(0, shake - TUNING.shake * dt / TUNING.shakeDecay)
+		end
+		if heat > 0 and not waiting then
+			heat = math.max(0, heat - dt / TUNING.lift)
+		end
+		if moving then
 			apply()
 		end
 	end)
@@ -156,15 +247,11 @@ function Press.Mount(page, parts)
 		plus.Position = UDim2.fromOffset(math.floor(mid - g.sign / 2), g.y)
 		plus.Size = UDim2.fromOffset(g.sign, g.h)
 		-- Результат — в середине, шириной со слот в покое.
-		local pw = math.max(8, math.floor(g.h * TUNING.plate))
-		local w = math.floor(mid - g.sign / 2 - g.left - pw - TUNING.gap)
+		local pw = math.max(10, math.floor(g.h * TUNING.head))
+		local hw = math.max(12, math.floor(g.h * TUNING.housing))
+		local w = math.floor(mid - g.sign / 2 - g.left - hw - pw - TUNING.gap)
 		result.Position = UDim2.fromOffset(math.floor(mid - w / 2), g.y)
 		result.Size = UDim2.fromOffset(w, g.h)
-		apply()
-	end
-
-	function self.lever(pos)
-		leverPos = pos
 		apply()
 	end
 
@@ -175,46 +262,13 @@ function Press.Mount(page, parts)
 		end
 		tween = TweenService:Create(holdValue, TweenInfo.new(time, style, dir), { Value = value })
 		if done then
-			local t = tween
-			t.Completed:Connect(function(state)
+			tween.Completed:Connect(function(state)
 				if state == Enum.PlaybackState.Completed then
 					done()
 				end
 			end)
 		end
 		tween:Play()
-	end
-
-	function self.hold()
-		if tween then
-			tween:Cancel()
-		end
-		holdValue.Value = 1
-		waiting = true
-	end
-
-	function self.release(done)
-		waiting = false
-		to(0, TUNING.lift, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-		if done then
-			-- Середина открывается, когда поршни чуть разошлись.
-			task.delay(TUNING.lift * 0.35, done)
-		end
-	end
-
-	function self.slam(done)
-		if waiting then
-			if done then
-				done()
-			end
-			return
-		end
-		to(1, TUNING.slamDown, Enum.EasingStyle.Quad, Enum.EasingDirection.In, function()
-			if done then
-				done()
-			end
-			to(0, TUNING.slamUp, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		end)
 	end
 
 	local function center(gui)
@@ -242,23 +296,128 @@ function Press.Mount(page, parts)
 		end)
 	end
 
-	function self.crush(colorA, colorB)
+	-- Миг удара: вспышка в точке встречи, брызги вверх и вниз, тряска, кромки раскалены.
+	local function impact(colorA, colorB)
 		if not g then
 			return
 		end
+		local mix = colorA:Lerp(colorB, 0.5)
+		heatColor, heat, shake = mix, 1, TUNING.shake
+		local c = Vector2.new((g.left + g.right) / 2, g.y + g.h / 2) + page.AbsolutePosition - layer.AbsolutePosition
+
+		local flash = make("Flash", layer, layer.ZIndex)
+		flash.AnchorPoint = Vector2.new(0.5, 0.5)
+		flash.Position = UDim2.fromOffset(c.X, c.Y)
+		flash.Size = UDim2.fromOffset(4, g.h * 1.3)
+		flash.BackgroundColor3 = Color3.new(1, 1, 1):Lerp(mix, 0.3)
+		flash.BackgroundTransparency = 0
+		round(flash)
+		local info = TweenInfo.new(TUNING.flash, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		TweenService:Create(flash, info, {
+			Size = UDim2.fromOffset(g.h * 0.9, g.h * 1.6),
+			BackgroundTransparency = 1,
+		}):Play()
+		task.delay(TUNING.flash, function()
+			flash:Destroy()
+		end)
+
 		local rng = Random.new()
-		for i, slot in { slotA, slotB } do
-			local c = center(slot)
+		for i = 1, 2 do
 			local color = i == 1 and colorA or colorB
-			if color then
-				for _ = 1, TUNING.drops do
-					-- Брызги — вверх и вниз: поршни давят с боков.
-					local up = rng:NextNumber() < 0.5 and -1 or 1
-					local by = Vector2.new(rng:NextNumber(-0.25, 0.25) * g.h, up * rng:NextNumber(0.4, 0.8) * g.h)
-					particle(c, by, color, rng:NextNumber(5, 11), TUNING.dropFly)
-				end
+			for _ = 1, TUNING.drops do
+				local up = rng:NextNumber() < 0.5 and -1 or 1
+				local sideX = (i == 1 and -1 or 1) * rng:NextNumber(0, 0.5) * g.h
+				particle(c, Vector2.new(sideX, up * rng:NextNumber(0.45, 0.95) * g.h), color, rng:NextNumber(5, 11), TUNING.dropFly)
 			end
 		end
+	end
+
+	-- Ход пресса: phase — "open", "strike" (замах и удар), "closed" (сжаты, ждём сервер).
+	-- pending — ответ пришёл, пока пресс ещё бил: { done, start } расхода после удара.
+	local phase, closedAt, pending = "open", 0, nil
+
+	local function open(done, start)
+		waiting = false
+		phase = "open"
+		if start then
+			start()
+		end
+		to(0, TUNING.lift, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+		if done then
+			task.delay(TUNING.lift * 0.3, done)
+		end
+	end
+
+	local function go()
+		if pending == nil then
+			return
+		end
+		local job = pending
+		pending = nil
+		open(job[1], job[2])
+	end
+
+	-- Сжатыми не меньше minClosed: иначе удар и расход слились бы в один кадр.
+	local function openLater()
+		local left = TUNING.minClosed - (os.clock() - closedAt)
+		if left > 0 then
+			task.delay(left, go)
+		else
+			go()
+		end
+	end
+
+	function self.squeeze(colorA, colorB, onImpact)
+		phase, pending = "strike", nil
+		to(TUNING.windup, TUNING.windupTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, function()
+			to(1, TUNING.strikeTime, Enum.EasingStyle.Quint, Enum.EasingDirection.In, function()
+				impact(colorA, colorB)
+				if onImpact then
+					onImpact()
+				end
+				phase, closedAt = "closed", os.clock()
+				if pending ~= nil then
+					openLater()
+					return
+				end
+				to(TUNING.rebound, TUNING.reboundTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, function()
+					to(1, TUNING.settleTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In, function()
+						waiting = phase == "closed"
+					end)
+				end)
+			end)
+		end)
+	end
+
+	function self.release(done, start)
+		if phase == "strike" then
+			pending = { done, start } -- откроется после удара
+			return
+		end
+		if phase == "closed" then
+			pending = { done, start }
+			openLater()
+			return
+		end
+		open(done, start)
+	end
+
+	function self.slam(colorA, colorB, done)
+		if phase ~= "open" then
+			if done then
+				done()
+			end
+			return
+		end
+		to(TUNING.windup, TUNING.slamWindup, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, function()
+			to(1, TUNING.slamTime, Enum.EasingStyle.Quint, Enum.EasingDirection.In, function()
+				impact(colorA, colorB)
+				if done then
+					done()
+				end
+				to(0, TUNING.slamBack, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+			end)
+		end)
 	end
 
 	function self.crack()
