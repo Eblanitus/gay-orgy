@@ -18,19 +18,19 @@ local Bubbles = {}
 local TUNING = {
 	count = 18, -- пузырьков в покое
 	size = { 6, 20 }, -- поперечник у дна, пиксели
-	grow = 0.4, -- к месту, где лопнет, пузырёк вырастает на эту долю
-	speed = { 14, 34 }, -- подъём, пикселей в секунду
-	sway = 9, -- раскачка вбок, пиксели
-	swayRate = { 0.6, 1.4 }, -- раскачка, раз в секунду
+	grow = 0.25, -- к месту, где лопнет, пузырёк вырастает на эту долю
+	speed = { 5, 12 }, -- подъём, пикселей в секунду
+	sway = 6, -- раскачка вбок, пиксели
+	swayRate = { 0.12, 0.3 }, -- раскачка, раз в секунду
 	pop = { 0.05, 0.7 }, -- где лопается: доля высоты окна от верха
-	popGrow = 2, -- кольцо лопнувшего пузырька разлетается во столько раз
-	popTime = 0.35, -- и гаснет за столько секунд
+	popGrow = 1.7, -- кольцо лопнувшего пузырька разлетается во столько раз
+	popTime = 1.2, -- и гаснет за столько секунд
 	ring = 0.55, -- прозрачность кольца
 	frostSpread = 1.8, -- пятно под стеклом шире пузырька во столько раз
 	-- Пятно: доля поперечника и прозрачность каждого из трёх кругов, от внешнего к середине.
 	frostRings = { { 1, 0.94 }, { 0.68, 0.9 }, { 0.38, 0.86 } },
 	burst = 12, -- пузырьков в струе за крафт
-	burstSpeed = 2.4, -- струя быстрее покоя во столько раз
+	burstSpeed = 1.8, -- струя быстрее покоя во столько раз
 	burstSpread = 0.18, -- струя бьёт из середины дна: ширина — доля окна
 }
 
@@ -142,7 +142,7 @@ function Bubbles.Mount(mon, isOn, zIndex)
 
 	-- Лопнул: на его месте кольцо (и пятна под стеклом) разлетается и гаснет.
 	local function pop(b)
-		local info = TweenInfo.new(TUNING.popTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		local info = TweenInfo.new(TUNING.popTime, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 		local s = b.size0 * (1 + TUNING.grow)
 		local big = UDim2.fromOffset(s * TUNING.popGrow, s * TUNING.popGrow)
 		local ring = circle(layer, z)
