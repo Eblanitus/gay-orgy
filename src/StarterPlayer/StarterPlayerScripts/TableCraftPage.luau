@@ -1,13 +1,16 @@
--- Страница «Крафт» алхимического стола (#282–#284, #290).
--- Верх — верстак на стеклянной плашке: два слота, «+», «=», слот результата и кнопка крафта
--- с иконкой колбы; под ними строка инструментов: обмен, сброс, случайная проба, сортировка
--- и крафт пачкой. Ниже — инвентарь: имя и запас; пока в слоте один элемент, ячейки, с
--- которыми пара уже не смешалась, притенены.
--- Ответ сервера играется на самом столе: вспышка, «+1», баннер нового рецепта, дрожь неудачи.
+-- Страница «Крафт» алхимического стола (#282–#284, #290, #291).
+-- Верх — верстак на стеклянной плашке: два слота, «+», «=», слот результата и рычаг крафта
+-- с иконкой колбы (TableLever: тянут вниз, подтверждения нет); под слотами строка
+-- инструментов: обмен, сброс, случайная проба, сортировка и крафт пачкой. Ниже — инвентарь:
+-- имя и запас; пока в слоте один элемент, ячейки, с которыми пара уже не смешалась, притенены.
+-- Дёрнули рычаг — элементы сплетаются (TableFusion), по ответу сервера новый элемент рождается
+-- в слоте результата: вспышка, «+1», баннер нового рецепта; неудача — распад и дрожь.
 -- T — общее состояние стола (CraftingCraftTab), page — рамка страницы.
 return function(T, page)
 	local Theme, Elements, MobileUI, Show, UISound = T.Theme, T.Elements, T.MobileUI, T.Show, T.UISound
 	local UserInputService = game:GetService("UserInputService")
+	local Lever = require(script.Parent:WaitForChild("TableLever"))
+	local Fusion = require(script.Parent:WaitForChild("TableFusion"))
 	local mobile = MobileUI.isMobile
 
 	local function make(className, name, parent, z)
@@ -61,6 +64,9 @@ return function(T, page)
 	resultSlot.AutoButtonColor = false
 	resultSlot.FontFace = Theme.font.strong
 	local craftButton = button("Craft", page, "", "muted")
+	craftButton.AutoButtonColor = false
+	local craft -- объявлена ниже, рычаг зовёт её
+	local lever
 
 	-- Иконка вместо надписи «СКРЕСТИТЬ» (просьба автора, #290): круглая колба с узким
 	-- горлом, налитая до половины. Нарисована кадрами, как лупа поиска; цвет — цвет текста
@@ -118,7 +124,14 @@ return function(T, page)
 		for _, part in flaskParts do
 			part[1][part[2]] = craftButton.TextColor3
 		end
+		if lever then
+			lever.paint(craftButton.TextColor3)
+		end
 	end
+	-- Кнопка — жёлоб рычага: колба переезжает в ручку, дотянули до низа — крафт.
+	lever = Lever.Mount(craftButton, flask, function()
+		craft()
+	end)
 
 	for _, l in { plusLabel, eqLabel } do
 		l.FontFace = Theme.font.strong
@@ -185,7 +198,8 @@ return function(T, page)
 		place(slotB, x + slotW + signW, pad, slotW, slotH)
 		place(eqLabel, x + slotW * 2 + signW, pad, signW, slotH)
 		place(resultSlot, x + slotW * 2 + signW * 2, pad, slotW, slotH)
-		place(craftButton, W - pad - craftW, pad, craftW, slotH)
+		-- Рычаг — во всю высоту верстака, чтобы было куда тянуть.
+		place(craftButton, W - pad - craftW, pad, craftW, slotH + gap + toolH)
 
 		local big = slotH >= 110
 		for _, s in { slotA, slotB, resultSlot } do
@@ -202,10 +216,12 @@ return function(T, page)
 		for i, b in { swapButton, clearButton, randomButton } do
 			place(b, pad + (i - 1) * (toolW + gap), ty, toolW, toolH)
 		end
-		local sortW = by(110, 170)
-		place(sortButton, pad + (toolW + gap) * 3, ty, sortW, toolH)
-		place(maxButton, W - pad - batchW, ty, batchW, toolH)
-		place(fiveButton, W - pad - batchW * 2 - gap, ty, batchW, toolH)
+		local right = W - pad - craftW - gap
+		local sortX = pad + (toolW + gap) * 3
+		local sortW = math.max(0, math.min(by(110, 170), right - batchW * 2 - gap * 2 - sortX))
+		place(sortButton, sortX, ty, sortW, toolH)
+		place(maxButton, right - batchW, ty, batchW, toolH)
+		place(fiveButton, right - batchW * 2 - gap, ty, batchW, toolH)
 		for _, b in { swapButton, clearButton, randomButton, sortButton, fiveButton, maxButton } do
 			b.TextSize = by(14, 16)
 		end
@@ -486,62 +502,14 @@ return function(T, page)
 		rebuild()
 	end)
 
-	-- ---------- подтверждение неизвестной пары ----------
-	-- ТЗ v3: ошибка может стоить два элемента (верная пара, но не та), поэтому неизвестная
-	-- пара уходит на сервер только после явного «да». Открытый рецепт крафтится сразу:
-	-- игрок знает, что получит.
-	local overlay = make("Frame", "CraftConfirm", T.root, 10)
-	overlay.Size = UDim2.fromScale(1, 1)
-	overlay.BackgroundColor3 = Theme.color.ink
-	overlay.BackgroundTransparency = 0.2
-	overlay.Active = true
-	overlay.Visible = false
+	-- ---------- крафт ----------
+	-- Подтверждения нет (#291): рычаг сам и есть «точно?» — его надо дотянуть. Одиночный
+	-- крафт играет сплетание: шары из слотов сходятся, ответ сервера его доигрывает.
+	local fusion = nil
 
-	local CONFIRM_BTN_H = mobile and MobileUI.MIN_TAP or 38
-	local box = make("Frame", "Box", overlay, 11)
-	box.AnchorPoint = Vector2.new(0.5, 0.5)
-	box.Position = UDim2.fromScale(0.5, 0.5)
-	box.Size = UDim2.new(0.9, 0, 0, 112 + CONFIRM_BTN_H)
-	Theme.Panel(box, { color = Theme.color.panelSoft, transparency = 0, scene = "confirm" })
-	local boxLimit = Instance.new("UISizeConstraint")
-	boxLimit.MaxSize = Vector2.new(400, 112 + CONFIRM_BTN_H)
-	boxLimit.Parent = box
-
-	local confirmLabel = make("TextLabel", "Text", box, 11)
-	confirmLabel.Size = UDim2.new(1, -24, 0, 74)
-	confirmLabel.Position = UDim2.fromOffset(12, 12)
-	confirmLabel.FontFace = Theme.font.strong
-	confirmLabel.TextSize = 17
-	confirmLabel.TextWrapped = true
-	confirmLabel.RichText = true
-	confirmLabel.TextColor3 = Theme.color.text
-
-	local yesButton = make("TextButton", "Yes", box, 11)
-	yesButton.Size = UDim2.new(0.44, 0, 0, CONFIRM_BTN_H)
-	yesButton.Position = UDim2.new(0, 16, 1, -(CONFIRM_BTN_H + 12))
-	yesButton.FontFace = Theme.font.strong
-	yesButton.TextSize = 15
-	yesButton.Text = "ПРОБОВАТЬ"
-	Show.Press(yesButton)
-	Theme.Button(yesButton, "action")
-
-	local noButton = make("TextButton", "No", box, 11)
-	noButton.AnchorPoint = Vector2.new(1, 0)
-	noButton.Size = UDim2.new(0.44, 0, 0, CONFIRM_BTN_H)
-	noButton.Position = UDim2.new(1, -16, 1, -(CONFIRM_BTN_H + 12))
-	noButton.FontFace = Theme.font.strong
-	noButton.TextSize = 15
-	noButton.Text = "ОТМЕНА"
-	Show.Press(noButton)
-	Theme.Button(noButton, "quiet")
-
-	local function closeConfirm()
-		overlay.Visible = false
-	end
-
-	local function craft()
+	function craft()
 		local a, b = slots[1], slots[2]
-		if not (a and b) or overlay.Visible or T.pending or T.batchLeft() > 0 then
+		if not (a and b) or T.pending or T.batchLeft() > 0 then
 			return
 		end
 		if chain then
@@ -553,23 +521,9 @@ return function(T, page)
 			UISound.Play("Fail")
 			return
 		end
-		if state == "known" then
-			T.craft(a, b, 1)
-			return
-		end
-		confirmLabel.Text = ("Скрестить %s + %s?"):format(Elements[a].name, Elements[b].name)
-		overlay.Visible = true
-		Theme.Open(box)
+		fusion = Fusion.Play(page, slotA, slotB, resultSlot, Elements[a].color, Elements[b].color)
+		T.craft(a, b, 1)
 	end
-
-	craftButton.MouseButton1Click:Connect(craft)
-	noButton.MouseButton1Click:Connect(closeConfirm)
-	yesButton.MouseButton1Click:Connect(function()
-		closeConfirm()
-		if slots[1] and slots[2] then
-			T.craft(slots[1], slots[2], 1)
-		end
-	end)
 
 	local function batchOf(n)
 		local a, b = slots[1], slots[2]
@@ -584,8 +538,7 @@ return function(T, page)
 		batchOf(T.TUNING.batchMax)
 	end)
 
-	-- Клавиатура ПК: Enter — скрестить (или «да» в подтверждении), Esc — отмена,
-	-- Backspace — очистить слоты. Только когда стол на экране и поиск не в фокусе.
+	-- Клавиатура ПК: Enter — дёрнуть рычаг, Backspace — очистить слоты. Только когда стол на экране и поиск не в фокусе.
 	local function onScreen()
 		local node = page
 		while node do
@@ -606,17 +559,8 @@ return function(T, page)
 		end
 		local k = input.KeyCode
 		if k == Enum.KeyCode.Return or k == Enum.KeyCode.KeypadEnter then
-			if overlay.Visible then
-				closeConfirm()
-				if slots[1] and slots[2] then
-					T.craft(slots[1], slots[2], 1)
-				end
-			else
-				craft()
-			end
-		elseif k == Enum.KeyCode.Escape and overlay.Visible then
-			closeConfirm()
-		elseif k == Enum.KeyCode.Backspace and not overlay.Visible then
+			lever.pull()
+		elseif k == Enum.KeyCode.Backspace then
 			setSlots(nil, nil)
 		end
 	end)
@@ -676,12 +620,7 @@ return function(T, page)
 		end)
 	end
 
-	local function onResult(e)
-		refreshBench()
-		rebuild()
-		if not onScreen() then
-			return
-		end
+	local function feedback(e)
 		if e.ok then
 			local color = Elements[e.result].color
 			Show.Flash(slotA, color, 0.45)
@@ -702,6 +641,25 @@ return function(T, page)
 		end
 	end
 
+	-- Ответ сервера. Шло сплетание — отклик в миг рождения (или распада), иначе сразу.
+	local function onResult(e)
+		refreshBench()
+		rebuild()
+		local play = fusion
+		fusion = nil
+		if not onScreen() then
+			return
+		end
+		local function after()
+			feedback(e)
+		end
+		if play then
+			play(e.ok, e.ok and Elements[e.result].color or Theme.color.danger, after)
+		else
+			after()
+		end
+	end
+
 	page:GetPropertyChangedSignal("Visible"):Connect(function()
 		if page.Visible and dirty then
 			rebuild()
@@ -717,7 +675,6 @@ return function(T, page)
 		frame = page,
 		refresh = refresh,
 		onResult = onResult,
-		closeConfirm = closeConfirm,
 		filter = function(text)
 			if text ~= query then
 				query = text

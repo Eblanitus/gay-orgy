@@ -363,7 +363,6 @@ return function(deps)
 	gui:GetPropertyChangedSignal("Enabled"):Connect(function()
 		if not gui.Enabled then
 			queue = {}
-			craftPage.closeConfirm()
 		end
 	end)
 
