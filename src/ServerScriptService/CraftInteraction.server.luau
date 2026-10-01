@@ -36,6 +36,7 @@ local Notify = Remotes:WaitForChild("Notify")
 -- то, что сервер уже разыграл.
 local RouletteShow = Remotes:WaitForChild("RouletteShow")
 local UpgradeShow = Remotes:WaitForChild("UpgradeShow")
+local CraftResult = Remotes:WaitForChild("CraftResult")
 
 
 local MAX_DISTANCE = 14 -- studs от стола; чуть больше радиуса подсказки, чтобы шаг в сторону не рвал окно
@@ -294,7 +295,11 @@ RequestCraft.OnServerEvent:Connect(function(player, a, b)
 		return
 	end
 
-	local ok, result = Crafting.Craft(a, b)
+	-- Ответ столу (#283): (успех, результат или причина, впервые ли / вид неудачи, a, b).
+	-- По нему стол играет крафт, помнит несмешиваемые пары и ведёт журнал. Причина
+	-- по-прежнему уходит и в Notify — её видно и с закрытым окном.
+	local ok, result, extra = Crafting.Craft(a, b)
+	CraftResult:FireClient(player, ok, result, extra, a, b)
 	if not ok then
 		Notify:FireClient(player, result)
 	end
