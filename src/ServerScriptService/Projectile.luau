@@ -643,6 +643,9 @@ function Projectile.Fire(shot)
 		rig = rig, -- nil у обычного снаряда: там сносить нечего, кроме самой детали
 		color = color, -- нужен подрыву: картинка взрыва идёт в том же цвете, что и сам дрон
 		position = origin,
+		-- Точка пуска нужна при попадании: щиту Щитоносца (HitFrom), отдаче и притяжению.
+		-- Раньше её ставила только ветка навеса, и у прямого снаряда она была nil.
+		origin = origin,
 		direction = delta.Unit,
 		speed = speed,
 		radius = radius,
