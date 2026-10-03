@@ -234,7 +234,7 @@ local function build()
 			part.Size = Vector3.new(TILE_X, ConcreteFloor.THICKNESS, TILE_Z)
 			part.Position = Vector3.new(cx, BASE_Y - ConcreteFloor.THICKNESS / 2, cz)
 			part.Material = Enum.Material.Concrete
-			part.Color = Color3.fromRGB(126, 126, 122)
+			part.Color = Color3.fromRGB(86, 85, 80)
 			part.TopSurface = Enum.SurfaceType.Smooth
 			part.BottomSurface = Enum.SurfaceType.Smooth
 			-- Коллизия есть: по плитам ходит игрок, и по ним же он проваливается в яму.
