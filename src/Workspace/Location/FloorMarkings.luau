@@ -65,6 +65,17 @@ for _, g in grates do
 	table.insert(rects, g)
 end
 
+-- Следы испытаний: зал был испытательным, опытный образец стрелял из центра в мишень у
+-- северо-западной стены. Плиты, куда попадали, заменили — новый бетон светлее, а вокруг
+-- осталась гарь (диски ниже прямоугольников, поэтому заплатка ложится поверх гари).
+local SCORCH = Color3.fromRGB(26, 25, 24)
+rect(-41.5, 29, -36.5, 34, Color3.fromRGB(104, 103, 97))
+rect(-36.5, 31, -34.5, 34, Color3.fromRGB(98, 97, 91))
+-- Опоры снятой мишени: четыре тёмные площадки по углам.
+for _, p in { { -40.6, 24.6 }, { -37.4, 24.6 }, { -40.6, 27.8 }, { -37.4, 27.8 } } do
+	rect(p[1] - 0.35, p[2] - 0.35, p[1] + 0.35, p[2] + 0.35, DARK, Enum.Material.DiamondPlate)
+end
+
 return {
 	-- Швы между плитами: тонкая тёмная рамка по краю каждой.
 	seam = { color = BLACK, width = 0.06, transparency = 0.35 },
@@ -75,5 +86,10 @@ return {
 		{ x = 51.5, z = 16.9, r = 0.6, color = Color3.new(1, 0.549, 0), transparency = 0.55 },
 		{ x = 54.4, z = -9.6, r = 0.8, color = Color3.new(0.545, 0.353, 0.169), transparency = 0.5 },
 		{ x = 53.3, z = -14.2, r = 0.5, color = LIGHT, transparency = 0.6 },
+		-- Гарь вокруг заменённых плит у мишени.
+		{ x = -39, z = 31.5, r = 4.2, color = SCORCH, transparency = 0.72 },
+		{ x = -38.6, z = 31.8, r = 3.2, color = SCORCH, transparency = 0.6 },
+		{ x = -35.2, z = 30.4, r = 1.5, color = SCORCH, transparency = 0.65 },
+		{ x = -43.1, z = 32.2, r = 1.3, color = SCORCH, transparency = 0.7 },
 	},
 }
