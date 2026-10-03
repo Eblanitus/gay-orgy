@@ -241,7 +241,14 @@ local Enemies = {
 		scale = 2.78,
 		-- needMaterial — сколько обломков уходит на одну постройку, interval — пауза между
 		-- ними, gather — в каком радиусе он видит обломки на полу.
-		builds = { needMaterial = 2, interval = 8, gather = 26 },
+		-- pit — «Ямка» из вики: после каждой постройки роет углубление рядом с ней.
+		-- time — сколько копает неподвижно, radius/depth/core — сама яма (ConcreteFloor.Shape).
+		-- Глубина больше ConcreteFloor.COVER_DEPTH, а core = 1 даёт плоское дно с отвесными
+		-- стенками — иначе жук выкатывается на скос и торчит над линией огня.
+		builds = {
+			needMaterial = 2, interval = 8, gather = 26,
+			pit = { time = 3, radius = 4, depth = 6, core = 1 },
+		},
 		color = Color3.fromRGB(122, 74, 38),
 		matter = 14,
 	},

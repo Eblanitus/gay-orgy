@@ -636,7 +636,7 @@ local TRAITS = {}
 
 -- Строитель: собирает обломки, строит одну из трёх конструкций. Какую именно —
 -- решает обстановка, а не жребий: есть рядом стена игрока — пандус; есть раненые
--- соседи — кормушка; иначе — стена против линии огня.
+-- соседи — кормушка; иначе — стена против линии огня. Рядом с постройкой роет ямку.
 TRAITS.builds = function(enemy, enemyData, state)
 	local plan = enemyData.builds
 	local carried = 0
@@ -690,6 +690,18 @@ TRAITS.builds = function(enemy, enemyData, state)
 					facing = Vector3.zAxis
 				end
 				EnemyStructures.Wall(at + facing.Unit * 5, facing.Unit)
+			end
+
+			-- Ямка: роет там, где стоял при стройке, — у самой постройки, а у стены —
+			-- за ней, с той стороны, куда турель не видит. Убит за работой — ямки нет.
+			local pit = plan.pit
+			if pit then
+				state.holdUntil = os.clock() + pit.time
+				if not naps(enemy, pit.time) then
+					return
+				end
+				ConcreteFloor.Shape(enemy:GetPivot().Position, pit.radius, -pit.depth,
+					{ tag = "trench", core = pit.core })
 			end
 
 			carried -= plan.needMaterial
