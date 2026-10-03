@@ -101,19 +101,38 @@ return function(deps)
 		disc.CFrame = CFrame.new(position.X, Arena.floorY + 0.15, position.Z) * CFrame.Angles(0, 0, math.rad(90))
 		disc.Parent = zonesFolder()
 		Debris:AddItem(disc, duration)
+		return disc
 	end
 
 	-- Заводит зону на карте по общему описанию (те же поля, что у killZone в Elements).
 	-- Одна функция на всех, потому что источников зон теперь два: смерть цели
 	-- (killZone) и пробой Смога (breakthrough.zone), а тик-цикл ниже их не различает.
-	local function spawnZone(position, radius, plan, elementData)
+	-- owner — турель, чей выстрел оставил зону. По вики зона живёт одна на турель:
+	-- новая заменяет старую той же турели, у двух турелей — две зоны. Без owner (пробой
+	-- Смога, разнос по зоне) и с plan.unlimited (пепел Угля) зоны не вытесняют друг друга.
+	local function spawnZone(position, radius, plan, elementData, owner)
 		local spread = plan.spreadElement and Elements[plan.spreadElement] or nil
 		assert(not plan.spreadElement or spread,
 			("[Effects] зона %s ссылается на несуществующий элемент %s")
 				:format(elementData.name, tostring(plan.spreadElement)))
 
+		if owner and not plan.unlimited then
+			for i = #zones, 1, -1 do
+				local old = zones[i]
+				if old.owner == owner then
+					table.remove(zones, i)
+					if old.visual then
+						old.visual:Destroy()
+					end
+					print(("[Эффект] %s: новая зона %s заменяет старую")
+						:format(owner.Name, elementData.name))
+				end
+			end
+		end
+
 		local now = os.clock()
 		local zone = {
+			owner = owner,
 			position = position,
 			radius = radius,
 			born = now,
@@ -141,7 +160,7 @@ return function(deps)
 		end
 
 		table.insert(zones, zone)
-		spawnZoneVisual(position, radius, plan.duration, elementData.color)
+		zone.visual = spawnZoneVisual(position, radius, plan.duration, elementData.color)
 		return zone
 	end
 

@@ -380,6 +380,7 @@ return function(deps)
 			element = elementData,
 			color = color,
 			ownerName = tower.Name,
+			owner = tower,
 			-- Форма снаряда и пробитие — свойства турели, а не снаряда: лежат в таблице
 			-- (Towers[тип].projectileShape / .pierce) и просто передаются дальше. Нет полей —
 			-- шар без пробития, то есть ровно то, что было у всех до этого.
@@ -504,6 +505,7 @@ return function(deps)
 			element = elementData,
 			color = color,
 			ownerName = tower.Name,
+			owner = tower,
 		})
 
 		ShotFiredRemote:FireAllClients(muzzle, color, tower)
@@ -553,7 +555,7 @@ return function(deps)
 					-- Четвёртым — откуда ударили: притяжение (Воздух и вся его ветка) тянет
 					-- к стрелявшей турели, а у площадной это центр её зоны, а не сам пивот:
 					-- облако Испарителя висит над ней.
-					Effects.Apply(enemy, elementData, dealt, center)
+					Effects.Apply(enemy, elementData, dealt, center, tower)
 				end
 			end
 		end

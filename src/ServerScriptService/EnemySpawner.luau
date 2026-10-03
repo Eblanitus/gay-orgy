@@ -1252,8 +1252,8 @@ end
 -- Литосфера меняет рельеф на месте смерти. Тот же мост, что и у Горы: элемент
 -- считает числа, а бетон двигает серверный модуль.
 local Lithosphere = require(ServerScriptService:WaitForChild("Lithosphere"))
-Effects.OnTerrain = function(position, plan)
-	Lithosphere.Erupt(position, plan)
+Effects.OnTerrain = function(position, plan, _elementData, owner)
+	Lithosphere.Erupt(position, plan, owner)
 end
 
 return EnemySpawner

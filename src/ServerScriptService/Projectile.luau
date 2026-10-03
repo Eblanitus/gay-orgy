@@ -232,7 +232,7 @@ local function dealDamage(shot, enemy)
 		-- Четвёртым — точка пуска: притяжение тянет жука к стрелявшей турели, а снаряд —
 		-- единственный, кто ещё помнит, откуда он вылетел. Отдача и подброс её не спрашивают:
 		-- их направление считается по самой цели.
-		Effects.Apply(enemy, shot.element, damage, shot.origin)
+		Effects.Apply(enemy, shot.element, damage, shot.origin, shot.owner)
 	end
 
 	return hp <= 0
@@ -280,7 +280,7 @@ local function burst(shot)
 				DamageDealtRemote:FireAllClients(enemy:GetPivot().Position, damage, true)
 			end
 			if shot.element then
-				Effects.Apply(enemy, shot.element, damage, shot.origin)
+				Effects.Apply(enemy, shot.element, damage, shot.origin, shot.owner)
 			end
 		end
 	end
@@ -575,7 +575,7 @@ end
 -- (см. TowerBuilder.StartFiring), снаряд решает только одно: долетел он до кого-нибудь или нет.
 --
 -- shot: origin, aim, damage, ownerName (для лога) — обязательны;
---       speed, radius, maxDistance, color, element — по вкусу стреляющего.
+--       speed, radius, maxDistance, color, element, owner (сама турель) — по вкусу стреляющего.
 --
 -- Навес (Мортира, задача #53) — ещё три поля: arc = true, splash = { radius, damage }
 -- и targets ("ground"/"air"/"both") для фильтра взрыва. aim для него — не точка прицела
@@ -651,6 +651,7 @@ function Projectile.Fire(shot)
 		damage = shot.damage or 0,
 		element = shot.element,
 		ownerName = shot.ownerName or "Снаряд",
+		owner = shot.owner, -- турель-стрелок: зоны при убийстве живут одна на турель
 		orientation = orientation,
 		-- Доля урона, теряемая за каждый труп при пробитии. nil — пробития нет
 		-- вовсе, снаряд гаснет на первом же попадании, как и было.

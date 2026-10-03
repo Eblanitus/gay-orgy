@@ -81,8 +81,10 @@
 --                                элемента, чьи эффекты получают задетые: Океан льёт Мокрость
 --                                ("Water"), Облако и Дождь — Ошпаривание ("Steam")
 --   killZone = { duration, radius | radiusScale, damagePerSecond, growth, slowPercent,
---                spreadElement, charges, dries, extendOnKill, radiusOnKill }
---                                зона на месте смерти. Без своих полей это прежняя
+--                spreadElement, charges, dries, extendOnKill, radiusOnKill, unlimited }
+--                                зона на месте смерти, одна на турель: новая вытесняет
+--                                старую той же турели (unlimited — без лимита, пепел Угля).
+--                                Без своих полей это прежняя
 --                                зона-модификатор Землетрясения (нужен damageSpeedScale).
 --                                damagePerSecond — своя капель урона мимо брони (Засуха),
 --                                growth — на сколько она растёт за секунду жизни зоны
@@ -769,7 +771,8 @@ local Elements = {
 		maxStacks = math.huge,
 		-- Зона пепла на месте смерти: метит тех, кто по ней прошёл, и исчезает, когда
 		-- метки кончились, а не по таймеру — «количество жуков ограничено».
-		killZone = { radius = 10, duration = 20, spreadElement = "Ash", charges = 5 },
+		-- unlimited: пепел — единственная зона без лимита «одна на турель» (вики).
+		killZone = { radius = 10, duration = 20, spreadElement = "Ash", charges = 5, unlimited = true },
 	},
 	Life = {
 		name = "Жизнь",

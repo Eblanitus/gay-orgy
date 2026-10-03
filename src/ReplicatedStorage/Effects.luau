@@ -542,7 +542,7 @@ end
 -- трупа, а не по таблице: форма зоны — свойство того, кто умер.
 -- Светящийся диск (spawnZoneVisual) — чисто картинка поверх той же записи: без него
 -- игрок не видит, где зона и что она вообще появилась.
-local function applyKillZone(target, elementData)
+local function applyKillZone(target, elementData, owner)
 	local plan = elementData.killZone
 	local radius = plan.radius or corpseRadius(target) * (plan.radiusScale or 1)
 	local position = target:GetPivot().Position
@@ -552,7 +552,8 @@ local function applyKillZone(target, elementData)
 	-- поток жуков через одно место кормит одну и ту же звезду.
 	if plan.extendOnKill then
 		for _, zone in zones do
-			if zone.element == elementData and (position - zone.position).Magnitude <= zone.radius then
+			if zone.element == elementData and zone.owner == owner
+				and (position - zone.position).Magnitude <= zone.radius then
 				zone.expires += plan.extendOnKill
 				zone.radius += plan.radiusOnKill or 0
 				print(("[Эффект] %s кормит свою зону смертью %s: +%.1f сек, радиус %.1f")
@@ -568,7 +569,7 @@ local function applyKillZone(target, elementData)
 	assert(plan.damagePerSecond or plan.spreadElement or plan.slowPercent or elementData.damageSpeedScale,
 		("[Effects] у %s есть killZone, но она ничего не делает"):format(elementData.name))
 
-	spawnZone(position, radius, plan, elementData)
+	spawnZone(position, radius, plan, elementData, owner)
 	print(("[Эффект] %s оставляет зону на месте смерти %s: радиус %.1f на %.1f сек")
 		:format(elementData.name, target.Name, radius, plan.duration))
 end
@@ -682,7 +683,9 @@ end
 -- source — откуда пришёл выстрел (позиция ствола). Нужен только притяжению: оно
 -- тянет к стреляющей турели, а отдача и подброс считают направление по самой цели.
 -- Необязателен: без него притяжение просто не срабатывает, а не падает.
-function Effects.Apply(target, elementData, damage, source)
+-- owner — сама стрелявшая турель. Нужен зонам при убийстве: по вики зона одна на турель,
+-- и новая вытесняет старую той же турели. Без него зоны просто не вытесняются.
+function Effects.Apply(target, elementData, damage, source, owner)
 	damage = damage or 0
 
 	-- Счёт оружия игрока и впитывание Разносчика — здесь, в единственном месте, через
@@ -733,7 +736,7 @@ function Effects.Apply(target, elementData, damage, source)
 				applyKillHeal(target, elementData)
 			end
 			if elementData.killZone then
-				applyKillZone(target, elementData)
+				applyKillZone(target, elementData, owner)
 			end
 			if elementData.killBarrier then
 				applyKillBarrier(target, elementData)
@@ -741,7 +744,7 @@ function Effects.Apply(target, elementData, damage, source)
 			-- Ландшафт Литосферы — последним из последействий смерти: удар по области
 			-- считается по ещё ровному полу и по тем, кто на нём стоял.
 			if elementData.terrain and Effects.OnTerrain then
-				Effects.OnTerrain(target:GetPivot().Position, elementData.terrain, elementData)
+				Effects.OnTerrain(target:GetPivot().Position, elementData.terrain, elementData, owner)
 			end
 		end
 		return
