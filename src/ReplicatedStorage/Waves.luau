@@ -73,18 +73,16 @@ local Waves = {
 		{ enemyType = "Worker", count = 8, hp = 45 },
 		{ enemyType = "Normal", count = 6, hp = 30 },
 	} },
-	-- Кислотник и Окопщик: оба по-отдельности бесполезны, вместе с работягами — нет.
+	-- Кислотник: один бесполезен, вместе с работягами — стена разрушается быстро.
 	{ number = 7, groups = {
 		{ enemyType = "Worker",      count = 10, hp = 45 },
-		{ enemyType = "AcidSpitter", count = 2,  hp = 35 },
-		{ enemyType = "Digger",      count = 2,  hp = 50 },
+		{ enemyType = "AcidSpitter", count = 3,  hp = 35 },
 	} },
-	-- Строитель и Медик: связка «окопщик копает — работяга несёт — строитель строит»
-	-- замыкается только здесь, когда на поле есть все трое сразу.
+	-- Строитель и Медик: связка «работяга несёт обломки — строитель строит и роет
+	-- ямку» замыкается только здесь, когда на поле есть оба сразу.
 	{ number = 8, groups = {
 		{ enemyType = "Worker",  count = 8, hp = 45 },
-		{ enemyType = "Builder", count = 2, hp = 70 },
-		{ enemyType = "Digger",  count = 3, hp = 50 },
+		{ enemyType = "Builder", count = 3, hp = 70 },
 		{ enemyType = "Medic",   count = 2, hp = 40 },
 	} },
 	-- Пеликан и Матка. К этой волне на поле уже лежат трупы — есть что есть.
@@ -129,13 +127,12 @@ local Waves = {
 		{ enemyType = "Shadow",   count = 6, hp = 25 },
 		{ enemyType = "Absorber", count = 3, hp = 50 },
 	} },
-	-- Роевик с летающим координатором — только вместе: без координатора он
-	-- вообще не копает, и урока не выйдет.
+	-- Эволюционер и Носитель: один заставляет менять элемент, другой — добивать
+	-- его до лаборатории, а не у самого стола.
 	{ number = 14, groups = {
-		{ enemyType = "Burrower", count = 4, hp = 45 },
-		{ enemyType = "SwarmEye", count = 1, hp = 35 },
-		{ enemyType = "Evolver",  count = 2, hp = 70 },
-		{ enemyType = "Carrier",  count = 2, hp = 90 },
+		{ enemyType = "Evolver", count = 3, hp = 70 },
+		{ enemyType = "Carrier", count = 3, hp = 90 },
+		{ enemyType = "Normal",  count = 8, hp = 30 },
 	} },
 	-- Финал: Кукольник и Архитектор работают по тому, что на поле уже есть —
 	-- раненые и пол, — поэтому идут вместе с большой толпой.

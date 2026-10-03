@@ -24,7 +24,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local Grid = require(ServerScriptService:WaitForChild("Grid"))
 -- Рельеф пола: жук едет по бетону, а тот умеет подниматься и опускаться
--- (окоп Окопщика, ландшафт Литосферы). Высотой жука распоряжается толкучка
+-- (ямка Строителя, ландшафт Литосферы). Высотой жука распоряжается толкучка
 -- (он может стоять на спине соседа), поэтому и уровень земли читается здесь же.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
 -- Габариты тела: капсула по ширине корпуса вдоль хода (см. EnemyBody.Footprint).

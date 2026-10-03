@@ -26,7 +26,7 @@ local LabTable = require(ServerScriptService:WaitForChild("LabTable"))
 local LabStations = require(ServerScriptService:WaitForChild("LabStations"))
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
--- Рельеф бетонного пола: Окопщик копает в нём настоящую яму.
+-- Рельеф бетонного пола: Строитель роет в нём настоящую ямку.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -319,7 +319,7 @@ function EnemyBehavior.Ground(enemy, state)
 	local at = enemy:GetPivot().Position
 	local onChitin = EnemyStructures.OnChitin(at)
 	-- Укрытие теперь спрашивается у самого пола, а не у списка конструкций: в яме можно
-	-- оказаться не только из-за Окопщика, но и из-за Литосферы — а прячет одинаково.
+	-- оказаться не только из-за Строителя, но и из-за Литосферы — а прячет одинаково.
 	local inTrench = ConcreteFloor.IsCover(at.X, at.Z)
 
 	if inTrench ~= (state.inTrench or false) then
@@ -524,32 +524,6 @@ local function queenLoop(enemy, enemyData, state)
 	end
 end
 
--- Летающий координатор: «смотрит на лабораторию сверху, передаёт роевику куда копать».
-local function swarmEyeLoop(enemy, enemyData, state)
-	local plan = enemyData.directs
-	local post = LabTable.Position() + Vector3.new(0, plan.hover, 0)
-
-	while alive(enemy) do
-		local dt = RunService.Heartbeat:Wait()
-		if not alive(enemy) then
-			break
-		end
-
-		flyStep(enemy, post, enemyData.speed, dt, 2)
-
-		-- Ведёт всех Роевиков в радиусе. Смерть координатора ничего не снимает руками:
-		-- метка ставится с окончанием срока, и без живого координатора она просто истекает.
-		local at = enemy:GetPivot().Position
-		for _, other in enemiesFolder:GetChildren() do
-			local otherData = Enemies[other:GetAttribute("Type")]
-			if otherData and otherData.burrows
-				and (other:GetPivot().Position - at).Magnitude <= plan.radius then
-				other:SetAttribute("GuidedUntil", os.clock() + 1)
-			end
-		end
-	end
-end
-
 -- Личинка: стоит на месте и вылупляется большой группой мелких.
 local function larvaLoop(enemy, enemyData, state)
 	local plan = enemyData.hatches
@@ -709,32 +683,6 @@ TRAITS.builds = function(enemy, enemyData, state)
 				return
 			end
 		end
-	end
-end
-
--- Окопщик: копает неподвижно (уязвим), оставляет окоп и обломки Строителю.
-TRAITS.digs = function(enemy, enemyData, state)
-	local plan = enemyData.digs
-
-	while alive(enemy) do
-		if not naps(enemy, plan.interval) then
-			return
-		end
-
-		state.holdUntil = os.clock() + plan.time
-		print("[Окопщик] копает — пока копает, стоит на месте")
-		if not naps(enemy, plan.time) then
-			return -- расстреляли за работой: окопа не будет
-		end
-
-		-- Окоп — это выемка в самом полу, а не плоская картонка поверх него: «жук в окопе
-		-- ниже линии огня турелей» — значит он действительно ниже. Прятать его будет тот же
-		-- атрибут InTrench, который теперь ставится по глубине пола (см. EnemyBehavior.Ground).
-		local at = enemy:GetPivot().Position
-		ConcreteFloor.Shape(at, plan.radius, -plan.depth, { tag = "trench", core = plan.core })
-		EnemyStructures.DropMaterial(at, plan.material)
-		print(("[Окопщик] выкопал окоп: радиус %.0f, глубина %.1f")
-			:format(plan.radius, plan.depth))
 	end
 end
 
@@ -1015,42 +963,6 @@ function EnemyBehavior.Burst(enemy, enemyData)
 		:format(#names > 0 and table.concat(names, ", ") or "ничего", amount, plan.radius))
 end
 
--- Роевик: уходит под пол и появляется в другом месте. Копает только пока его
--- ведёт летающий координатор; без него «идёт в атаку слепо», то есть просто идёт.
-TRAITS.burrows = function(enemy, enemyData, state)
-	local plan = enemyData.burrows
-
-	while alive(enemy) do
-		if not naps(enemy, 3) then
-			return
-		end
-
-		if os.clock() < (enemy:GetAttribute("GuidedUntil") or 0) then
-			-- Нырок: пока под землёй — не цель для турелей (Hidden) и не толкается.
-			state.holdUntil = os.clock() + plan.dive
-			if not naps(enemy, plan.dive) then
-				return
-			end
-
-			local at = enemy:GetPivot().Position
-			enemy:SetAttribute("Hidden", true)
-			enemy:PivotTo(CFrame.new(at - Vector3.new(0, plan.depth, 0)))
-			state.burrowed = true
-			print("[Роевик] ушёл под пол — координатор ведёт его к лаборатории")
-
-			if not naps(enemy, plan.under) then
-				return
-			end
-
-			-- Появляется из-под земли там, куда его вёл маршрут всё это время.
-			state.burrowed = false
-			enemy:SetAttribute("Hidden", nil)
-			local now = enemy:GetPivot().Position
-			enemy:PivotTo(CFrame.new(Vector3.new(now.X, 1.5, now.Z)))
-		end
-	end
-end
-
 -- Эволюционер: привыкает к тому элементу, которым игрок нанёс больше всего урона
 -- за забег. Счёт ведёт Effects (Effects.ElementUsage) — он единственный, кто видит
 -- все попадания сразу.
@@ -1193,7 +1105,7 @@ TRAITS.shadow = function(enemy, enemyData, state)
 end
 
 -- Работяга: «Могут таскать строй-материалы» — подбирает обломок и относит его
--- к ближайшему Строителю: так замыкается связка «окопщик — работяга — строитель».
+-- к ближайшему Строителю: так замыкается связка «работяга — строитель».
 TRAITS.carriesMaterial = function(enemy, enemyData, state)
 	while alive(enemy) do
 		if not naps(enemy, 4) then
@@ -1230,10 +1142,6 @@ function EnemyBehavior.OwnLoop(enemy, enemyData, state)
 	end
 	if enemyData.lays then
 		queenLoop(enemy, enemyData, state)
-		return true
-	end
-	if enemyData.directs then
-		swarmEyeLoop(enemy, enemyData, state)
 		return true
 	end
 	if enemyData.hatches then
