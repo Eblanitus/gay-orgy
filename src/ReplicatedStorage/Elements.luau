@@ -83,8 +83,10 @@
 --                                удар по площади в момент смерти цели. spreadElement — ключ
 --                                элемента, чьи эффекты получают задетые: Океан льёт Мокрость
 --                                ("Water"), Облако и Дождь — Ошпаривание ("Steam").
---                                blast = "cloud" — клиент рисует облачный взрыв (клубы пара)
---                                вместо огненного (Облако, Дождь, Снег)
+--                                blast = "cloud" | "rain" | "snow" — клиент рисует облачный
+--                                взрыв (клубы пара) вместо огненного; из дождевого падают капли,
+--                                из снежного — хлопья. blastColor — оттенок облака: цвета самих
+--                                элементов почти белые, и облака по ним не различить
 --   killZone = { duration, radius | radiusScale, damagePerSecond, growth, slowPercent,
 --                spreadElement, charges, dries, extendOnKill, radiusOnKill, unlimited }
 --                                зона на месте смерти, одна на турель: новая вытесняет
@@ -414,7 +416,8 @@ local Elements = {
 		-- Облачность: носитель разрывается в момент смерти и ошпаривает соседей.
 		-- Сам эффект берётся у Пара по ключу, а не выписывается вторым комплектом цифр:
 		-- два описания одного и того же Ошпаривания разошлись бы на первой же правке баланса.
-		killDamage = { radius = 8, damage = 20, spreadElement = "Steam", blast = "cloud" },
+		killDamage = { radius = 8, damage = 20, spreadElement = "Steam", blast = "cloud",
+			blastColor = Color3.fromRGB(238, 240, 244) }, -- белое кучевое
 	},
 	Smog = {
 		name = "Смог",
@@ -850,7 +853,8 @@ local Elements = {
 		slowDuration = 3,
 		-- Две части одного события: сначала удар по области с ошпариванием,
 		-- потом на том же месте повисает туча и мочит всех под собой.
-		killDamage = { radius = 10, damage = 30, spreadElement = "Steam", blast = "cloud" },
+		killDamage = { radius = 10, damage = 30, spreadElement = "Steam", blast = "rain",
+			blastColor = Color3.fromRGB(105, 118, 140) }, -- тёмное грозовое
 		killZone = { radius = 10, duration = 8, spreadElement = "Water" },
 	},
 	Snow = {
@@ -867,7 +871,8 @@ local Elements = {
 		attackSlowPercent = 0.5,
 		regen = { slow = 0.4, duration = 5 },
 		-- Взрыв, а за ним снежное облако с тем же Охлаждением, что у Холода.
-		killDamage = { radius = 9, damage = 35, blast = "cloud" },
+		killDamage = { radius = 9, damage = 35, blast = "snow",
+			blastColor = Color3.fromRGB(200, 226, 255) }, -- ледяное голубое
 		killZone = { radius = 10, duration = 8, spreadElement = "Cold" },
 	},
 	Frost = {
