@@ -16,6 +16,8 @@ local Workspace = game:GetService("Workspace")
 
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
+local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
+local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 
 local EnemyFX = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("EnemyFX")
 
@@ -105,6 +107,7 @@ function Corpses.Leave(enemy, hit)
 		remains = hit.remains,
 		scale = hit.scale / 3,
 		bornAt = os.clock(),
+		swampy = hit.swampy == true,
 	}
 	remember(record)
 	EnemyFX:FireAllClients("death", enemy, nextId, hit)
@@ -134,22 +137,42 @@ function Corpses.Touch(center, radius)
 	end
 end
 
--- Шаги: наземный живой жук рядом с хрупким трупом. Проверка идёт, только пока такие трупы есть.
+-- Болотный труп заражает жука, прошедшего по нему, тем же Болотным, что живой (по вики).
+local swamp = Elements.Swamp.contagion
+
+local function infectAround(enemy, position)
+	for _, record in records do
+		if record.swampy then
+			local delta = record.position - position
+			if delta.X * delta.X + delta.Z * delta.Z <= swamp.radius * swamp.radius then
+				Effects.InfectFrom(enemy, swamp, Elements.Swamp.name .. " (труп)")
+				return
+			end
+		end
+	end
+end
+
+-- Шаги: наземный живой жук рядом с хрупким трупом лопает его, рядом с болотным — заражается.
+-- Проверка идёт, только пока такие трупы есть.
 task.spawn(function()
 	local enemies = Workspace:WaitForChild("Enemies")
 	while true do
 		task.wait(brittle.check)
-		local any = false
+		local anyBrittle, anySwampy = false, false
 		for _, record in records do
-			if record.remains == "brittle" then
-				any = true
-				break
-			end
+			anyBrittle = anyBrittle or record.remains == "brittle"
+			anySwampy = anySwampy or record.swampy
 		end
-		if any then
+		if anyBrittle or anySwampy then
 			for _, enemy in enemies:GetChildren() do
 				if enemy:IsA("Model") and not enemy:GetAttribute("Flying") and (enemy:GetAttribute("HP") or 0) > 0 then
-					Corpses.Touch(enemy:GetPivot().Position, brittle.step * (enemy:GetAttribute("Scale") or 3) / 3)
+					local position = enemy:GetPivot().Position
+					if anySwampy then
+						infectAround(enemy, position)
+					end
+					if anyBrittle then
+						Corpses.Touch(position, brittle.step * (enemy:GetAttribute("Scale") or 3) / 3)
+					end
 				end
 			end
 		end

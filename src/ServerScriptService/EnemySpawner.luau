@@ -1255,6 +1255,8 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 					fraction = math.max(previousHp - currentHp, 0) / maxHp,
 					from = typeof(from) == "Vector3" and from or nil,
 					remains = remains,
+					-- Умер Болотным — труп тоже болотный и заражает прошедших по нему (по вики).
+					swampy = enemy:GetAttribute("Infected") == true,
 				})
 			end
 

@@ -640,7 +640,37 @@ return function(deps)
 		end
 	end
 
+	-- ============ Болотный труп ============
+	-- Умер Болотным — труп заражает прошедших (решает сервер). Игрок видит это так:
+	-- труп зеленеет и пускает пузыри, пока лежит.
+	local function swampy(corpse, holder, scale)
+		local p = PhysicsFX.swampy
+		for _, part in visibleParts(corpse) do
+			part.Color = part.Color:Lerp(p.color, p.tint)
+		end
+		if holder then
+			local bubbles = Instance.new("ParticleEmitter")
+			bubbles.Name = "SwampBubbles"
+			bubbles.Texture = "rbxasset://textures/particles/smoke_main.dds"
+			bubbles.Color = ColorSequence.new(p.bubble)
+			bubbles.LightInfluence = 0.8
+			bubbles.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.2),
+				NumberSequenceKeypoint.new(0.8, 0.4),
+				NumberSequenceKeypoint.new(1, 1),
+			})
+			bubbles.Size = NumberSequence.new(0.25 * scale, 0.5 * scale)
+			bubbles.Lifetime = NumberRange.new(0.6, 1.1)
+			bubbles.Speed = NumberRange.new(0.6, 1.4)
+			bubbles.SpreadAngle = Vector2.new(25, 25)
+			bubbles.EmissionDirection = Enum.NormalId.Top
+			bubbles.Rate = p.rate
+			bubbles.Parent = holder
+		end
+	end
+
 	return {
+		swampy = swampy,
 		crush = crush,
 		melt = melt,
 		dissolve = dissolveBody,

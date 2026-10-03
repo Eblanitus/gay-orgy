@@ -1479,4 +1479,20 @@ task.spawn(function()
 	end
 end)
 
+-- Болотный труп (по вики): жук, прошедший по трупу болотного жука, заражается, как от живого, —
+-- тем же переданным Болотным (contagion), что расходится по контакту. Зовёт Corpses.
+function Effects.InfectFrom(target, plan, name)
+	if infections[target] or not target.Parent or (target:GetAttribute("HP") or 0) <= 0 then
+		return
+	end
+	local carrier = {
+		name = name,
+		slowPercent = plan.slowPercent,
+		slowDuration = plan.duration,
+		contagion = plan,
+	}
+	applySlow(target, carrier)
+	applyInfection(target, carrier)
+end
+
 return Effects

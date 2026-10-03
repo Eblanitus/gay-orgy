@@ -629,6 +629,9 @@ function Corpses.Leave(enemy, hit, id)
 		-- Потом осыпается (по вики); запись на сервере снимется к тому же сроку.
 		Remains.crumble(corpse, scale, hit and hit.floorY or Arena.floorY)
 	end
+	if hit and hit.swampy then
+		Remains.swampy(corpse, hull or root, scale)
+	end
 
 	-- Досадка на брюхо — общий цикл перед Corpses.Splat, для всех трупов сразу.
 
