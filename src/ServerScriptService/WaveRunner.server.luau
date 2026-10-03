@@ -132,10 +132,13 @@ local function clearArena()
 	end
 
 	-- Очищенные Мылом — тоже жуки этого забега: в новый они не переходят.
-	local allies = Workspace:FindFirstChild("Allies")
-	if allies then
-		for _, ally in allies:GetChildren() do
-			ally:Destroy()
+	-- Ростки Растения и их плоды (Plants) — тоже.
+	for _, name in { "Allies", "Plants" } do
+		local folder = Workspace:FindFirstChild(name)
+		if folder then
+			for _, child in folder:GetChildren() do
+				child:Destroy()
+			end
 		end
 	end
 

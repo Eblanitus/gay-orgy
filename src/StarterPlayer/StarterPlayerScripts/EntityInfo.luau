@@ -449,7 +449,7 @@ EntityInfo.ELEMENT_EFFECTS = {
 	end },
 	-- Жизнь не бьёт врагов, и плодов с убитых у неё не бывает.
 	{ field = "killHeal", label = function(_, element)
-		return not element.healer and "лечащие плоды" or nil
+		return not element.healer and "росток: лечащие плоды и шипы" or nil
 	end },
 	{ field = "killBarrier", label = "преграда при смерти" },
 }

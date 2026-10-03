@@ -151,6 +151,9 @@ end
 -- и обратный require зациклил бы модули — колбек вместо этого, как EnemySpawner.OnBreach.
 Effects.OnKillBarrier = nil -- function(position: Vector3, hp: number, scale: number)
 
+-- Растение из трупа (killHeal) — тот же приём: росток и плоды строит серверный Plants.
+Effects.OnKillPlant = nil -- function(position, plan, elementData, healScale, thornsScale)
+
 -- Броня — число на самой цели (Enemies[...].armor → атрибут Armor), а не процент,
 -- зашитый в модель урона (задача #44, по alchemy_td_enemy_mechanics.md). Раньше здесь жил
 -- ARMOR_DAMAGE_REDUCTION (плоские −30% урона турели, только для прямого попадания) — теперь
@@ -338,6 +341,12 @@ function Effects.AfterArmor(target, damage, elementData)
 	-- ApplyArmor мимо этой обёртки, и туда метка не заходит. Этим она и противоположна
 	-- метке Пыли, которая усиливает только эффекты и не трогает удар.
 	damage *= markScale(target, "rust", "damageScale")
+
+	-- Пепел: растительные (Растение, Дерево — у них killHeal, и шипы их ростков) бьют
+	-- помеченного сильнее. Лечение от той же метки считает applyKillHeal.
+	if elementData and elementData.killHeal then
+		damage *= markScale(target, "ash", "damageScale")
+	end
 
 	return Effects.ApplyArmor(target, damage, elementData)
 end
@@ -610,52 +619,17 @@ local function applyKillDamage(target, elementData)
 		:format(elementData.name, target.Name, amount, hits, plan.radius))
 end
 
--- Лечение построек плодом (Растение, Дерево; Жизнь лечит сама турелью — TowerFiring). Приоритет — «чем ниже HP
--- постройки, тем выше», и считается он от доли, а не от абсолютного числа: стена на 60 из 400
--- в большей беде, чем колба на 40 из 60. Effects лечит постройки напрямую, как и бьёт
--- жуков: это атрибуты на моделях в Workspace, а не чужой модуль.
+-- Растение на месте смерти (Растение, Дерево; Жизнь лечит сама турелью — TowerFiring).
+-- Effects только считает усиления с трупа: метка Пепла — и плоды, и шипы, метка Грунта —
+-- только шипы («боевые свойства» в вики). Росток, плоды и шипы — серверный Plants через
+-- OnKillPlant: строить модели и лечить постройки по прилёту плода Effects не умеет.
 local function applyKillHeal(target, elementData)
-	local plan = elementData.killHeal
-	local folder = Workspace:FindFirstChild("Towers")
-	if not folder then
+	if not Effects.OnKillPlant then
 		return
 	end
-
-	-- Метка Пепла на убитом усиливает лечебные свойства растения (документ v4).
-	local amount = math.floor(plan.amount * markScale(target, "ash", "healScale") + 0.5)
-
-	for _ = 1, plan.fruits or 1 do
-		-- Каждый плод ищет постройку заново: первый уже подлечил ту, что была худшей.
-		local best, bestRatio
-		for _, building in folder:GetChildren() do
-			local hp = building:GetAttribute("HP")
-			local maxHp = building:GetAttribute("MaxHP")
-			if hp and maxHp and maxHp > 0 and hp > 0 and (hp < maxHp or plan.overheal) then
-				local ratio = hp / maxHp
-				if not bestRatio or ratio < bestRatio then
-					best, bestRatio = building, ratio
-				end
-			end
-		end
-
-		if not best then
-			return
-		end
-
-		local hp = best:GetAttribute("HP")
-		local maxHp = best:GetAttribute("MaxHP")
-		local healed = math.min(maxHp - hp, amount)
-		local overflow = amount - healed
-		if overflow > 0 and plan.overheal then
-			-- Дерево: перехил идёт в прочность, и потолка у неё нет — так в документе.
-			best:SetAttribute("MaxHP", maxHp + overflow)
-			healed += overflow
-		end
-		best:SetAttribute("HP", hp + healed)
-
-		print(("[Эффект] %s лечит %s на %d (было %d из %d)")
-			:format(elementData.name, best.Name, healed, hp, maxHp))
-	end
+	local healScale = markScale(target, "ash", "healScale")
+	local thornsScale = markScale(target, "soil", "thornsScale") * markScale(target, "ash", "damageScale")
+	Effects.OnKillPlant(target:GetPivot().Position, elementData.killHeal, elementData, healScale, thornsScale)
 end
 
 -- Физическая преграда на месте смерти (Гора, v2.2). Effects сам ничего не строит — только

@@ -28,6 +28,7 @@ local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 -- Только за Ruin: разрушенная постройка оставляет руину, из которой строит
 -- Строитель (design: alchemy_td_enemies.md, каста 1).
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
+require(ServerScriptService:WaitForChild("Plants")) -- ростки Растения: назначает Effects.OnKillPlant
 
 local towersFolder = Workspace:WaitForChild("Towers")
 local enemiesFolder = Workspace:WaitForChild("Enemies")
