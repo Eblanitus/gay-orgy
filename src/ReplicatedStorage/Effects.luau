@@ -416,6 +416,7 @@ local applyRadialKnockback = EffectsDebuffsExports.applyRadialKnockback
 local applyMark = EffectsDebuffsExports.applyMark
 local applyKindMark = EffectsDebuffsExports.applyKindMark
 local washMark = EffectsDebuffsExports.washMark
+local extinguish = EffectsDebuffsExports.extinguish
 local applyKnockback = EffectsDebuffsExports.applyKnockback
 local applyPull = EffectsDebuffsExports.applyPull
 local applyToss = EffectsDebuffsExports.applyToss
@@ -873,11 +874,13 @@ function Effects.Apply(target, elementData, damage, source, owner)
 		washMark(target, elementData.washes)
 	end
 
-	-- Мокрый делает цель проводящей (Молния, Электронность) и смывает Пепел —
-	-- оба правила из документа дебаффов v2, и оба про любой источник Мокрого.
+	-- Мокрый делает цель проводящей (Молния, Электронность), смывает Пепел и тушит Горение —
+	-- все три правила по вики и все про любой источник Мокрого. Стоит до поджога ниже
+	-- (applyOvertime): Остров сперва мокрит, потом поджигает, и его новое горение живёт.
 	if elementData.wet then
 		target:SetAttribute("Wet", true)
 		washMark(target, "ash")
+		extinguish(target, elementData)
 	end
 
 	-- Плавление (Лава, Вулкан): второй способ сделать цель проводящей. Снимается

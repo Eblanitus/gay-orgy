@@ -53,6 +53,8 @@
 --   primer                      метка под взрыв: radius, damageShare, explosionScale
 --   ignites = true              огненный урон по времени — Горение, Плавление, Ошпаривание:
 --                                его попадание подрывает метку Пороха (кровотечение, Яд и кислота — нет)
+--   burning = true              урон по времени этого элемента — Горение (а не Плавление или
+--                                Ошпаривание): любой Мокрый его тушит
 --   chain                       цепочка по соседям цели: targets, radius, damageShare
 --   killZone                    при убийстве оставляет на месте смерти зону-модификатор
 --                                местности: radiusScale (доля от габарита трупа), duration.
@@ -135,6 +137,7 @@ local Elements = {
 		chars = true, -- Горение (дебаффы v2): убитый под ним обугливается (см. PhysicsFX.char)
 		color = Color3.fromRGB(255, 140, 0),
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime", -- урон по времени
 		damagePerSecond = 4,
 		tickInterval = 0.9,
@@ -204,6 +207,7 @@ local Elements = {
 		-- На выстреле в секунду держится 4 стека — 24 урона в секунду; с задачи #44 это больше
 		-- не «мимо брони» — тики тоже режутся (против брони 5 у Бронированного, задача #47, проходит 19).
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime",
 		damagePerSecond = 8,
 		tickInterval = 0.8,
@@ -370,6 +374,7 @@ local Elements = {
 		-- (8 → 14 в секунду), урон снаряда отдан в него же, как у Жара.
 		damageMultiplier = 0.5,
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime",
 		damagePerSecond = 14,
 		tickInterval = 0.7,
@@ -549,6 +554,7 @@ local Elements = {
 		-- в секунду; против брони 5 (задача #47, было 3) проходит 31 — тики теперь тоже режутся.
 		damageMultiplier = 1/3, -- удар перенесён в горение: держит удар ровно на 5 (было 15)
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime",
 		damagePerSecond = 12,
 		tickInterval = 0.7,
@@ -688,6 +694,7 @@ local Elements = {
 		tier = 3,
 		damageMultiplier = 1,
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime",
 		damagePerSecond = 10,
 		tickInterval = 0.8,
@@ -769,6 +776,7 @@ local Elements = {
 		-- раньше давало просто «усиленное горение»; рядом с другой огненной турелью — больше.
 		damageMultiplier = 0.6,
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		burnBoost = { powerScale = 1.35 }, -- множитель каждого тика огня на цели
 		damageType = "overtime",
 		damagePerSecond = 12,
@@ -883,6 +891,7 @@ local Elements = {
 		tier = 3,
 		damageMultiplier = 1.5,
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime",
 		damagePerSecond = 12,
 		tickInterval = 0.8,
@@ -974,6 +983,7 @@ local Elements = {
 		damageMultiplier = 0,
 		fireRateBonus = 3,
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime",
 		damagePerSecond = 18,
 		tickInterval = 0.6,
@@ -1017,6 +1027,7 @@ local Elements = {
 		},
 		damageMultiplier = 2.5,
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime",
 		damagePerSecond = 13,
 		tickInterval = 1.5,
@@ -1118,6 +1129,7 @@ local Elements = {
 		tier = 4,
 		damageMultiplier = 0.75,
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime",
 		damagePerSecond = 20,
 		tickInterval = 0.6,
@@ -1206,6 +1218,7 @@ local Elements = {
 		-- и есть его цена: никакого своего фокуса сверх этого нет.
 		damageMultiplier = 2,
 		ignites = true, -- огненный урон по времени: подрывает метку Пороха
+		burning = true, -- Горение: тушится Мокростью
 		damageType = "overtime",
 		damagePerSecond = 18,
 		tickInterval = 0.7,

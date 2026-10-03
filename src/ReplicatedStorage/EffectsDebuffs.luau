@@ -233,6 +233,42 @@ return function(deps)
 		print(("[Эффект] метка «%s» смыта с %s"):format(kind, target.Name))
 	end
 
+	-- Мокрость тушит Горение (по вики): снимает урон по времени всех элементов с burning.
+	-- Кроме записи самого source: Остров и мокрит, и поджигает одним попаданием, и своё
+	-- горение не гасит — иначе каждый его выстрел сбрасывал бы стеки до одного.
+	-- Плавление и Ошпаривание вода не трогает: это не Горение.
+	local function extinguish(target, source)
+		local byElement = effects[target]
+		if not byElement then
+			return
+		end
+
+		local doused = {}
+		for elementData in pairs(byElement) do
+			if elementData.burning and elementData ~= source then
+				byElement[elementData] = nil
+				table.insert(doused, elementData.name)
+			end
+		end
+		if #doused == 0 then
+			return
+		end
+
+		-- Обугливание и кровь — как в конце записи в тик-цикле: по тем, кто остался.
+		local chars, bleeds = false, false
+		for other in pairs(byElement) do
+			chars = chars or other.chars == true
+			bleeds = bleeds or other.bleeds == true
+		end
+		target:SetAttribute("Scorched", chars or nil)
+		target:SetAttribute("Bleeding", bleeds or nil)
+		if next(byElement) == nil then
+			effects[target] = nil
+			target:SetAttribute("Burning", false)
+		end
+		print(("[Эффект] %s тушит на %s: %s"):format(source.name, target.Name, table.concat(doused, ", ")))
+	end
+
 	-- Катализатор горения (Кислород). Уже висящие записи пересчитываются тут же:
 	-- иначе кислородная турель разгоняла бы только то горение, которое ляжет после неё.
 	-- Счёт идёт от табличного tickInterval, а не от текущего, поэтому второй Кислород
@@ -810,6 +846,7 @@ return function(deps)
 		applyMark = applyMark,
 		applyKindMark = applyKindMark,
 		washMark = washMark,
+		extinguish = extinguish,
 		applyKnockback = applyKnockback,
 		applyPull = applyPull,
 		applyToss = applyToss,
