@@ -251,9 +251,14 @@ local function runWaves(myGeneration, levelNumber)
 		-- Каждая группа — свой вызов SpawnGroup в отдельном task.spawn: SpawnGroup сам блокируется
 		-- на task.wait(SPAWN_INTERVAL) между юнитами внутри группы — без этого вторая группа ждала бы
 		-- первую целиком, и волна была бы не смешанной, а последовательной внутри одной кнопки.
+		-- Промокод STOP обрывает только эту волну, а не забег: досылка групп прекращается,
+		-- а сама волна дальше засчитывается как зачищенная.
+		local function spawnCancelled()
+			return cancelled() or WaveState.IsStopped()
+		end
 		for _, group in groups do
 			task.spawn(function()
-				EnemySpawner.SpawnGroup(group.enemyType, group.count, group.hp, cancelled)
+				EnemySpawner.SpawnGroup(group.enemyType, group.count, group.hp, spawnCancelled)
 			end)
 		end
 
