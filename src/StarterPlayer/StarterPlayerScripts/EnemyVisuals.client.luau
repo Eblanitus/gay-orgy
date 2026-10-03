@@ -156,13 +156,20 @@ local function attachVisuals(enemy)
 		effectMark.Enabled = false
 	end
 
+	-- Замаскированный Мимик полоской выдал бы себя: мешок с HP — не мешок.
+	local function updateDisguise()
+		gui.Enabled = not enemy:GetAttribute("Disguise")
+	end
+
 	updateHealth()
+	updateDisguise()
 	updateBurning()
 	updateSlow()
 	updateConfusion()
 	updateMark()
 
 	enemy:GetAttributeChangedSignal("HP"):Connect(updateHealth)
+	enemy:GetAttributeChangedSignal("Disguise"):Connect(updateDisguise)
 	enemy:GetAttributeChangedSignal("Burning"):Connect(updateBurning)
 	enemy:GetAttributeChangedSignal("SlowPercent"):Connect(updateSlow)
 	enemy:GetAttributeChangedSignal("Confused"):Connect(updateConfusion)

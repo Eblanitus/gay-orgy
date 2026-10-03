@@ -30,7 +30,190 @@ local SNAP_DISTANCE = 8
 local PRIMED_MATERIAL = Enum.Material.Basalt
 local PRIMED_DARKEN = 0.5
 
-local tracked = {} -- [server model] = { visual, smooth, hp, gaitless, primed, colors }
+local tracked = {} -- [server model] = { visual, smooth, hp, gaitless, primed, colors, disguise }
+
+-- ============ Маскировка Мимика ============
+-- «Маскируется под мешок, обломок или даже турель». Сервер ставит атрибут Disguise
+-- ("sack" / "debris" / "turret", для турели ещё DisguiseTower — её вид), а облик собирается
+-- здесь: тело жука прячется, на его месте лежит подделка. Подделка обязана быть неотличима от
+-- настоящего, поэтому повторяет то, что уже есть на карте: мешок — из кладки Стены
+-- (TowerBuilder: SANDBAG_COLOR, размер мешка), обломок — куча-руина (EnemyStructures.KINDS.ruin
+-- и rubble), турель — копия ближайшей настоящей того же вида.
+local SANDBAG_COLOR = Color3.fromRGB(191, 172, 126)
+local SANDBAG_SIZE = Vector3.new(2.0, 1.02, 1.35)
+local RUIN_SIZE = Vector3.new(2.73, 1.24, 2.73) -- руина с двумя единицами материала
+local RUIN_COLOR = Color3.fromRGB(122, 110, 92)
+local RUBBLE_COLOR = Color3.fromRGB(110, 100, 84)
+-- Раскрылся — подделка тает за это время, чтобы смена облика читалась, а не мигала.
+local REVEAL_FADE = 0.3
+
+local TweenService = game:GetService("TweenService")
+local towersFolder = Workspace:WaitForChild("Towers")
+
+-- Подделка — только картинка: ни лучи, ни касания, ни игрок её не чувствуют.
+local function inert(part)
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+end
+
+local function newPart(parent, size, cframe, color, material)
+	local part = Instance.new("Part")
+	part.Size = size
+	part.CFrame = cframe
+	part.Color = color
+	part.Material = material
+	inert(part)
+	part.Parent = parent
+	return part
+end
+
+-- Два мешка с песком, как выпавшие из кладки: нижний лежит, верхний наискось поперёк.
+local function buildSack(look, base)
+	for i = 0, 1 do
+		local shade = (math.random() - 0.5) * 0.09
+		local color = Color3.new(
+			math.clamp(SANDBAG_COLOR.R + shade, 0, 1),
+			math.clamp(SANDBAG_COLOR.G + shade, 0, 1),
+			math.clamp(SANDBAG_COLOR.B + shade * 1.4, 0, 1))
+		local at = base * CFrame.new(0, SANDBAG_SIZE.Y * (0.5 + i * 0.8), i * 0.2)
+			* CFrame.Angles(0, i * (math.pi / 2 + (math.random() - 0.5) * 0.5), 0)
+			* CFrame.Angles((math.random() - 0.5) * 0.12, 0, (math.random() - 0.5) * 0.12)
+		local bag = newPart(look, SANDBAG_SIZE, at, color, Enum.Material.Sand)
+		local mesh = Instance.new("SpecialMesh")
+		mesh.MeshType = Enum.MeshType.Sphere
+		mesh.Parent = bag
+	end
+end
+
+-- Куча-руина: тот же блок и те же обломки вокруг, что оставляет снесённая постройка.
+local function buildDebris(look, base)
+	local centre = base * CFrame.new(0, RUIN_SIZE.Y / 2, 0)
+	newPart(look, RUIN_SIZE, centre, RUIN_COLOR, Enum.Material.Slate)
+	for _ = 1, 2 do
+		local size = Vector3.new(0.8 + math.random() * 0.9, 0.5 + math.random() * 0.5,
+			0.8 + math.random() * 0.9)
+		local at = CFrame.new(centre.Position + Vector3.new(
+			(math.random() - 0.5) * 3.4, -0.2, (math.random() - 0.5) * 3.4))
+			* CFrame.Angles(0, math.random() * math.pi, 0)
+		newPart(look, size, at, RUBBLE_COLOR, Enum.Material.Slate)
+	end
+end
+
+-- Что из настоящей турели оставить в копии: геометрию и её облик. Полоски HP, подсветка
+-- выбора, свет, частицы и звук выдали бы подделку или жили бы своей жизнью.
+local KEEP_IN_COPY = { "BasePart", "Model", "Folder", "DataModelMesh", "FaceInstance",
+	"SurfaceAppearance", "Attachment", "JointInstance", "WeldConstraint" }
+
+local function keepInCopy(item)
+	for _, class in KEEP_IN_COPY do
+		if item:IsA(class) then
+			return true
+		end
+	end
+	return false
+end
+
+-- Копия ближайшей настоящей турели того же вида. Не вращается и не целится — это и
+-- выдаёт её внимательному игроку. Нет такой турели (её уже снесли) — мешок.
+local function buildTurret(look, base, towerType)
+	local source, best = nil, math.huge
+	for _, tower in towersFolder:GetChildren() do
+		if tower:IsA("Model") and tower:GetAttribute("Type") == towerType then
+			local distance = (tower:GetPivot().Position - base.Position).Magnitude
+			if distance < best then
+				source, best = tower, distance
+			end
+		end
+	end
+	local ok, copy = pcall(function()
+		return source and source:Clone()
+	end)
+	if not ok or not copy then
+		buildSack(look, base)
+		return
+	end
+
+	for _, item in copy:GetDescendants() do
+		if not keepInCopy(item) then
+			item:Destroy()
+		end
+	end
+	for _, item in copy:GetDescendants() do
+		if item:IsA("BasePart") then
+			inert(item)
+		end
+	end
+	-- Пивот турели стоит над её подошвой на свою высоту — та же высота и над полом под Мимиком.
+	local pivot = source:GetPivot()
+	local box, size = source:GetBoundingBox()
+	local above = pivot.Position.Y - (box.Position.Y - size.Y / 2)
+	copy:PivotTo(CFrame.new(base.Position + Vector3.new(0, above, 0)) * pivot.Rotation)
+	for _, item in copy:GetChildren() do
+		item.Parent = look
+	end
+	copy:Destroy()
+end
+
+local function setHidden(visual, hidden)
+	for _, part in visual:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.LocalTransparencyModifier = hidden and 1 or 0
+		end
+	end
+end
+
+local function dropDisguise(entry, fade)
+	local look = entry.disguise
+	if not look then
+		return
+	end
+	entry.disguise = nil
+	setHidden(entry.visual, false)
+	if not fade then
+		look:Destroy()
+		return
+	end
+	local info = TweenInfo.new(REVEAL_FADE)
+	for _, part in look:GetDescendants() do
+		if part:IsA("BasePart") then
+			TweenService:Create(part, info, { Transparency = 1 }):Play()
+		end
+	end
+	task.delay(REVEAL_FADE, function()
+		look:Destroy()
+	end)
+end
+
+local function updateDisguise(model, entry)
+	local kind = model:GetAttribute("Disguise")
+	if not kind then
+		dropDisguise(entry, true)
+		return
+	end
+	if entry.disguise then
+		return
+	end
+
+	-- Пол — подошва тела жука; поворот подделки — случайный, как легло.
+	local box, size = entry.visual:GetBoundingBox()
+	local floor = box.Position - Vector3.new(0, size.Y / 2, 0)
+	local base = CFrame.new(floor) * CFrame.Angles(0, math.random() * 2 * math.pi, 0)
+
+	local look = Instance.new("Model")
+	look.Name = "Disguise"
+	if kind == "turret" then
+		buildTurret(look, CFrame.new(floor), model:GetAttribute("DisguiseTower"))
+	elseif kind == "debris" then
+		buildDebris(look, base)
+	else
+		buildSack(look, base)
+	end
+	look.Parent = model
+	entry.disguise = look
+	setHidden(entry.visual, true)
+end
 
 local function applyPrimed(entry)
 	if entry.primed or not entry.visual then
@@ -100,6 +283,11 @@ local function track(model)
 		end
 	end)
 
+	updateDisguise(model, entry)
+	model:GetAttributeChangedSignal("Disguise"):Connect(function()
+		updateDisguise(model, entry)
+	end)
+
 	-- Вздрагивание от попадания: сила — доля макс. HP, направление — HitFrom (его ставит
 	-- Projectile.dealDamage раньше HP).
 	model:GetAttributeChangedSignal("HP"):Connect(function()
@@ -121,6 +309,7 @@ local function untrack(model)
 	local entry = tracked[model]
 	if entry then
 		tracked[model] = nil
+		dropDisguise(entry, false)
 		if entry.visual and entry.visual.Parent then
 			entry.visual:Destroy()
 		end
@@ -181,6 +370,11 @@ EnemyFX.OnClientEvent:Connect(function(kind, a, b, c, d)
 	if kind == "death" then
 		-- Серверная модель ещё на месте: событие уходит до её Destroy.
 		local visual = a and a:FindFirstChild("Visual")
+		-- Убит под маской (зоной, взрывом) — труп остаётся жучиный, подделка исчезает.
+		local entry = a and tracked[a]
+		if entry then
+			dropDisguise(entry, false)
+		end
 		if visual then
 			local ok, err = pcall(CorpseFX.Leave, visual, c, b)
 			if not ok then

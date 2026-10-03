@@ -1171,6 +1171,19 @@ TRAITS.mimics = function(enemy, enemyData, state)
 	local plan = enemyData.mimics
 
 	enemy:SetAttribute("Hidden", true)
+	-- «Маскируется под мешок, обломок или даже турель». Облик рисует клиент
+	-- (EnemyRender) по атрибуту Disguise; под турель — только если на карте есть
+	-- турель, которую можно скопировать: её вид идёт в DisguiseTower.
+	local looks = { "sack", "debris" }
+	local turret = nearestTurret(enemy:GetPivot().Position)
+	if turret then
+		table.insert(looks, "turret")
+	end
+	local look = looks[math.random(#looks)]
+	if look == "turret" then
+		enemy:SetAttribute("DisguiseTower", turret:GetAttribute("Type"))
+	end
+	enemy:SetAttribute("Disguise", look)
 	state.holdUntil = os.clock() + plan.patience
 	local deadline = os.clock() + plan.patience
 
@@ -1183,6 +1196,8 @@ TRAITS.mimics = function(enemy, enemyData, state)
 		local close = turret ~= nil and distance <= plan.reveal
 		if close or os.clock() >= deadline then
 			enemy:SetAttribute("Hidden", nil)
+			enemy:SetAttribute("Disguise", nil)
+			enemy:SetAttribute("DisguiseTower", nil)
 			state.holdUntil = nil
 			print("[Мимик] раскрылся и атакует")
 			return
