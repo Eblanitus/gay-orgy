@@ -426,8 +426,22 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 	remember(pieces, piece, plan.fieldLimit)
 end
 
+-- Останки без тела (давит, плавит, растворяет, рвёт, уничтожает) — в своём модуле.
+local Remains = require(ReplicatedStorage:WaitForChild("CorpseRemains"))({
+	PhysicsFX = PhysicsFX,
+	container = container,
+	remember = remember,
+	stains = stains,
+	maxStains = MAX_STAINS,
+	chooseLimbs = chooseLimbs,
+	detachPiece = detachPiece,
+	bloodLift = BLOOD_LIFT,
+	bloodThickness = BLOOD_THICKNESS,
+})
+
 -- enemy — ВИДИМОЕ тело жука (модель EnemyRender). hit — чем убили (присылает сервер):
--- { scorched = умер под Горением/Плавлением, fraction = доля макс. HP добивающего удара,
+-- { remains = вид останков (Effects.RemainsOf), scorched = обугливается (вид «char»),
+-- fraction = доля макс. HP добивающего удара,
 -- from = откуда прилетело или nil, floorY = высота пола под пятна, если не арена,
 -- carry = скорость того, кто задавил, или nil: туша и куски уезжают вместе с ударом, а не остаются под ним,
 -- scale = масштаб жука }. По нему отрываются конечности и отлетает сама туша.
@@ -437,8 +451,14 @@ function Corpses.Leave(enemy, hit, id)
 		return nil
 	end
 
-	-- Убитый под Горением или Плавлением обугливается (атрибут Scorched ставит Effects на
-	-- серверной модели; сервер кладёт его в hit, чтобы не зависеть от порядка репликации).
+	-- Тела нет — у вида своя картинка (CorpseRemains), туши в списке трупов не будет.
+	local special = hit and Remains[hit.remains]
+	if special then
+		special(enemy, hit, (hit.scale or 3) / 3, hit.floorY or Arena.floorY)
+		return nil
+	end
+
+	-- Обугленный труп — вид «char»: горел в момент смерти или добит огнём (решает сервер).
 	local charred = hit and hit.scorched == true
 	local fadeColor = charred and PhysicsFX.char.color or DEATH_COLOR
 	local fade = charred and PhysicsFX.char.fade or DEATH_FADE
