@@ -251,7 +251,7 @@ local function burst(shot)
 	local list = Targeting.EnemiesInRange(center, shot.splash.radius, enemiesFolder, { targets = shot.targets })
 
 	-- Конструкции жуков: «все уничтожаются тяжёлым снарядом и горят»
-	-- (alchemy_td_enemies.md, Строитель). Тяжёлый — это именно навесной и дрон,
+	-- (Строитель). Тяжёлый — это именно навесной и дрон,
 	-- то есть всё, что доходит до burst; прямой снаряд их не берёт и не должен.
 	EnemyStructures.Blast(center, shot.splash.radius, shot.splash.damage, shot.element)
 

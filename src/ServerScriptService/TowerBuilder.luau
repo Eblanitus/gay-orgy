@@ -26,7 +26,7 @@ local WaveState = require(ServerScriptService:WaitForChild("WaveState"))
 -- Только за Absorb: выросшая Гора забирает труп, из которого выросла.
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 -- Только за Ruin: разрушенная постройка оставляет руину, из которой строит
--- Строитель (design: alchemy_td_enemies.md, каста 1).
+-- Строитель (каста 1).
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
 require(ServerScriptService:WaitForChild("Plants")) -- ростки Растения: назначает Effects.OnKillPlant
 
@@ -237,7 +237,7 @@ local function placeTower(cx, cz, towerType, turn)
 			print(("[Постройка] %s разрушена, клетка (%d, %d) снова свободна")
 				:format(tower.Name, cx, cz))
 			-- Руина на месте постройки: Строитель «ест обломки стены или мебели» и строит
-			-- из них (design: alchemy_td_enemies.md, каста 1). Размер кучи и запас материала
+			-- из них (каста 1). Размер кучи и запас материала
 			-- в ней считаются от прочности снесённого: Стена оставляет больше, чем Испаритель.
 			EnemyStructures.Ruin(tower:GetPivot().Position, tower:GetAttribute("MaxHP"))
 			tower:Destroy()
@@ -361,7 +361,7 @@ function TowerBuilder.BuildBarrier(cx, cz, hp, scale)
 	tower.Name = ("Гора (%d,%d)"):format(cx, cz)
 	tower:PivotTo(CFrame.new(Grid.ToWorld(cx, cz) + Vector3.new(0, TOWER_Y, 0)))
 	tower:SetAttribute("Type", "MountainBarrier")
-	-- Крошка от Мини — и низкая, и хлипкая (дизайн, раздел 1.3): обе метрики идут от HP
+	-- Крошка от Мини — и низкая, и хлипкая: обе метрики идут от HP
 	-- убитого. Прочность — это hp выше, высота — это scale, и отсюда же время перелезания.
 	tower:SetAttribute("Height", MOUNTAIN_HEIGHT * scale)
 	tower:SetAttribute("CellX", cx)

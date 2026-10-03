@@ -20,7 +20,7 @@ local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
--- Касты и особые механики (design: alchemy_td_enemies.md) — всё, что различает виды.
+-- Касты и особые механики — всё, что различает виды.
 -- Здесь осталось только общее: ходьба по маршруту, грызня, перелезание, смерть.
 local EnemyBehavior = require(ServerScriptService:WaitForChild("EnemyBehavior"))
 local LabTable = require(ServerScriptService:WaitForChild("LabTable"))
@@ -142,7 +142,7 @@ end
 -- План перелезания: вверх по преграде, поверху и вниз с другой стороны. Собирается
 -- один раз в момент, когда жук упёрся, и дальше просто отыгрывается по таймеру.
 --
--- Таймер, а не поиск опоры каждый кадр — это прямое требование дизайна (раздел 1.1):
+-- Таймер, а не поиск опоры каждый кадр — это прямое требование дизайна:
 -- выбранный способ всегда завершается, жук не может застрять на весу или бесконечно
 -- пересчитывать. Поэтому же разрушенная по дороге преграда ничего не меняет: жук
 -- доводит движение до конца и просто оказывается по ту сторону.
@@ -352,7 +352,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 	local function rebuild()
 		local cx, cz = Grid.ToCell(enemy:GetPivot().Position)
 
-		-- Куда идти, решает каста (design: alchemy_td_enemies.md): разведчики и солдаты —
+		-- Куда идти, решает каста: разведчики и солдаты —
 		-- к лаборатории, Хмурый брон — по периметру, группа работяг — на турель.
 		local goalX, goalZ, mode = EnemyBehavior.Goal(enemy, enemyData, state)
 		goalMode = mode
@@ -889,7 +889,7 @@ local function findFreeTurret(fromPosition)
 	return best
 end
 
--- Лицехват (design: alchemy_td_enemies_t0.md): летит по прямой к свободной на момент вылета
+-- Лицехват: летит по прямой к свободной на момент вылета
 -- турели, минуя Grid (не ищет путь по сетке) и Crowd (не толкается с другими жуками) —
 -- поэтому свой цикл движения, а не moveThroughArena. Если цель разрушена по дороге или
 -- свободных больше нет вовсе, просто выбирает новую свободную и летит дальше (или ждёт, если
@@ -974,7 +974,7 @@ local function flyToTurret(enemy, enemyData)
 				enemy:SetAttribute("Velocity", Vector3.zero)
 
 				-- «После того как присосался к турели, получает минимальный урон сам по себе»
-				-- (alchemy_td_enemies.md, каста 3). Броня появляется именно здесь, а не при спавне:
+				-- (каста 3). Броня появляется именно здесь, а не при спавне:
 				-- на подлёте он по-прежнему стеклянный, иначе его не сбить вообще никогда.
 				if enemyData.clingArmor then
 					enemy:SetAttribute("Armor", enemyData.clingArmor)
@@ -1185,7 +1185,7 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 				return
 			end
 
-			-- Последействия смерти отдельных видов (design: alchemy_td_enemies.md). Все три —
+			-- Последействия смерти отдельных видов. Все три —
 			-- до трупа и Destroy: модель ещё цела и стоит там, где её убили.
 			--
 			-- Подрывник: «Попадание в заряд — преждевременная детонация.» Тот же взрыв,

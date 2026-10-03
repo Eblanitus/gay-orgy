@@ -16,7 +16,7 @@ local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 
 local EntityInfo = {}
 
--- Названия каст — из вики (alchemy_td_enemies_v1.1.md, раздел «Касты»).
+-- Названия каст — из вики.
 -- Каста — не уровень силы, а роль в колонии; в таблице жуков у них только номера.
 EntityInfo.CASTE_NAME = {
 	[0] = "Разведчики",

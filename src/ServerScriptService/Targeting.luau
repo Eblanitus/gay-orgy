@@ -20,7 +20,7 @@ local Aiming = require(ReplicatedStorage:WaitForChild("Aiming"))
 local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 -- Остаток пути до выхода — серверная таблица EnemyProgress (раньше атрибут DistanceToExit).
 local EnemyProgress = require(ServerScriptService:WaitForChild("EnemyProgress"))
--- Стены Строителя закрывают линию огня (design: alchemy_td_enemies.md, каста 1).
+-- Стены Строителя закрывают линию огня (каста 1).
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
 
 local Targeting = {}
@@ -136,7 +136,7 @@ local function enemiesInRange(towerPosition, range, enemiesFolder, filter)
 	for _, enemy in enemiesFolder:GetChildren() do
 		if suitable(enemy, targets) then
 			local position = enemy:GetPivot().Position
-			-- Габариты, а не точка (правило физики из дизайна, раздел 2.3): в радиус
+			-- Габариты, а не точка (правило физики из дизайна): в радиус
 			-- попадает тот, чьё ТЕЛО его задело. Толстого жука задеть легче, Мини — труднее;
 			-- это осознанная плата АОЕ против мелочи.
 			--

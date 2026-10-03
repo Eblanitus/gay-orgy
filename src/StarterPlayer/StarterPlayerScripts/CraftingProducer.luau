@@ -300,7 +300,7 @@ return function(deps)
 		end
 
 		-- ============ Рулетка ============
-		-- Случайный элемент из четырёх (alchemy_td_location_v1.6.md). Потолок прокруток, веса
+		-- Случайный элемент из четырёх. Потолок прокруток, веса
 		-- и цена — из RouletteConfig: по нему же сервер разыгрывает и берёт плату.
 		local roul = { tiles = {}, counts = {} }
 		roul.stage = make("Frame", "Stage", screens.Roulette, 3)
