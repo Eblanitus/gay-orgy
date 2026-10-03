@@ -216,6 +216,7 @@ local function onShotFired(fromPos, color, tower)
 end
 
 -- Урон: всплывающая цифра, белая для базового урона башни, оранжевая для тика эффекта.
+-- Отрицательная — лечение постройки (хилер с Жизнью): зелёный плюс.
 --
 -- Выключается в настройках («Цифры урона»): на куче жуков под огнём нескольких турелей
 -- числа идут десятками в секунду и закрывают саму кучу. Отказ стоит в самом начале,
@@ -238,8 +239,13 @@ local function onDamageDealt(position, amount, isBase)
 	label.BackgroundTransparency = 1
 	label.FontFace = Theme.font.strong
 	label.TextScaled = true
-	label.Text = "-" .. tostring(amount)
-	label.TextColor3 = isBase and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(255, 140, 40)
+	if amount < 0 then
+		label.Text = "+" .. tostring(-amount)
+		label.TextColor3 = Color3.fromRGB(90, 255, 140)
+	else
+		label.Text = "-" .. tostring(amount)
+		label.TextColor3 = isBase and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(255, 140, 40)
+	end
 	label.TextStrokeTransparency = 0.2
 	label.Parent = gui
 
