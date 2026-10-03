@@ -68,9 +68,8 @@ local debuffs = {}
 -- делает эффект глубже. Наружу уходит сильнейшее из двух (см. refreshSlow).
 local dryings = {}
 
--- primed[target] = { plan, lastBlast, name } — метка Пороха. Перманентная, как метка Пыли,
--- но взводит не эффекты, а взрыв: попадание с уроном по времени детонирует цель.
--- lastBlast — чтобы часто стреляющая турель не взрывала её каждым выстрелом.
+-- primed[target] = { plan, name, element } — метка Пороха. Взводит не эффекты, а взрыв: попадание
+-- Горением, Плавлением или Ошпариванием детонирует цель, и метка спадает.
 local primed = {}
 
 -- growingSlows[target][elementData] = { hits = N } — Песок: сила замедления копится по
@@ -96,9 +95,9 @@ local stunCooldowns = {}
 --
 -- Дерево v4 добавило зоны, которые действуют сами, а не меняют чужой урон: Засуха жжёт,
 -- Звезда жжёт всё сильнее со временем, Ураган тормозит, а Смог, Дождь, Снег, Метель,
--- Кислотный дождь и Уголь вешают на зашедшего чужой эффект (spread). Лимита «одна зона
--- на турель» из документа здесь нет: Effects.Apply не знает, какая турель выстрелила —
--- в снаряд кладётся только элемент. Это отдельная задача.
+-- Кислотный дождь и Уголь вешают на зашедшего чужой эффект (spread). Зона помнит турель,
+-- которая её оставила (owner), и новая зона той же турели заменяет старую — лимит
+-- «одна зона на турель» из документа (см. EffectsDebuffs.spawnZone).
 local zones = {}
 
 -- Как часто зона повторно вешает свой эффект на одну и ту же цель. Шаг тик-цикла
@@ -114,6 +113,13 @@ local kindMarks = {}
 -- сам факт метки, а не её цифры.
 local MARK_ATTRIBUTE = { rust = "Rusted", ash = "Ashed", soil = "Soiled" }
 
+-- deathMarks[target][elementData] = owner — метки при смерти (поле deathMark: Облако, Дождь,
+-- Снег, Метель, Кислотный дождь, Ураган, Засуха, Уголь, Растение, Дерево, Землетрясение, Гора).
+-- По вики метка держится до смерти жука, и смерть от чего угодно вызывает эффект. owner —
+-- турель, повесившая метку последней: зона при смерти одна на турель. Срабатывают
+-- в Effects.OnDeath; на клиент уходят атрибутом DeathMarks (ключи через запятую).
+local deathMarks = {}
+
 -- pulls[target][elementData] = сколько раз этот элемент уже стягивал эту цель. Пара
 -- «цель + элемент», а не просто цель: притянутого Воздухом всё ещё может стянуть Давление.
 local pulls = {}
@@ -121,6 +127,11 @@ local pulls = {}
 -- catalysts[target] = burnCatalyst Кислорода. Не эффект сам по себе: меняет то, как тикает
 -- чужое горение, поэтому читается в момент, когда стек ложится.
 local catalysts = {}
+
+-- fuels[target] = burnBoost Угля. Тоже катализатор, но другой: Кислород ускоряет тики,
+-- Уголь делает сильнее каждый тик огня на цели — и своего, и чужого, и уже висящего.
+-- Поэтому множитель читается в тик-цикле, а не в момент, когда ложится стек.
+local fuels = {}
 
 -- infections[target] = { plan, name } — Болотный. Отдельно от slows: он расходится сам —
 -- тик-цикл ищет соседей каждого заражённого и заражает их тем же планом.
@@ -130,6 +141,11 @@ local infections = {}
 -- атрибутом RegenScale, который читает EnemySpawner: про сам реген Effects не знает,
 -- как не знает про грызню (Weakened) и про броню (ArmorShred).
 local regens = {}
+
+-- Кровотечение-парадокс (дебаффы v2): тик кровотечения растёт от скорости регена цели.
+-- Множитель 1 + реген/BLEED_REGEN_REF, где реген — HP в секунду с учётом RegenScale:
+-- анти-реген ослабляет и кровь, а заживление после разморозки Льда — усиливает.
+local BLEED_REGEN_REF = 10
 
 -- Множитель от метки указанного рода. Лежит здесь, а не рядом с остальными метками:
 -- его читает AfterArmor выше по файлу, а локальная функция должна быть объявлена до него.
@@ -147,8 +163,21 @@ end
 -- и обратный require зациклил бы модули — колбек вместо этого, как EnemySpawner.OnBreach.
 Effects.OnKillBarrier = nil -- function(position: Vector3, hp: number, scale: number)
 
+-- Растение из трупа (killHeal) — тот же приём: росток и плоды строит серверный Plants.
+Effects.OnKillPlant = nil -- function(position, plan, elementData, healScale, thornsScale)
+
+-- Керамическая статуя (Глина + огонь): статую ставит TowerBuilder, он же решает, есть ли
+-- для неё клетка. Возвращает true, если жук стал статуей и из боя вышел.
+Effects.OnPetrify = nil
+-- Подброс Атмосферы: полёт в случайную точку карты ведёт EnemySpawner.
+Effects.OnToss = nil -- function(target, plan) -- function(target, plan): boolean
+
+-- petrifiable[target] = { expires, plan } — цель в стане Глины: огонь сейчас сделает
+-- из неё статую. Слабые ключи: запись умирает вместе с жуком.
+local petrifiable = setmetatable({}, { __mode = "k" })
+
 -- Броня — число на самой цели (Enemies[...].armor → атрибут Armor), а не процент,
--- зашитый в модель урона (задача #44, по alchemy_td_enemy_mechanics.md). Раньше здесь жил
+-- зашитый в модель урона (задача #44, по вики). Раньше здесь жил
 -- ARMOR_DAMAGE_REDUCTION (плоские −30% урона турели, только для прямого попадания) — теперь
 -- остался только минимальный процент, который проходит всегда, сколько бы брони ни было.
 Effects.ARMOR_MIN_SHARE = 0.1
@@ -189,6 +218,40 @@ do
 	end
 end
 
+-- Предки элемента по дереву рецептов и ключ записи. Из меток при смерти срабатывает
+-- только потомок (по вики): Гора, а не Землетрясение, из которого она скрафчена; Дерево,
+-- а не Растение. Считается один раз при загрузке, как и число базовых выше.
+local ancestorsByData = {}
+local keyByData = {}
+do
+	local parents = {}
+	for _, recipe in Recipes.List do
+		parents[recipe.result] = recipe
+	end
+
+	local function collect(key, into, seen)
+		local recipe = parents[key]
+		if not recipe then
+			return
+		end
+		for _, parentKey in { recipe.a, recipe.b } do
+			-- seen — та же страховка от цикла в дереве, что у basicsOf.
+			if not seen[parentKey] then
+				seen[parentKey] = true
+				into[Elements[parentKey]] = true
+				collect(parentKey, into, seen)
+			end
+		end
+	end
+
+	for key, data in Elements do
+		local into = {}
+		collect(key, into, {})
+		ancestorsByData[data] = into
+		keyByData[data] = key
+	end
+end
+
 -- Из скольких базовых собран элемент. Нужно не только урону, но и тому, кто захочет
 -- показать цену игроку (справочник): число считается в одном месте, а не в каждом окне заново.
 function Effects.Basics(elementData)
@@ -217,7 +280,7 @@ Effects.TICK_STEP = 0.25
 -- горение, плавление и Дым броню не пробивают — это не привилегия снаряда.
 -- Сколько урона за забег нанёс каждый элемент (ключ — elementData.name, он у элементов
 -- уникален). По нему Эволюционер понимает, какое оружие у игрока самое эффективное
--- (design: alchemy_td_enemies.md, каста 3). Считается здесь, а не у самого Эволюционера:
+-- (каста 3). Считается здесь, а не у самого Эволюционера:
 -- «самое эффективное оружие игрока» — это про весь забег, а не про то, что досталось одному жуку.
 Effects.ElementUsage = {}
 
@@ -240,8 +303,12 @@ Effects.OnAbsorb = nil
 -- ConcreteFloor — он в ServerScriptService, а этот модуль общий.
 Effects.OnTerrain = nil
 
+-- Очищение (Мыло). Переманить жука может только серверный EnemySpawner: он ведёт жука
+-- и знает, ходит ли тот общим циклом. Возвращает true, если жук перешёл на сторону игрока.
+Effects.OnCleanse = nil -- function(target): boolean
+
 -- Сколько урона срезают свойства самого жука до того, как считается броня
--- (design: alchemy_td_enemies.md, касты 2 и 3). Три источника, все читаются атрибутами:
+-- (касты 2 и 3). Три источника, все читаются атрибутами:
 --
 --   Щит Щитоносца — только в лоб. Откуда ударили, говорит атрибут HitFrom, который
 --   ставит тот, кто наносит урон (снаряд, площадная турель). Именно поэтому
@@ -331,7 +398,67 @@ function Effects.AfterArmor(target, damage, elementData)
 	-- метке Пыли, которая усиливает только эффекты и не трогает удар.
 	damage *= markScale(target, "rust", "damageScale")
 
-	return Effects.ApplyArmor(target, damage, elementData)
+	-- Пепел: растительные (Растение, Дерево — у них killHeal, и шипы их ростков) бьют
+	-- помеченного сильнее. Лечение от той же метки считает applyKillHeal.
+	if elementData and elementData.killHeal then
+		damage *= markScale(target, "ash", "damageScale")
+	end
+
+	-- Через эту обёртку проходит любой прямой удар — тут же и запоминается, кто ударил:
+	-- по нему решается, что останется от трупа (Effects.RemainsOf).
+	local dealt = Effects.ApplyArmor(target, damage, elementData)
+	if dealt > 0 then
+		Effects.MarkHit(target, elementData)
+	end
+	return dealt
+end
+
+-- Кто ударил последним — для останков: по вики вид трупа решает добивающий удар.
+-- LastHit — ключ элемента последнего удара, снявшего HP; LastHitTick — это был тик
+-- дебаффа или зоны, а не удар. Удар без элемента (укус, пустая колба, принудительная
+-- смерть) снимает оба: такой жук оставляет тело. Зовут все места, где снимается HP жука.
+function Effects.MarkHit(target, elementData, isTick)
+	local key = elementData and elementKeys[elementData] or nil
+	target:SetAttribute("LastHit", key)
+	target:SetAttribute("LastHitTick", (key and isTick) or nil)
+end
+
+-- Вид останков по добивающему удару (по вики, сверху вниз — первое подошедшее правило).
+-- Метки при смерти и статую Глины решает обработчик смерти раньше — сюда они не доходят.
+--   1. добивший элемент со своим видом (давит, плавит, растворяет, рвёт, уничтожает, хрупкий);
+--   2. добил Мокрый — жук потушен, остаётся тело, даже если горел;
+--   3. жук горел в момент смерти или добил огнём — обугливается;
+--   4. иначе тело.
+-- Плазма убивает горением, но вид у неё свой (плавит) — поэтому правило 1 выше правила 3.
+function Effects.RemainsOf(target)
+	local key = target:GetAttribute("LastHit")
+	local killer = key and Elements[key] or nil
+	if killer and killer.remains and killer.remains ~= "char" then
+		return killer.remains
+	end
+	if killer and killer.wet then
+		return "body"
+	end
+	if killer and (killer.remains == "char" or (killer.burning and target:GetAttribute("LastHitTick"))) then
+		return "char"
+	end
+	local byElement = effects[target]
+	if byElement then
+		for elementData in pairs(byElement) do
+			if elementData.burning then
+				return "char"
+			end
+		end
+	end
+	return "body"
+end
+
+-- Отдача добившего элемента (knockback.distance) или nil: лепёшка «давит» летит
+-- от турели на столько дальше (CorpseRemains.crush).
+function Effects.ThrowOf(target)
+	local key = target:GetAttribute("LastHit")
+	local killer = key and Elements[key] or nil
+	return killer and killer.knockback and killer.knockback.distance or nil
 end
 
 -- Урон снаряда с залитым элементом: базовый урон башни × число базовых элементов
@@ -384,6 +511,7 @@ local applyRadialKnockback = EffectsDebuffsExports.applyRadialKnockback
 local applyMark = EffectsDebuffsExports.applyMark
 local applyKindMark = EffectsDebuffsExports.applyKindMark
 local washMark = EffectsDebuffsExports.washMark
+local extinguish = EffectsDebuffsExports.extinguish
 local applyKnockback = EffectsDebuffsExports.applyKnockback
 local applyPull = EffectsDebuffsExports.applyPull
 local applyToss = EffectsDebuffsExports.applyToss
@@ -422,8 +550,9 @@ function Effects.HitDamage(target, elementData, damage)
 	return Effects.AfterArmor(target, damage, elementData)
 end
 
--- Метка Пороха. Однократная и перманентная, как метка Пыли: вторая пороховая турель
--- по той же цели ничего не даёт, а любая огненная рядом становится вдвое полезнее.
+-- Метка Пороха. Однократная: вторая пороховая турель по уже помеченной цели ничего не даёт,
+-- а любая огненная рядом становится вдвое полезнее. Держится до взрыва — после него спадает,
+-- и Порох может пометить цель снова.
 --
 -- Перекрашивает жука клиент (StarterPlayerScripts.EnemyRender) по атрибуту Primed: видимое тело
 -- живёт только у клиента, на сервере от жука остался невидимый якорь. Basalt вместо сгенерированного
@@ -437,28 +566,27 @@ local function applyPrimer(target, elementData)
 		return
 	end
 
-	primed[target] = { plan = elementData.primer, lastBlast = 0, name = elementData.name }
+	primed[target] = { plan = elementData.primer, name = elementData.name, element = elementData }
 	target:SetAttribute("Primed", true) -- по нему клиент красит жука (Basalt, цвет наполовину к чёрному)
 
-	print(("[Эффект] %s метит %s под взрыв до конца жизни цели")
+	print(("[Эффект] %s метит %s под взрыв")
 		:format(elementData.name, target.Name))
 end
 
--- Детонация метки Пороха. «Огненная турель» — это любой элемент с уроном по времени:
--- порох поджигает и горение, и кровотечение, и кислота. Сама помеченная цель и есть заряд,
--- поэтому взрыв бьёт и по ней тоже. У Плазмы урона снаряда нет вовсе, и метку она
--- не подрывает: детонирует удар, а не отрава.
+-- Детонация метки Пороха. Подрывает только огонь — элементы с ignites (Горение, Плавление,
+-- Ошпаривание); кровотечение, Яд и кислота метку не трогают. Сама помеченная цель и есть
+-- заряд, поэтому взрыв бьёт и по ней тоже. Заряд один: метка снимается до урона, чтобы
+-- взрыв не подорвал её второй раз.
 local function detonate(target, damage)
 	local mark = primed[target]
-	local now = os.clock()
-	if now - mark.lastBlast < mark.plan.interval then
-		return
-	end
-	mark.lastBlast = now
+	primed[target] = nil
+	target:SetAttribute("Primed", nil) -- клиент возвращает жуку его цвет
 
 	local blast = math.max(1, math.floor(damage * mark.plan.damageShare + 0.5))
 	local position = target:GetPivot().Position
-	local hits = damageAround(position, mark.plan.radius, blast, nil, nil, nil, mark.name)
+	-- Урон подрыва — без свойств Пороха (броня считает его безымянным), но добитый им
+	-- жук разорван Порохом: последний аргумент — чьи останки.
+	local hits = damageAround(position, mark.plan.radius, blast, nil, nil, nil, mark.name, mark.element)
 	ExplosionRemote:FireAllClients(position, mark.plan.radius)
 	if Effects.OnImpulseBlast then
 		Effects.OnImpulseBlast(position, mark.plan.radius)
@@ -469,11 +597,15 @@ end
 
 -- Взрыв — единственное свойство, у которого есть своя площадь: обычно радиус принадлежит
 -- турели, а не тому, чем она залита. По помеченной Порохом цели радиус шире — это и есть
--- заявленная в документе связка «Порох + Взрыв».
+-- заявленная в документе связка «Порох + Взрыв». Метка на этом расходуется, как и от огня.
 local function applyExplosion(target, elementData, damage)
 	local plan = elementData.explosion
 	local mark = primed[target]
 	local radius = plan.radius * (mark and mark.plan.explosionScale or 1)
+	if mark then
+		primed[target] = nil
+		target:SetAttribute("Primed", nil)
+	end
 	local share = math.max(1, math.floor(damage * plan.damageShare + 0.5))
 
 	local position = target:GetPivot().Position
@@ -483,7 +615,7 @@ local function applyExplosion(target, elementData, damage)
 		Effects.OnImpulseBlast(position, radius)
 	end
 	-- Тот же взрыв сносит и конструкции жуков, а огонь их ещё и поджигает:
-	-- «уничтожаются тяжёлым снарядом и горят» (alchemy_td_enemies.md, Строитель).
+	-- «уничтожаются тяжёлым снарядом и горят» (Строитель).
 	if Effects.OnAreaBlast then
 		Effects.OnAreaBlast(target:GetPivot().Position, radius, share, elementData)
 	end
@@ -532,11 +664,100 @@ local function applyChain(target, elementData, damage)
 	end
 end
 
+-- Звезда кормится убийствами: зона живёт дольше, растёт и краснеет. На пороге
+-- (plan.dwarf.threshold) она взрывается — удар по всей зоне силой нескольких секунд
+-- её горения — и сжимается в белого карлика: маленький радиус, урон в разы выше,
+-- рост по-прежнему без потолка. Карлика убийства только продлевают, зону не раздувают.
+local STAR_RED = Color3.fromRGB(255, 55, 25)
+local DWARF_COLOR = Color3.fromRGB(235, 245, 255)
+
+local function setZoneVisual(zone, color)
+	local disc = zone.visual
+	if disc and disc.Parent then
+		disc.Size = Vector3.new(disc.Size.X, zone.radius * 2, zone.radius * 2)
+		disc.Color = color
+	end
+end
+
+local function feedStar(zone, plan, elementData, target)
+	local dwarf = plan.dwarf
+	if zone.dwarf then
+		zone.expires += dwarf.extendOnKill
+		print(("[Эффект] %s: белый карлик кормится смертью %s, +%.1f сек")
+			:format(elementData.name, target.Name, dwarf.extendOnKill))
+		return
+	end
+
+	zone.expires += plan.extendOnKill
+	zone.radius += plan.radiusOnKill or 0
+	zone.kills = (zone.kills or 0) + 1
+	print(("[Эффект] %s кормит свою зону смертью %s: +%.1f сек, радиус %.1f, убийств %d")
+		:format(elementData.name, target.Name, plan.extendOnKill, zone.radius, zone.kills))
+
+	if not dwarf or zone.kills < dwarf.threshold then
+		local redness = dwarf and zone.kills / dwarf.threshold or 1
+		setZoneVisual(zone, elementData.color:Lerp(STAR_RED, redness))
+		return
+	end
+
+	local now = os.clock()
+	local perSecond = zone.damagePerSecond + (zone.growth or 0) * (now - zone.born)
+	local blast = math.floor(perSecond * dwarf.blastSeconds + 0.5)
+	local hits = damageAround(zone.position, zone.radius, blast, nil, nil, elementData,
+		elementData.name .. " (взрыв)")
+	ExplosionRemote:FireAllClients(zone.position, zone.radius)
+	if Effects.OnAreaBlast then
+		Effects.OnAreaBlast(zone.position, zone.radius, blast, elementData)
+	end
+
+	zone.dwarf = true
+	zone.radius = dwarf.radius
+	zone.damagePerSecond = perSecond * dwarf.powerScale
+	zone.born = now
+	setZoneVisual(zone, DWARF_COLOR)
+	print(("[Эффект] %s взрывается: %d урона по %d жукам, белый карлик жжёт %.0f в секунду")
+		:format(elementData.name, blast, hits, zone.damagePerSecond))
+end
+
+-- «Определённое время жизни зоны после последнего выстрела»: пока турель Звезды
+-- попадает, её зона (и карлик) не гаснет раньше полного срока от этого попадания.
+local function keepStarAlive(owner, elementData)
+	local life = os.clock() + elementData.killZone.duration
+	for _, zone in zones do
+		if zone.owner == owner and zone.element == elementData and zone.expires < life then
+			zone.expires = life
+		end
+	end
+end
+
+-- Метка при смерти: элемент запоминается на жуке до его смерти (по вики). Повторное попадание
+-- меняет только владельца — зона при смерти встанет от турели, метившей последней.
+local function putDeathMark(target, elementData, owner)
+	local byElement = deathMarks[target]
+	if not byElement then
+		byElement = {}
+		deathMarks[target] = byElement
+	end
+	local fresh = byElement[elementData] == nil
+	byElement[elementData] = owner or byElement[elementData] or false
+	if not fresh then
+		return
+	end
+
+	local keys = {}
+	for data in pairs(byElement) do
+		table.insert(keys, keyByData[data])
+	end
+	table.sort(keys)
+	target:SetAttribute("DeathMarks", table.concat(keys, ","))
+	print(("[Эффект] %s кладёт метку при смерти на %s"):format(elementData.name, target.Name))
+end
+
 -- Зона-модификатор местности на месте смерти (Землетрясение, v2.2.1). Радиус — по габариту
 -- трупа, а не по таблице: форма зоны — свойство того, кто умер.
 -- Светящийся диск (spawnZoneVisual) — чисто картинка поверх той же записи: без него
 -- игрок не видит, где зона и что она вообще появилась.
-local function applyKillZone(target, elementData)
+local function applyKillZone(target, elementData, owner)
 	local plan = elementData.killZone
 	local radius = plan.radius or corpseRadius(target) * (plan.radiusScale or 1)
 	local position = target:GetPivot().Position
@@ -546,11 +767,9 @@ local function applyKillZone(target, elementData)
 	-- поток жуков через одно место кормит одну и ту же звезду.
 	if plan.extendOnKill then
 		for _, zone in zones do
-			if zone.element == elementData and (position - zone.position).Magnitude <= zone.radius then
-				zone.expires += plan.extendOnKill
-				zone.radius += plan.radiusOnKill or 0
-				print(("[Эффект] %s кормит свою зону смертью %s: +%.1f сек, радиус %.1f")
-					:format(elementData.name, target.Name, plan.extendOnKill, zone.radius))
+			if zone.element == elementData and zone.owner == owner
+				and (position - zone.position).Magnitude <= zone.radius then
+				feedStar(zone, plan, elementData, target)
 				return
 			end
 		end
@@ -562,7 +781,7 @@ local function applyKillZone(target, elementData)
 	assert(plan.damagePerSecond or plan.spreadElement or plan.slowPercent or elementData.damageSpeedScale,
 		("[Effects] у %s есть killZone, но она ничего не делает"):format(elementData.name))
 
-	spawnZone(position, radius, plan, elementData)
+	spawnZone(position, radius, plan, elementData, owner)
 	print(("[Эффект] %s оставляет зону на месте смерти %s: радиус %.1f на %.1f сек")
 		:format(elementData.name, target.Name, radius, plan.duration))
 end
@@ -591,7 +810,8 @@ local function applyKillDamage(target, elementData)
 		end
 	end
 
-	ExplosionRemote:FireAllClients(position, plan.radius)
+	-- Вид взрыва (blast) и оттенок — клиенту: облако лопается паром, а не огнём.
+	ExplosionRemote:FireAllClients(position, plan.radius, nil, plan.blast, plan.blastColor or elementData.color)
 	if Effects.OnImpulseBlast then
 		Effects.OnImpulseBlast(position, plan.radius)
 	end
@@ -599,52 +819,18 @@ local function applyKillDamage(target, elementData)
 		:format(elementData.name, target.Name, amount, hits, plan.radius))
 end
 
--- Лечение построек плодом (Растение, Дерево, Жизнь). Приоритет — «чем ниже HP
--- постройки, тем выше», и считается он от доли, а не от абсолютного числа: стена на 60 из 400
--- в большей беде, чем колба на 40 из 60. Effects лечит постройки напрямую, как и бьёт
--- жуков: это атрибуты на моделях в Workspace, а не чужой модуль.
-local function applyKillHeal(target, elementData)
-	local plan = elementData.killHeal
-	local folder = Workspace:FindFirstChild("Towers")
-	if not folder then
+-- Растение на месте смерти (Растение, Дерево; Жизнь лечит сама турелью — TowerFiring).
+-- Effects только считает усиления с трупа: метка Пепла — и плоды, и шипы, метка Грунта —
+-- только шипы («боевые свойства» в вики). Росток, плоды и шипы — серверный Plants через
+-- OnKillPlant: строить модели и лечить постройки по прилёту плода Effects не умеет.
+-- position — куда сажать, если не на место смерти: рядом с Горой (её преграда встаёт на клетку).
+local function applyKillHeal(target, elementData, position)
+	if not Effects.OnKillPlant then
 		return
 	end
-
-	-- Метка Пепла на убитом усиливает лечебные свойства растения (документ v4).
-	local amount = math.floor(plan.amount * markScale(target, "ash", "healScale") + 0.5)
-
-	for _ = 1, plan.fruits or 1 do
-		-- Каждый плод ищет постройку заново: первый уже подлечил ту, что была худшей.
-		local best, bestRatio
-		for _, building in folder:GetChildren() do
-			local hp = building:GetAttribute("HP")
-			local maxHp = building:GetAttribute("MaxHP")
-			if hp and maxHp and maxHp > 0 and hp > 0 and (hp < maxHp or plan.overheal) then
-				local ratio = hp / maxHp
-				if not bestRatio or ratio < bestRatio then
-					best, bestRatio = building, ratio
-				end
-			end
-		end
-
-		if not best then
-			return
-		end
-
-		local hp = best:GetAttribute("HP")
-		local maxHp = best:GetAttribute("MaxHP")
-		local healed = math.min(maxHp - hp, amount)
-		local overflow = amount - healed
-		if overflow > 0 and plan.overheal then
-			-- Дерево: перехил идёт в прочность, и потолка у неё нет — так в документе.
-			best:SetAttribute("MaxHP", maxHp + overflow)
-			healed += overflow
-		end
-		best:SetAttribute("HP", hp + healed)
-
-		print(("[Эффект] %s лечит %s на %d (было %d из %d)")
-			:format(elementData.name, best.Name, healed, hp, maxHp))
-	end
+	local healScale = markScale(target, "ash", "healScale")
+	local thornsScale = markScale(target, "soil", "thornsScale") * markScale(target, "ash", "damageScale")
+	Effects.OnKillPlant(position or target:GetPivot().Position, elementData.killHeal, elementData, healScale, thornsScale)
 end
 
 -- Физическая преграда на месте смерти (Гора, v2.2). Effects сам ничего не строит — только
@@ -666,6 +852,66 @@ local function applyKillBarrier(target, elementData)
 	Effects.OnKillBarrier(target:GetPivot().Position, hp, scale)
 end
 
+-- Метки при смерти срабатывают здесь: от любой смерти носителя, а не только когда добил
+-- сам элемент (по вики). Зовёт EnemySpawner в обработчике смерти, пока модель цела и стоит
+-- там, где жук умер. Метка, чей потомок по рецептам тоже висит на жуке, молчит —
+-- срабатывает потомок. Несвязанные метки срабатывают все. Возвращает true, если сработала
+-- хоть одна: тогда труп превратился в эффект, и останков нет.
+function Effects.OnDeath(target)
+	local byElement = deathMarks[target]
+	deathMarks[target] = nil
+	if not byElement then
+		return false
+	end
+
+	local fired = {}
+	local barrier = false
+	for elementData, owner in pairs(byElement) do
+		local superseded = false
+		for other in pairs(byElement) do
+			if ancestorsByData[other][elementData] then
+				superseded = true
+				break
+			end
+		end
+		if superseded then
+			print(("[Эффект] метка %s на %s уступает потомку"):format(elementData.name, target.Name))
+		else
+			table.insert(fired, { data = elementData, owner = owner or nil })
+			barrier = barrier or elementData.killBarrier ~= nil
+		end
+	end
+
+	-- Удары по области — первыми у всех меток, как в ветке смерти Apply: они считаются от HP
+	-- трупа, а зоны, растения и преграда встают на его место уже после.
+	for _, mark in fired do
+		if mark.data.killDamage then
+			applyKillDamage(target, mark.data)
+		end
+	end
+
+	-- Гора занимает клетку смерти, и растение рядом с ней встаёт на шаг постройки в сторону:
+	-- внутри горы его бы никто не увидел.
+	local plantAt = nil
+	if barrier then
+		local angle = math.random() * math.pi * 2
+		plantAt = target:GetPivot().Position + Vector3.new(math.cos(angle), 0, math.sin(angle)) * Arena.buildSize
+	end
+
+	for _, mark in fired do
+		if mark.data.killHeal then
+			applyKillHeal(target, mark.data, plantAt)
+		end
+		if mark.data.killZone then
+			applyKillZone(target, mark.data, mark.owner)
+		end
+		if mark.data.killBarrier then
+			applyKillBarrier(target, mark.data)
+		end
+	end
+	return #fired > 0
+end
+
 -- Навешивает на цель всё, что даёт элемент поверх урона снаряда (его списывает сам
 -- снаряд в момент попадания, см. Projectile). damage — сколько этот выстрел реально снял:
 -- от него считаются доли взрыва, цепочки и детонации.
@@ -676,7 +922,35 @@ end
 -- source — откуда пришёл выстрел (позиция ствола). Нужен только притяжению: оно
 -- тянет к стреляющей турели, а отдача и подброс считают направление по самой цели.
 -- Необязателен: без него притяжение просто не срабатывает, а не падает.
-function Effects.Apply(target, elementData, damage, source)
+-- owner — сама стрелявшая турель. Нужен зонам при убийстве: по вики зона одна на турель,
+-- и новая вытесняет старую той же турели. Без него зоны просто не вытесняются.
+-- Что видно на цели снаружи от эффектов. Снимается при очищении вместе с таблицами:
+-- атрибут, оставшийся без записи в таблице, уже никто бы не погасил.
+local CLEANSED_ATTRIBUTES = {
+	"Amplified", "ArmorShred", "AttackSlowPercent", "Bleeding", "Blinded", "Burning",
+	"Confused", "ConfusedDirection", "ConfusedUntil", "DeathMarks", "Infected", "Molten", "Primed",
+	"Push", "RegenScale", "Scorched", "SlowPercent", "Stunned", "StunnedUntil",
+	"Weakened", "Wet",
+}
+
+-- Очищение (Мыло, документ дебаффов v2): с цели снимается всё сразу — стеки, замедления,
+-- метки, накопления, порча, блокировка регенерации, в том числе вечная от Яда.
+-- Новых не ляжет: очищенный живёт в своей папке, и ни снаряды, ни площадь, ни зоны его не видят.
+function Effects.Cleanse(target)
+	for _, byTarget in { effects, slows, marks, counters, ramps, debuffs, dryings, primed,
+		growingSlows, blinds, stunCooldowns, kindMarks, pulls, catalysts, fuels, infections, regens,
+		petrifiable, deathMarks } do
+		byTarget[target] = nil
+	end
+	for _, attribute in MARK_ATTRIBUTE do
+		target:SetAttribute(attribute, nil)
+	end
+	for _, attribute in CLEANSED_ATTRIBUTES do
+		target:SetAttribute(attribute, nil)
+	end
+end
+
+function Effects.Apply(target, elementData, damage, source, owner)
 	damage = damage or 0
 
 	-- Счёт оружия игрока и впитывание Разносчика — здесь, в единственном месте, через
@@ -699,8 +973,15 @@ function Effects.Apply(target, elementData, damage, source)
 		applyChain(target, elementData, damage)
 	end
 
-	if primed[target] and damage > 0 and elementData.damageType == "overtime" then
-		detonate(target, damage)
+	if owner and damage > 0 and elementData.killZone and elementData.killZone.extendOnKill then
+		keepStarAlive(owner, elementData)
+	end
+
+	-- Плазма бьёт снарядом без урона — у неё в счёт идёт горение за секунду. Мёртвую цель
+	-- (Apply после добивающего попадания) не подрываем: урона нового нет, а она уже не заряд.
+	if primed[target] and elementData.ignites
+		and (damage > 0 or (target:GetAttribute("HP") or 0) > 0) then
+		detonate(target, math.max(damage, elementData.damagePerSecond or 0))
 	end
 
 	-- Круговая отдача — тоже до проверки на живучесть, по той же причине, что и взрыв:
@@ -714,7 +995,11 @@ function Effects.Apply(target, elementData, damage, source)
 	-- или преграда (Гора). damage > 0 отсекает случай, когда Apply зовут на уже мёртвой
 	-- цели без нового урона (взрыв/цепочка после добивающего попадания).
 	if not target.Parent or (target:GetAttribute("HP") or 0) <= 0 then
-		if target.Parent and damage > 0 then
+		if target.Parent and damage > 0 and elementData.deathMark then
+			-- Добивающий удар элемента с меткой — тоже метка (по вики). Сам эффект
+			-- запустит Effects.OnDeath вместе с остальными метками жука.
+			putDeathMark(target, elementData, owner)
+		elseif target.Parent and damage > 0 then
 			-- Удар по области — первым: он считается от HP трупа, а зона и преграда
 			-- ставятся на его место уже после.
 			if elementData.killDamage then
@@ -724,7 +1009,7 @@ function Effects.Apply(target, elementData, damage, source)
 				applyKillHeal(target, elementData)
 			end
 			if elementData.killZone then
-				applyKillZone(target, elementData)
+				applyKillZone(target, elementData, owner)
 			end
 			if elementData.killBarrier then
 				applyKillBarrier(target, elementData)
@@ -732,9 +1017,26 @@ function Effects.Apply(target, elementData, damage, source)
 			-- Ландшафт Литосферы — последним из последействий смерти: удар по области
 			-- считается по ещё ровному полу и по тем, кто на нём стоял.
 			if elementData.terrain and Effects.OnTerrain then
-				Effects.OnTerrain(target:GetPivot().Position, elementData.terrain, elementData)
+				Effects.OnTerrain(target:GetPivot().Position, elementData.terrain, elementData, owner)
 			end
 		end
+		return
+	end
+
+	-- Очищение — раньше всех эффектов: перешедшему на сторону игрока ничего из этого
+	-- выстрела уже не положено. Не перешёл (летун, Лицехват) — Мыло ему просто урон.
+	if elementData.cleanse and Effects.OnCleanse and Effects.OnCleanse(target) then
+		Effects.Cleanse(target)
+		return
+	end
+
+	-- Поджог застаненного Глиной — керамическая статуя. Тоже раньше всех эффектов:
+	-- жук выходит из боя, и гореть, метиться и отталкиваться уже нечему. Нет клетки
+	-- под статую (занята, пролом) — огонь просто бьёт как обычно.
+	local clay = petrifiable[target]
+	if clay and elementData.ignites and os.clock() < clay.expires
+		and Effects.OnPetrify and Effects.OnPetrify(target, clay.plan) then
+		petrifiable[target] = nil
 		return
 	end
 
@@ -758,11 +1060,17 @@ function Effects.Apply(target, elementData, damage, source)
 		washMark(target, elementData.washes)
 	end
 
-	-- Мокрый делает цель проводящей (Молния, Электронность) и смывает Пепел —
-	-- оба правила из документа дебаффов v2, и оба про любой источник Мокрого.
+	if elementData.deathMark then
+		putDeathMark(target, elementData, owner)
+	end
+
+	-- Мокрый делает цель проводящей (Молния, Электронность), смывает Пепел и тушит Горение —
+	-- все три правила по вики и все про любой источник Мокрого. Стоит до поджога ниже
+	-- (applyOvertime): Остров сперва мокрит, потом поджигает, и его новое горение живёт.
 	if elementData.wet then
 		target:SetAttribute("Wet", true)
 		washMark(target, "ash")
+		extinguish(target, elementData)
 	end
 
 	-- Плавление (Лава, Вулкан): второй способ сделать цель проводящей. Снимается
@@ -830,6 +1138,12 @@ function Effects.Apply(target, elementData, damage, source)
 		applyCatalyst(target, elementData)
 	end
 
+	if elementData.burnBoost and not fuels[target] then
+		fuels[target] = elementData.burnBoost
+		print(("[Эффект] %s подпитывает горение на %s: огонь ×%.2f до смерти цели")
+			:format(elementData.name, target.Name, elementData.burnBoost.powerScale))
+	end
+
 	if elementData.regen then
 		applyRegen(target, elementData)
 	end
@@ -857,6 +1171,11 @@ task.spawn(function()
 			local zone = zones[i]
 			if now >= zone.expires or (zone.charges and zone.charges <= 0) then
 				table.remove(zones, i)
+				-- Диск гасится вместе с зоной: продлённую (Звезда) или разряженную
+				-- (Уголь) зону Debris по первоначальному сроку не догонит.
+				if zone.visual then
+					zone.visual:Destroy()
+				end
 			elseif zone.damagePerSecond or zone.spread or zone.slowElement or zone.dries then
 				-- Урон зоны идёт мимо брони — это огонь на земле, а не удар снаряда,
 				-- и растёт от возраста зоны (Звезда), поэтому считается каждый тик заново.
@@ -870,6 +1189,7 @@ task.spawn(function()
 					if perSecond then
 						local dealt = math.max(1, math.floor(perSecond * step + 0.5))
 						local hp = math.max(0, (enemy:GetAttribute("HP") or 0) - dealt)
+						Effects.MarkHit(enemy, zone.element, true)
 						enemy:SetAttribute("HP", hp)
 						DamageDealtRemote:FireAllClients(enemy:GetPivot().Position, dealt, false)
 					end
@@ -956,7 +1276,9 @@ task.spawn(function()
 					refreshSlow(target)
 
 					if drying.percent >= plan.max then
-						applyStun(target, plan.freezeDuration, 0, drying.name)
+						if applyStun(target, plan.freezeDuration, 0, drying.name) and plan.statue then
+							petrifiable[target] = { expires = os.clock() + plan.freezeDuration, plan = plan.statue }
+						end
 						drying.percent = plan.start
 						refreshSlow(target)
 					end
@@ -994,9 +1316,19 @@ task.spawn(function()
 			end
 		end
 
+		-- Метки при смерти снимает сам Effects.OnDeath. Сюда доходят те, кто исчез без смерти:
+		-- дошёл до выхода, переехал к своим. По HP <= 0 не чистим — обработчик смерти ещё впереди.
+		for target in pairs(deathMarks) do
+			if not target.Parent then
+				deathMarks[target] = nil
+			end
+		end
+
 		-- Метка Грунта единственная со сроком; Ржавчина и Пепел висят до смерти или до смывки.
+		-- Снимаются, когда жук исчез, а не по HP: Пепел и Грунт растению читает Effects.OnDeath,
+		-- а от горения жук умирает прямо в этом цикле, раньше обработчика смерти.
 		for target, byKind in pairs(kindMarks) do
-			if not target.Parent or (target:GetAttribute("HP") or 0) <= 0 then
+			if not target.Parent then
 				kindMarks[target] = nil
 			else
 				for kind, entry in pairs(byKind) do
@@ -1033,7 +1365,7 @@ task.spawn(function()
 		-- Метки Пыли и Пороха срока не имеют и снимаются только вместе с целью, разгон
 		-- Кирпича и кулдаун стана — тоже: здесь только уборка, иначе таблицы держали бы
 		-- ссылки на всех убитых жуков забега. Счётчики притяжения и катализаторы — туда же.
-		for _, byTarget in { marks, primed, ramps, stunCooldowns, growingSlows, pulls, catalysts } do
+		for _, byTarget in { marks, primed, ramps, stunCooldowns, growingSlows, pulls, catalysts, fuels } do
 			for target in pairs(byTarget) do
 				if not target.Parent or (target:GetAttribute("HP") or 0) <= 0 then
 					byTarget[target] = nil
@@ -1091,9 +1423,21 @@ task.spawn(function()
 						for _, stack in stacks do
 							totalDamage += stack.damagePerTick
 						end
+						local fuel = fuels[target]
+						if fuel and elementData.ignites then
+							totalDamage = math.floor(totalDamage * fuel.powerScale + 0.5)
+						end
+						local regen = elementData.bleeds
+							and (target:GetAttribute("Regen") or 0) * (target:GetAttribute("RegenScale") or 1)
+						if regen and regen > 0 then
+							totalDamage = math.floor(totalDamage * (1 + regen / BLEED_REGEN_REF) + 0.5)
+						end
 						totalDamage = Effects.ApplyArmor(target, totalDamage, elementData)
 
 						hp = math.max(0, hp - totalDamage)
+						if totalDamage > 0 then
+							Effects.MarkHit(target, elementData, true)
+						end
 						target:SetAttribute("HP", hp)
 						DamageDealtRemote:FireAllClients(target:GetPivot().Position, totalDamage, false)
 						print(("[Эффект] %s тикает на %s: %d стек(ов), суммарно %d урона, осталось %d HP")
@@ -1142,5 +1486,21 @@ task.spawn(function()
 		end
 	end
 end)
+
+-- Болотный труп (по вики): жук, прошедший по трупу болотного жука, заражается, как от живого, —
+-- тем же переданным Болотным (contagion), что расходится по контакту. Зовёт Corpses.
+function Effects.InfectFrom(target, plan, name)
+	if infections[target] or not target.Parent or (target:GetAttribute("HP") or 0) <= 0 then
+		return
+	end
+	local carrier = {
+		name = name,
+		slowPercent = plan.slowPercent,
+		slowDuration = plan.duration,
+		contagion = plan,
+	}
+	applySlow(target, carrier)
+	applyInfection(target, carrier)
+end
 
 return Effects

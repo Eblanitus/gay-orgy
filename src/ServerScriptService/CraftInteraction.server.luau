@@ -12,14 +12,14 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Inventory = require(ServerScriptService:WaitForChild("Inventory"))
 local Crafting = require(ServerScriptService:WaitForChild("Crafting"))
--- Прочность стола (design: alchemy_td_enemies.md): «Если стол уничтожен — комбинирование
+-- Прочность стола: «Если стол уничтожен — комбинирование
 -- невозможно или ограничено.» Проверка здесь, а не в Crafting: само смешивание
 -- про мебель не знает и знать не должно — это тот же вопрос доступа, что и nearTable.
 local LabTable = require(ServerScriptService:WaitForChild("LabTable"))
--- Справочник и производитель базовых элементов — отдельная мебель (alchemy_td_location_v1.6.md):
+-- Справочник и производитель базовых элементов — отдельная мебель:
 -- стол только для крафта, покупка — у производителя, дерево крафта — на доске.
 local LabStations = require(ServerScriptService:WaitForChild("LabStations"))
--- Второй режим того же производителя (alchemy_td_location_v1.6.md): случайный элемент
+-- Второй режим того же производителя: случайный элемент
 -- вместо выбора. Розыгрыш и деньги живут в Roulette, здесь — только доступ к автомату.
 local Roulette = require(ServerScriptService:WaitForChild("Roulette"))
 -- Третий режим того же автомата: элемент двигается вперёд по своей ветке.

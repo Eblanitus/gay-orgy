@@ -1,4 +1,4 @@
--- Начисление плутония (alchemy_td_currencies.md). Плутоний даётся за достижение нового,
+-- Начисление плутония. Плутоний даётся за достижение нового,
 -- а не за время: иначе игрок находит лёгкий забег и гриндит его повторением. Факт
 -- «уже получено» живёт в профиле игрока (PlayerData) и проверяется здесь, на сервере;
 -- отдельного RemoteEvent на приём нет — начисление вызывают только WaveRunner и
@@ -31,7 +31,7 @@ local function grant(player, data, value, reason)
 	ProfileSyncedRemote:FireClient(player, data.plutonium, data.levels, data.recipes, data.killedTypes, data.settings, data.xp)
 end
 
--- Опыт за первое прохождение этажа (alchemy_td_location_v1.6.md). Тот же флаг completed, что
+-- Опыт за первое прохождение этажа. Тот же флаг completed, что
 -- и у плутония за уровень: повторное прохождение не даёт ни того, ни другого. Уведомление
 -- своё, а досылку профиля делает grant плутония, который идёт следом.
 local function grantXP(player, data, value, reason)
@@ -66,7 +66,7 @@ function Plutonium.AwardLevelClear(level)
 			local levelData = data.levels[level]
 			if not levelData.completed then
 				levelData.completed = true
-				-- Пройденный уровень открывает следующий (alchemy_td_lobby.md, шаг 4).
+				-- Пройденный уровень открывает следующий.
 				PlayerData.UnlockNext(data, level)
 				grantXP(player, data, XPRewards.levelClear, "этаж пройден впервые")
 				grant(player, data, PlutoniumRewards.levelClear, "уровень пройден впервые")

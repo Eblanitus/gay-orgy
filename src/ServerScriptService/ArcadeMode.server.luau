@@ -168,7 +168,7 @@ local function killBug(slot, carPos, carry)
 		-- раздавили (тот же порядок, что и в EnemySpawner) — поле аркады на своей
 		-- высоте, отличной от пола арены, поэтому Corpses.Splat принимает GROUND_Y явно.
 		Corpses.Splat(model:GetPivot().Position, SPLAT_SIZE * BUG_SCALE / 3, SPLAT_DROPS, GROUND_Y)
-		Corpses.Leave(model, { fraction = 1, from = carPos, floorY = GROUND_Y, carry = carry })
+		Corpses.Leave(model, { fraction = 1, from = carPos, floorY = GROUND_Y, carry = carry, remains = "crush" })
 	end
 	emptyBugSlot(slot)
 	task.delay(RESPAWN_DELAY, function()

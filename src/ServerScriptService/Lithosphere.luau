@@ -1,4 +1,4 @@
--- Изменение ландшафта Литосферой (design: alchemy_td_effects_v4.md).
+-- Изменение ландшафта Литосферой.
 --
 -- «При убийстве — ландшафт карты поднимается/опускается. Без HP, изменяет рельеф.
 -- При определённом количестве врагов в изменённом ландшафте — если была яма, то
@@ -14,6 +14,8 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
+local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
+local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Impulse = require(ServerScriptService:WaitForChild("Impulse"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -24,9 +26,9 @@ local enemiesFolder = Workspace:WaitForChild("Enemies")
 
 local Lithosphere = {}
 
--- Сколько участков Литосферы держим одновременно. Без потолка залитая Литосферой
--- турель за волну превращает пол в решето, и ни пройти, ни разглядеть его уже нельзя.
--- Самый старый участок затягивается, когда появляется лишний.
+-- По вики изменение рельефа одно на турель: новое затягивает старое той же турели.
+-- Общий потолок остаётся страховкой на случай, когда турель неизвестна (owner = nil):
+-- без него пол за волну превратился бы в решето. Самый старый участок затягивается первым.
 local MAX_ZONES = 4
 
 -- Как часто яма считает, сколько в ней жуков, и сколько живёт, если так и не наполнилась.
@@ -105,6 +107,7 @@ local function crush(zone, plan)
 		for _, enemy in caught do
 			if enemy.Parent and (enemy:GetAttribute("HP") or 0) > 0 then
 				local hp = enemy:GetAttribute("HP")
+				Effects.MarkHit(enemy, Elements.Lithosphere) -- плита давит: останки Литосферы
 				enemy:SetAttribute("HP", math.max(0, hp - plan.crushDamage))
 				DamageDealtRemote:FireAllClients(enemy:GetPivot().Position,
 					math.min(hp, plan.crushDamage), true)
@@ -122,16 +125,25 @@ local function crush(zone, plan)
 end
 
 -- Жук умер от Литосферы — меняем рельеф на месте его смерти.
-function Lithosphere.Erupt(position, plan)
+function Lithosphere.Erupt(position, plan, owner)
 	-- Жребий яма/возвышенность: документ называет оба исхода рядом и не говорит,
 	-- что выбирает между ними.
 	local pit = math.random() < 0.5
 
-	while #live >= MAX_ZONES do
-		close(live[1])
+	if owner then
+		for i = #live, 1, -1 do
+			if live[i].owner == owner then
+				close(live[i])
+			end
+		end
+	else
+		while #live >= MAX_ZONES do
+			close(live[1])
+		end
 	end
 
 	local zone = {
+		owner = owner,
 		position = Vector3.new(position.X, position.Y, position.Z),
 		radius = plan.radius,
 		pit = pit,

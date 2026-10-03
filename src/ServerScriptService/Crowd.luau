@@ -24,7 +24,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local Grid = require(ServerScriptService:WaitForChild("Grid"))
 -- Рельеф пола: жук едет по бетону, а тот умеет подниматься и опускаться
--- (окоп Окопщика, ландшафт Литосферы). Высотой жука распоряжается толкучка
+-- (ямка Строителя, ландшафт Литосферы). Высотой жука распоряжается толкучка
 -- (он может стоять на спине соседа), поэтому и уровень земли читается здесь же.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
 -- Габариты тела: капсула по ширине корпуса вдоль хода (см. EnemyBody.Footprint).
@@ -319,6 +319,12 @@ end
 function Crowd.Clear()
 	table.clear(records)
 	table.clear(byModel)
+	Crowd.epoch += 1
+end
+
+-- Отменяет жуков, которые ещё ждут места у пролома (EnemySpawner), не трогая стоящих на поле:
+-- промокод STOP обрывает волну, и очередь из неё выйти уже не должна.
+function Crowd.CancelPending()
 	Crowd.epoch += 1
 end
 
