@@ -426,7 +426,23 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 	remember(pieces, piece, plan.fieldLimit)
 end
 
--- Останки без тела (давит, плавит, растворяет, рвёт, уничтожает) — в своём модуле.
+-- Туша уходит не по лимиту (осыпалась, лопнула): из списка трупов и из номеров записей.
+local scaleOf = setmetatable({}, { __mode = "k" }) -- [туша] = масштаб жука / 3 (атрибуты с трупа сняты)
+
+local function forget(corpse)
+	local index = table.find(corpses, corpse)
+	if index then
+		table.remove(corpses, index)
+	end
+	for id, other in byId do
+		if other == corpse then
+			byId[id] = nil
+		end
+	end
+end
+
+-- Останки без тела (давит, плавит, растворяет, рвёт, уничтожает), осыпание обугленного
+-- и хрупкий труп — в своём модуле.
 local Remains = require(ReplicatedStorage:WaitForChild("CorpseRemains"))({
 	PhysicsFX = PhysicsFX,
 	container = container,
@@ -437,6 +453,8 @@ local Remains = require(ReplicatedStorage:WaitForChild("CorpseRemains"))({
 	detachPiece = detachPiece,
 	bloodLift = BLOOD_LIFT,
 	bloodThickness = BLOOD_THICKNESS,
+	corpseGroup = CORPSE_GROUP,
+	forget = forget,
 })
 
 -- enemy — ВИДИМОЕ тело жука (модель EnemyRender). hit — чем убили (присылает сервер):
@@ -500,6 +518,10 @@ function Corpses.Leave(enemy, hit, id)
 			part.CanCollide = false
 			part.Color = part.Color:Lerp(fadeColor, fade)
 		end
+	end
+	-- Холодная ветка: заиндевевший стеклянный труп (лопнет от касания — Corpses.Shatter).
+	if hit and hit.remains == "brittle" then
+		Remains.frost(corpse)
 	end
 
 	-- Жук не переворачивается — он падает (решение автора). Труп встаёт ровно там и так,
@@ -604,16 +626,29 @@ function Corpses.Leave(enemy, hit, id)
 		task.delay(plan.smokeTime, function()
 			smoke.Enabled = false
 		end)
+		-- Потом осыпается (по вики); запись на сервере снимется к тому же сроку.
+		Remains.crumble(corpse, scale, hit and hit.floorY or Arena.floorY)
 	end
 
 	-- Досадка на брюхо — общий цикл перед Corpses.Splat, для всех трупов сразу.
 
 	CollectionService:AddTag(corpse, Impulse.Tag)
 	remember(corpses, corpse, MAX_CORPSES)
+	scaleOf[corpse] = scale
 	if id then
 		byId[id] = corpse
 	end
 	return corpse
+end
+
+-- Хрупкий труп тронули (решает сервер): лопается на ледяные осколки, они тают.
+function Corpses.Shatter(id)
+	local corpse = byId[id]
+	if not corpse or not corpse.Parent then
+		return
+	end
+	forget(corpse)
+	Remains.shatter(corpse, scaleOf[corpse] or 1)
 end
 
 -- Пеликан съел труп (решает сервер): туша растворяется.

@@ -12,8 +12,10 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PhysicsService = game:GetService("PhysicsService")
+local Workspace = game:GetService("Workspace")
 
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
+local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 
 local EnemyFX = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("EnemyFX")
 
@@ -59,6 +61,18 @@ local function remember(record)
 	end
 end
 
+local function forget(record)
+	local index = table.find(records, record)
+	if index then
+		table.remove(records, index)
+	end
+	record.alive = false
+end
+
+-- Обугленный осыпается за это время (клиент — CorpseRemains.crumble): дальше есть нечего.
+local char = PhysicsFX.char
+local CRUMBLE_TIME = char.smokeTime + char.limbsTime + char.sinkTime + char.crackTime
+
 -- Виды останков, после которых тела нет (по вики): давит, плавит, растворяет, рвёт,
 -- уничтожает. Записи у них не заводится — Пеликану нечего есть.
 local BODYLESS = { crush = true, melt = true, dissolve = true, gib = true, destroy = true }
@@ -84,11 +98,63 @@ function Corpses.Leave(enemy, hit)
 	end
 
 	nextId += 1
-	local record = { id = nextId, position = root.Position, alive = true, remains = hit.remains }
+	local record = {
+		id = nextId,
+		position = root.Position,
+		alive = true,
+		remains = hit.remains,
+		scale = hit.scale / 3,
+		bornAt = os.clock(),
+	}
 	remember(record)
 	EnemyFX:FireAllClients("death", enemy, nextId, hit)
+	if hit.remains == "char" then
+		task.delay(CRUMBLE_TIME, forget, record)
+	end
 	return record
 end
+
+-- Касание хрупких трупов (холодная ветка, по вики): что тронуло круг center/radius —
+-- шаг жука, попадание снаряда, взрыв — то и лопнуло. Клиенты рисуют осколки.
+local brittle = PhysicsFX.brittle
+
+function Corpses.Touch(center, radius)
+	local now = os.clock()
+	for index = #records, 1, -1 do
+		local record = records[index]
+		if record.remains == "brittle" and now - record.bornAt >= brittle.grace then
+			local delta = record.position - center
+			local reach = radius + brittle.size * record.scale
+			if delta.X * delta.X + delta.Z * delta.Z <= reach * reach then
+				table.remove(records, index)
+				record.alive = false
+				EnemyFX:FireAllClients("shatter", record.id)
+			end
+		end
+	end
+end
+
+-- Шаги: наземный живой жук рядом с хрупким трупом. Проверка идёт, только пока такие трупы есть.
+task.spawn(function()
+	local enemies = Workspace:WaitForChild("Enemies")
+	while true do
+		task.wait(brittle.check)
+		local any = false
+		for _, record in records do
+			if record.remains == "brittle" then
+				any = true
+				break
+			end
+		end
+		if any then
+			for _, enemy in enemies:GetChildren() do
+				if enemy:IsA("Model") and not enemy:GetAttribute("Flying") and (enemy:GetAttribute("HP") or 0) > 0 then
+					Corpses.Touch(enemy:GetPivot().Position, brittle.step * (enemy:GetAttribute("Scale") or 3) / 3)
+				end
+			end
+		end
+	end
+end)
 
 -- Жук застыл керамической статуей (Глина + огонь). Тоже ДО Destroy: клиент забирает
 -- видимое тело и ставит его копию в керамике внутрь статуи.

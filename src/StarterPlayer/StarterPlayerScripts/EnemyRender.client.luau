@@ -444,6 +444,8 @@ EnemyFX.OnClientEvent:Connect(function(kind, a, b, c, d)
 		CorpseFX.Clear()
 	elseif kind == "eat" then
 		CorpseFX.Eat(a)
+	elseif kind == "shatter" then
+		CorpseFX.Shatter(a)
 	elseif kind == "blast" then
 		ImpulseFX.Blast(a, b, c)
 	elseif kind == "push" then

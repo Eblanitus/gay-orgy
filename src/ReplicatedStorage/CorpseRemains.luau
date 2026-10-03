@@ -1,4 +1,5 @@
 -- Останки без тела (по вики): давит, плавит, растворяет, рвёт, уничтожает. КЛИЕНТСКАЯ часть.
+-- И то, что потом случается с телом: обугленный труп осыпается, хрупкий лопается от касания.
 --
 -- Вид решает сервер (Effects.RemainsOf) и присылает в hit.remains; CorpseFX.Leave отдаёт сюда
 -- всё, что не тело. Записи на сервере у этих видов нет — Пеликану есть нечего, и туши в списке
@@ -17,6 +18,8 @@ return function(deps)
 	local detachPiece = deps.detachPiece
 	local LIFT = deps.bloodLift
 	local THICKNESS = deps.bloodThickness
+	local CORPSE_GROUP = deps.corpseGroup
+	local forget = deps.forget -- убрать тушу из списка трупов (она уходит не по лимиту)
 
 	local plan = PhysicsFX.remains
 
@@ -381,11 +384,270 @@ return function(deps)
 		Debris:AddItem(clone, p.time * 2 + 0.2)
 	end
 
+	-- ============ Обугленный труп осыпается ============
+	-- Не в пыль и не сразу (по вики): дымит, потом по одной отваливаются лапы и усики,
+	-- каждая падает и раскалывается о пол на угольки, тело проседает и трескается на куски,
+	-- остаётся кучка углей, она гаснет. Запись на сервере живёт столько же (Corpses.Leave).
+
+	local function visibleParts(instance)
+		local list = {}
+		local all = instance:IsA("BasePart") and { instance } or instance:GetDescendants()
+		for _, part in all do
+			if part:IsA("BasePart") and part.Transparency < 1 then
+				table.insert(list, part)
+			end
+		end
+		return list
+	end
+
+	local function isLimbName(name)
+		return name:match("^leg_") ~= nil or name:match("^Leg%d") ~= nil
+			or name:match("^antenna_") ~= nil or name:match("^mandible_") ~= nil
+	end
+
+	-- Верхние узлы конечностей (лапа целиком, а не её голень отдельно).
+	local function limbsOf(model)
+		local list = {}
+		for _, item in model:GetDescendants() do
+			if (item:IsA("Model") or item:IsA("BasePart")) and isLimbName(item.Name) then
+				local node, nested = item.Parent, false
+				while node and node ~= model do
+					if isLimbName(node.Name) then
+						nested = true
+						break
+					end
+					node = node.Parent
+				end
+				if not nested then
+					table.insert(list, item)
+				end
+			end
+		end
+		return list
+	end
+
+	-- Угольки на полу: тлеют и гаснут.
+	local function embers(at, floorY, scale, count, size)
+		local p = PhysicsFX.char
+		local folder = container("Debris")
+		for _ = 1, count do
+			local bit = plainPart("Ember", folder)
+			local edge = size * scale * (0.6 + math.random() * 0.6)
+			bit.Size = Vector3.new(edge, edge * 0.6, edge * (0.7 + math.random() * 0.5))
+			local angle = math.random() * math.pi * 2
+			local distance = size * scale * math.random()
+			bit.CFrame = CFrame.new(at.X + math.cos(angle) * distance, floorY + bit.Size.Y / 2, at.Z + math.sin(angle) * distance)
+				* CFrame.Angles(0, math.random() * math.pi * 2, (math.random() - 0.5) * 0.6)
+			bit.Material = Enum.Material.Neon
+			bit.Color = p.ember
+			TweenService:Create(bit, TweenInfo.new(p.emberTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Color = p.color }):Play()
+			task.delay(p.emberTime, function()
+				if bit.Parent then
+					bit.Material = Enum.Material.Slate
+					TweenService:Create(bit, TweenInfo.new(p.fadeTime), { Transparency = 1 }):Play()
+					Debris:AddItem(bit, p.fadeTime + 0.1)
+				end
+			end)
+		end
+	end
+
+	-- Снять сварку деталей с корпуса трупа (все сварки висят на корне, см. CorpseFX.Leave).
+	local function unweld(corpse, parts)
+		local set = {}
+		for _, part in parts do
+			set[part] = true
+		end
+		for _, item in corpse:GetDescendants() do
+			if item:IsA("WeldConstraint") and (set[item.Part0] or set[item.Part1]) then
+				item:Destroy()
+			end
+		end
+	end
+
+	-- Лапа отваливается: падает на пол, раскалывается на угольки и гаснет.
+	local function dropLimb(corpse, limb, floorY, scale)
+		local p = PhysicsFX.char
+		local parts = visibleParts(limb)
+		unweld(corpse, parts)
+		for _, part in limb:IsA("BasePart") and { limb } or limb:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Anchored = true
+			end
+		end
+		limb.Parent = container("Debris")
+		if #parts == 0 then
+			limb:Destroy()
+			return
+		end
+
+		local low, center = math.huge, Vector3.zero
+		for _, part in parts do
+			low = math.min(low, part.Position.Y - math.min(part.Size.X, part.Size.Y, part.Size.Z) / 2)
+			center += part.Position
+		end
+		center /= #parts
+		local drop = math.max(low - floorY, 0)
+		local tilt = CFrame.Angles((math.random() - 0.5) * 0.8, 0, (math.random() - 0.5) * 0.8)
+		local fall = TweenInfo.new(p.fallTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		for _, part in parts do
+			local offset = part.Position - center
+			local target = CFrame.new(center - Vector3.new(0, drop, 0)) * tilt * CFrame.new(offset)
+				* (part.CFrame - part.Position)
+			TweenService:Create(part, fall, { CFrame = target }):Play()
+		end
+		task.delay(p.fallTime, function()
+			embers(Vector3.new(center.X, floorY, center.Z), floorY, scale, 2, p.emberSize)
+			local fade = TweenInfo.new(p.fadeTime)
+			for _, part in parts do
+				TweenService:Create(part, fade, { Transparency = 1 }):Play()
+			end
+			Debris:AddItem(limb, p.fadeTime + 0.1)
+		end)
+	end
+
+	-- Тело проседает, трескается на крупные куски и рассыпается кучкой углей.
+	local function collapse(corpse, floorY, scale)
+		local p = PhysicsFX.char
+		forget(corpse)
+		local parts = visibleParts(corpse)
+		for _, item in corpse:GetDescendants() do
+			if item:IsA("BasePart") then
+				item.Anchored = true
+				if item.Transparency >= 1 then
+					item.CanCollide = false
+				end
+			elseif item:IsA("WeldConstraint") then
+				item:Destroy()
+			end
+		end
+		if #parts == 0 then
+			corpse:Destroy()
+			return
+		end
+		local center = corpse:GetBoundingBox().Position
+
+		-- Проседает: всё ближе к полу, брюхо садится.
+		local sink = TweenInfo.new(p.sinkTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		for _, part in parts do
+			local height = part.Position.Y - floorY
+			TweenService:Create(part, sink, {
+				CFrame = part.CFrame - Vector3.new(0, height * (1 - p.sinkKeep), 0),
+			}):Play()
+		end
+
+		-- Трескается: куски чуть расходятся и заваливаются кто куда.
+		task.delay(p.sinkTime, function()
+			if not corpse.Parent then
+				return
+			end
+			local crack = TweenInfo.new(p.crackTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+			for _, part in parts do
+				local out = part.Position - center
+				out = Vector3.new(out.X, 0, out.Z)
+				out = out.Magnitude > 1e-3 and out.Unit or Vector3.zero
+				local turn = CFrame.Angles((math.random() - 0.5) * 0.7, (math.random() - 0.5) * 0.7, (math.random() - 0.5) * 0.7)
+				TweenService:Create(part, crack, {
+					CFrame = (part.CFrame + out * p.crackSpread * scale) * turn,
+				}):Play()
+			end
+			task.delay(p.crackTime, function()
+				if not corpse.Parent then
+					return
+				end
+				embers(Vector3.new(center.X, floorY, center.Z), floorY, scale, p.heap, p.emberSize * 1.5)
+				local fade = TweenInfo.new(p.fadeTime)
+				for _, part in parts do
+					TweenService:Create(part, fade, { Transparency = 1 }):Play()
+				end
+				Debris:AddItem(corpse, p.fadeTime + 0.1)
+			end)
+		end)
+	end
+
+	local function shuffle(list)
+		for i = #list, 2, -1 do
+			local j = math.random(i)
+			list[i], list[j] = list[j], list[i]
+		end
+		return list
+	end
+
+	local function crumble(corpse, scale, floorY)
+		local p = PhysicsFX.char
+		task.delay(p.smokeTime, function()
+			local limbs = shuffle(limbsOf(corpse))
+			local gap = p.limbsTime / math.max(#limbs, 1)
+			for _, limb in limbs do
+				if not corpse.Parent then
+					return
+				end
+				dropLimb(corpse, limb, floorY, scale)
+				task.wait(gap)
+			end
+			if corpse.Parent then
+				collapse(corpse, floorY, scale)
+			end
+		end)
+	end
+
+	-- ============ Хрупкий труп (холодная ветка) ============
+	-- Заиндевевший, бледно-голубой, стеклянный. Лопается от касания — решает сервер
+	-- (Corpses.Touch), сюда приходит уже «лопни».
+
+	local function frost(corpse)
+		local p = PhysicsFX.brittle
+		for _, part in visibleParts(corpse) do
+			part.Color = part.Color:Lerp(p.color, p.tint)
+			part.Material = Enum.Material.Glass
+			part.Reflectance = p.reflectance
+			part.Transparency = math.max(part.Transparency, p.transparency)
+		end
+	end
+
+	local function shatter(corpse, scale)
+		local p = PhysicsFX.brittle
+		local box, size = corpse:GetBoundingBox()
+		corpse:Destroy()
+
+		local folder = container("Debris")
+		local count = math.max(4, math.floor(p.shards * scale + 0.5))
+		local melt = TweenInfo.new(p.meltTime, Enum.EasingStyle.Linear)
+		for _ = 1, count do
+			local shard = plainPart("IceShard", folder)
+			local edge = p.shardSize * scale * (0.5 + math.random())
+			shard.Size = Vector3.new(edge * 0.5, edge, edge * 0.8)
+			shard.CFrame = box * CFrame.new((math.random() - 0.5) * size.X, (math.random() - 0.5) * size.Y,
+				(math.random() - 0.5) * size.Z) * CFrame.Angles(math.random() * 6.3, math.random() * 6.3, 0)
+			shard.Material = Enum.Material.Glass
+			shard.Color = p.color
+			shard.Reflectance = p.reflectance
+			shard.Transparency = p.transparency
+			shard.CanCollide = true
+			shard.CollisionGroup = CORPSE_GROUP
+			shard.Anchored = false
+			local out = shard.Position - box.Position
+			out = Vector3.new(out.X, 0, out.Z)
+			out = out.Magnitude > 1e-3 and out.Unit or Vector3.xAxis
+			shard.AssemblyLinearVelocity = (out + Vector3.yAxis * p.lift) * p.speed * (0.5 + math.random())
+			shard.AssemblyAngularVelocity = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5) * 16
+			task.delay(p.meltDelay, function()
+				if shard.Parent then
+					TweenService:Create(shard, melt, { Transparency = 1, Size = shard.Size * 0.3 }):Play()
+					Debris:AddItem(shard, p.meltTime + 0.1)
+				end
+			end)
+		end
+	end
+
 	return {
 		crush = crush,
 		melt = melt,
 		dissolve = dissolveBody,
 		gib = gib,
 		destroy = destroy,
+		crumble = crumble,
+		frost = frost,
+		shatter = shatter,
 	}
 end
