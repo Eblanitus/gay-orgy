@@ -361,6 +361,18 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 		end
 
 		local now = os.clock()
+
+		-- Несёт Медик: ставит жука он сам (EnemyBehavior.carry), а этот цикл ждёт.
+		-- Положили — маршрут считается заново от того места, куда положили.
+		local carrier = EnemyBehavior.CarriedBy(enemy)
+		if carrier then
+			state.pathPosition = nil
+			climb = nil -- сняли со стены — перелезание не продолжается с чужой спины
+			dirty = true
+			setVelocity(carrier:GetAttribute("Velocity") or Vector3.zero)
+			continue
+		end
+
 		-- Цель сменилась не из-за стройки, а по приказу Координатора или потому, что вышла
 		-- группа работяг (см. EnemyBehavior). Занятость клеток при этом не меняется, и
 		-- Grid.Changed не срабатывает — пометить маршрут устаревшим некому, кроме этого флага.

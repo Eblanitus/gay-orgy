@@ -28,6 +28,8 @@ local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructure
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 -- Рельеф бетонного пола: Строитель роет в нём настоящую ямку.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
+-- Груз Медика на время выходит из толкучки и возвращается в неё, когда его кладут.
+local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local DamageDealtRemote = Remotes:WaitForChild("DamageDealt")
@@ -47,6 +49,10 @@ local EnemyBehavior = {}
 -- .Parent у неё падало (найдено живым прогоном). Ключи слабые: убитый жук не должен
 -- держаться в памяти ради своего прошлого фокуса.
 local focus = setmetatable({}, { __mode = "k" })
+
+-- Кого несёт Медик: груз -> медик. Пока жук здесь, его ставит медик, а свой цикл
+-- движения в EnemySpawner стоит (см. EnemyBehavior.CarriedBy).
+local carried = setmetatable({}, { __mode = "k" })
 
 -- Спавн жука из поведения (личинка вылупляется, Носитель высыпается, Матка кладёт).
 -- Назначает EnemySpawner — прямой require спавнера зациклил бы модули.
@@ -258,6 +264,11 @@ function EnemyBehavior.State(enemy, enemyData, state)
 	-- Трейт держит жука на месте (копает, маскируется, нацеливается, строит).
 	if state.holdUntil and now < state.holdUntil then
 		return "hold"
+	end
+
+	-- Медик с грузом уносит его прочь от турели (см. TRAITS.heals).
+	if state.carrying then
+		return "flee"
 	end
 
 	if state.panicUntil and now < state.panicUntil then
@@ -530,6 +541,13 @@ local function larvaLoop(enemy, enemyData, state)
 	if not naps(enemy, plan.after) then
 		return -- успели расстрелять до вылупления — ровно то, чего требует документ
 	end
+	-- На спине Медика не вылупляется: мелочь высыпалась бы в воздухе.
+	while carried[enemy] and alive(enemy) do
+		RunService.Heartbeat:Wait()
+	end
+	if not alive(enemy) then
+		return
+	end
 
 	local at = enemy:GetPivot().Position
 	print(("[Личинка] вылупилась: %d x %s"):format(plan.count, plan.type))
@@ -714,7 +732,66 @@ TRAITS.spits = function(enemy, enemyData, state)
 	end
 end
 
--- Медик: лечит раненых вокруг. Сам не атакует вовсе (chewDamage = 0 в таблице).
+-- Кто несёт этого жука, или nil. EnemySpawner по нему не ведёт груз сам.
+function EnemyBehavior.CarriedBy(enemy)
+	return carried[enemy]
+end
+
+-- «Переносит личинок и раненых.» Носит только своих — разведчиков и работяг,
+-- и только тех, кто ходит по земле; солдаты «самостоятельны», им медик не нужен.
+-- Раненый — тот, кто ещё пугается (слепой Хмурый брон медика не ждёт).
+local function canCarry(other, plan)
+	if carried[other] then
+		return false
+	end
+	local data = Enemies[other:GetAttribute("Type")]
+	if not data or data.flying or data.heals or (data.caste or 0) > 1 then
+		return false
+	end
+	if data.hatches then
+		return true
+	end
+	if not data.panic then
+		return false
+	end
+	local hp, maxHp = other:GetAttribute("HP"), other:GetAttribute("MaxHP")
+	return hp ~= nil and maxHp ~= nil and maxHp > 0 and hp < maxHp * plan.carryBelow
+end
+
+-- Несёт груз на спине прочь от турели, пока не выйдет срок, потом кладёт на пол.
+-- Убили медика — груз падает, где был; убили груз — медик идёт дальше налегке.
+local function carry(enemy, cargo, plan, state, turret)
+	local pivot = cargo:GetPivot()
+	-- Насколько пивот груза выше пола — чтобы положить его обратно на ту же высоту.
+	local lift = pivot.Position.Y - ConcreteFloor.HeightAt(pivot.Position.X, pivot.Position.Z)
+
+	carried[cargo] = enemy
+	Crowd.Remove(cargo)
+	state.carrying = cargo
+	state.fleeFrom = turret:GetPivot().Position
+	print(("[Медик] уносит %s от %s"):format(cargo.Name, turret.Name))
+
+	local untilTime = os.clock() + plan.carryTime
+	while alive(enemy) and alive(cargo) and os.clock() < untilTime do
+		cargo:PivotTo(enemy:GetPivot() * CFrame.new(0, plan.carryLift, 0))
+		RunService.Heartbeat:Wait()
+	end
+
+	carried[cargo] = nil
+	state.carrying = nil
+	if cargo.Parent then
+		local at = cargo:GetPivot().Position
+		local drop = Vector3.new(at.X, ConcreteFloor.HeightAt(at.X, at.Z) + lift, at.Z)
+		drop = Crowd.FindFree(cargo, drop) or drop
+		cargo:PivotTo(CFrame.new(drop) * cargo:GetPivot().Rotation)
+		if alive(cargo) then
+			Crowd.Add(cargo)
+		end
+	end
+end
+
+-- Медик: лечит раненых вокруг и уносит из-под огня личинок и тяжело раненых.
+-- Сам не атакует вовсе (chewDamage = 0 в таблице).
 TRAITS.heals = function(enemy, enemyData, state)
 	local plan = enemyData.heals
 
@@ -724,6 +801,20 @@ TRAITS.heals = function(enemy, enemyData, state)
 		end
 
 		local at = enemy:GetPivot().Position
+
+		-- Подобрать груз, если руки свободны и есть от чего уносить. Несёт отдельной
+		-- задачей: груз ставится каждый кадр, а лечение идёт своим темпом.
+		if not state.carrying then
+			local turret = nearestTurret(at)
+			if turret then
+				for _, other in enemiesAround(at, plan.reach, enemy) do
+					if canCarry(other, plan) then
+						task.spawn(carry, enemy, other, plan, state, turret)
+						break
+					end
+				end
+			end
+		end
 		-- «Выбирает зоны для лечения» — лечит самого раненого, а не всех понемногу.
 		local best, bestRatio = nil, 1
 		for _, other in enemiesAround(at, plan.radius, enemy) do

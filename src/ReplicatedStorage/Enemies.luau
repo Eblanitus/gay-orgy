@@ -310,7 +310,13 @@ local Enemies = {
 		hp = 40,
 		speed = 12,
 		chewDamage = 0,
-		heals = { amount = 7, interval = 1.5, radius = 14, keepBehind = 10 },
+		-- «Переносит личинок и раненых»: reach — с какого расстояния подбирает, carryBelow —
+		-- доля здоровья, ниже которой работяга или разведчик считается тяжело раненым,
+		-- carryTime — сколько несёт прочь от турели, carryLift — на сколько груз выше его пивота.
+		heals = {
+			amount = 7, interval = 1.5, radius = 14, keepBehind = 10,
+			reach = 6, carryBelow = 0.4, carryTime = 4, carryLift = 2.5,
+		},
 		color = Color3.fromRGB(196, 208, 214),
 		matter = 12,
 	},
