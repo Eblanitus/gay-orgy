@@ -59,19 +59,32 @@ local function remember(record)
 	end
 end
 
+-- Виды останков, после которых тела нет (по вики): давит, плавит, растворяет, рвёт,
+-- уничтожает. Записи у них не заводится — Пеликану нечего есть.
+local BODYLESS = { crush = true, melt = true, dissolve = true, gib = true, destroy = true }
+
 -- Жук умер. Зовётся ДО enemy:Destroy(): клиент по этому событию забирает видимое тело жука
--- и делает из него тушу. hit — как в CorpseFX.Leave: { fraction, from, floorY, carry }.
+-- и делает из него тушу. hit — как в CorpseFX.Leave: { fraction, from, floorY, carry, remains }.
+-- remains — вид останков (Effects.RemainsOf); без него — тело.
 function Corpses.Leave(enemy, hit)
 	local root = enemy.PrimaryPart
 	if not root then
 		return nil
 	end
 	hit = table.clone(hit or {})
-	hit.scorched = enemy:GetAttribute("Scorched") == true
+	hit.remains = hit.remains or "body"
+	-- Обугленный труп — только вид «char» (горел или добит огнём, по вики). Потушенный
+	-- Мокрым или оплавленный без огня жук оставляет обычное тело.
+	hit.scorched = hit.remains == "char"
 	hit.scale = enemy:GetAttribute("Scale") or 3
 
+	if BODYLESS[hit.remains] then
+		EnemyFX:FireAllClients("death", enemy, nil, hit)
+		return nil
+	end
+
 	nextId += 1
-	local record = { id = nextId, position = root.Position, alive = true }
+	local record = { id = nextId, position = root.Position, alive = true, remains = hit.remains }
 	remember(record)
 	EnemyFX:FireAllClients("death", enemy, nextId, hit)
 	return record

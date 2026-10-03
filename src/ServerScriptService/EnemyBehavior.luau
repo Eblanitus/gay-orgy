@@ -584,6 +584,7 @@ local function larvaLoop(enemy, enemyData, state)
 			EnemyBehavior.Spawn(plan.type, at + offset)
 		end
 	end
+	Effects.MarkHit(enemy, nil) -- не элемент убил: тело
 	enemy:SetAttribute("HP", 0)
 end
 
@@ -919,6 +920,7 @@ function EnemyBehavior.Detonate(enemy, enemyData)
 		:format(plan.damage, hits, plan.radius))
 
 	if enemy.Parent then
+		Effects.MarkHit(enemy, nil) -- подорвал себя сам: тело
 		enemy:SetAttribute("HP", 0)
 	end
 end

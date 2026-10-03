@@ -14,6 +14,8 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
+local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
+local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Impulse = require(ServerScriptService:WaitForChild("Impulse"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -105,6 +107,7 @@ local function crush(zone, plan)
 		for _, enemy in caught do
 			if enemy.Parent and (enemy:GetAttribute("HP") or 0) > 0 then
 				local hp = enemy:GetAttribute("HP")
+				Effects.MarkHit(enemy, Elements.Lithosphere) -- плита давит: останки Литосферы
 				enemy:SetAttribute("HP", math.max(0, hp - plan.crushDamage))
 				DamageDealtRemote:FireAllClients(enemy:GetPivot().Position,
 					math.min(hp, plan.crushDamage), true)

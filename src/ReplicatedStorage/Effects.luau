@@ -68,7 +68,7 @@ local debuffs = {}
 -- делает эффект глубже. Наружу уходит сильнейшее из двух (см. refreshSlow).
 local dryings = {}
 
--- primed[target] = { plan, name } — метка Пороха. Взводит не эффекты, а взрыв: попадание
+-- primed[target] = { plan, name, element } — метка Пороха. Взводит не эффекты, а взрыв: попадание
 -- Горением, Плавлением или Ошпариванием детонирует цель, и метка спадает.
 local primed = {}
 
@@ -404,7 +404,53 @@ function Effects.AfterArmor(target, damage, elementData)
 		damage *= markScale(target, "ash", "damageScale")
 	end
 
-	return Effects.ApplyArmor(target, damage, elementData)
+	-- Через эту обёртку проходит любой прямой удар — тут же и запоминается, кто ударил:
+	-- по нему решается, что останется от трупа (Effects.RemainsOf).
+	local dealt = Effects.ApplyArmor(target, damage, elementData)
+	if dealt > 0 then
+		Effects.MarkHit(target, elementData)
+	end
+	return dealt
+end
+
+-- Кто ударил последним — для останков: по вики вид трупа решает добивающий удар.
+-- LastHit — ключ элемента последнего удара, снявшего HP; LastHitTick — это был тик
+-- дебаффа или зоны, а не удар. Удар без элемента (укус, пустая колба, принудительная
+-- смерть) снимает оба: такой жук оставляет тело. Зовут все места, где снимается HP жука.
+function Effects.MarkHit(target, elementData, isTick)
+	local key = elementData and elementKeys[elementData] or nil
+	target:SetAttribute("LastHit", key)
+	target:SetAttribute("LastHitTick", (key and isTick) or nil)
+end
+
+-- Вид останков по добивающему удару (по вики, сверху вниз — первое подошедшее правило).
+-- Метки при смерти и статую Глины решает обработчик смерти раньше — сюда они не доходят.
+--   1. добивший элемент со своим видом (давит, плавит, растворяет, рвёт, уничтожает, хрупкий);
+--   2. добил Мокрый — жук потушен, остаётся тело, даже если горел;
+--   3. жук горел в момент смерти или добил огнём — обугливается;
+--   4. иначе тело.
+-- Плазма убивает горением, но вид у неё свой (плавит) — поэтому правило 1 выше правила 3.
+function Effects.RemainsOf(target)
+	local key = target:GetAttribute("LastHit")
+	local killer = key and Elements[key] or nil
+	if killer and killer.remains and killer.remains ~= "char" then
+		return killer.remains
+	end
+	if killer and killer.wet then
+		return "body"
+	end
+	if killer and (killer.remains == "char" or (killer.burning and target:GetAttribute("LastHitTick"))) then
+		return "char"
+	end
+	local byElement = effects[target]
+	if byElement then
+		for elementData in pairs(byElement) do
+			if elementData.burning then
+				return "char"
+			end
+		end
+	end
+	return "body"
 end
 
 -- Урон снаряда с залитым элементом: базовый урон башни × число базовых элементов
@@ -512,7 +558,7 @@ local function applyPrimer(target, elementData)
 		return
 	end
 
-	primed[target] = { plan = elementData.primer, name = elementData.name }
+	primed[target] = { plan = elementData.primer, name = elementData.name, element = elementData }
 	target:SetAttribute("Primed", true) -- по нему клиент красит жука (Basalt, цвет наполовину к чёрному)
 
 	print(("[Эффект] %s метит %s под взрыв")
@@ -530,7 +576,9 @@ local function detonate(target, damage)
 
 	local blast = math.max(1, math.floor(damage * mark.plan.damageShare + 0.5))
 	local position = target:GetPivot().Position
-	local hits = damageAround(position, mark.plan.radius, blast, nil, nil, nil, mark.name)
+	-- Урон подрыва — без свойств Пороха (броня считает его безымянным), но добитый им
+	-- жук разорван Порохом: последний аргумент — чьи останки.
+	local hits = damageAround(position, mark.plan.radius, blast, nil, nil, nil, mark.name, mark.element)
 	ExplosionRemote:FireAllClients(position, mark.plan.radius)
 	if Effects.OnImpulseBlast then
 		Effects.OnImpulseBlast(position, mark.plan.radius)
@@ -1133,6 +1181,7 @@ task.spawn(function()
 					if perSecond then
 						local dealt = math.max(1, math.floor(perSecond * step + 0.5))
 						local hp = math.max(0, (enemy:GetAttribute("HP") or 0) - dealt)
+						Effects.MarkHit(enemy, zone.element, true)
 						enemy:SetAttribute("HP", hp)
 						DamageDealtRemote:FireAllClients(enemy:GetPivot().Position, dealt, false)
 					end
@@ -1378,6 +1427,9 @@ task.spawn(function()
 						totalDamage = Effects.ApplyArmor(target, totalDamage, elementData)
 
 						hp = math.max(0, hp - totalDamage)
+						if totalDamage > 0 then
+							Effects.MarkHit(target, elementData, true)
+						end
 						target:SetAttribute("HP", hp)
 						DamageDealtRemote:FireAllClients(target:GetPivot().Position, totalDamage, false)
 						print(("[Эффект] %s тикает на %s: %d стек(ов), суммарно %d урона, осталось %d HP")

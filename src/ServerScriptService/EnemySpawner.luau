@@ -71,6 +71,8 @@ local BLEED_INTERVAL = 0.5
 local BLEED_SIZE = 0.7 -- studs, диаметр капли от попадания
 local DEATH_SPLAT_SIZE = 2.2 -- studs, диаметр пятна на месте смерти
 local DEATH_SPLAT_DROPS = 4 -- брызг вокруг него
+-- Виды останков без крови на месте смерти (по вики): плавит, растворяет, уничтожает.
+local NO_BLOOD = { melt = true, dissolve = true, destroy = true }
 
 -- Атрибут Look переписывается, когда желаемый взгляд ушёл больше чем на ~3°: мельче голова
 -- жука не показывает, а писать его каждый кадр значит слать его всем клиентам каждый кадр.
@@ -272,6 +274,7 @@ local function biteRival(attacker, chewDamage, victim)
 	end
 	local hp = victim:GetAttribute("HP") or 0
 	victim:SetAttribute("HitFrom", attacker:GetPivot().Position)
+	Effects.MarkHit(victim, nil) -- укус, не элемент: останется тело
 	victim:SetAttribute("HP", math.max(0, hp - bite))
 	DamageDealtRemote:FireAllClients(victim:GetPivot().Position, bite, false)
 end
@@ -1008,6 +1011,7 @@ local function flyToTurret(enemy, enemyData)
 							lastDecay += ticks
 							local bite = decay * ticks
 							local left = math.max(0, (enemy:GetAttribute("HP") or 0) - bite)
+							Effects.MarkHit(enemy, nil)
 							enemy:SetAttribute("HP", left)
 							-- Цифра над жуком — не базовый урон турели, а тик: тот же оранжевый
 							-- цвет, что у горения, — без неё игрок не видит вовсе, отчего тот умирает.
@@ -1222,11 +1226,21 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 			-- её клон в позе смерти (см. Corpses). Кровь — отдельным пятном покрупнее: она
 			-- останется на карте, даже когда сам труп растворится по лимиту.
 			local deathPoint = enemy:GetPivot().Position
-			Corpses.Splat(deathPoint, DEATH_SPLAT_SIZE * (enemy:GetAttribute("Scale") or enemyData.scale or 1), DEATH_SPLAT_DROPS)
 
 			-- Метки при смерти (Облако, Гора, Растение и другие, по вики) срабатывают от любой
 			-- смерти. Сработала хоть одна — труп превратился в эффект, и тела не остаётся.
+			-- Иначе вид останков решает добивающий удар (Effects.RemainsOf).
 			local transformed = Effects.OnDeath(enemy)
+			local remains = transformed and "transform" or Effects.RemainsOf(enemy)
+			print(("[Останки] %s: добил %s%s — %s"):format(enemy.Name,
+				tostring(enemy:GetAttribute("LastHit") or "не элемент"),
+				enemy:GetAttribute("LastHitTick") and " (тик)" or "", remains))
+
+			-- Кровь — там, где тело было телом: расплавленный, растворённый и сгоревший
+			-- в свет жук крови не оставляет.
+			if not NO_BLOOD[remains] then
+				Corpses.Splat(deathPoint, DEATH_SPLAT_SIZE * (enemy:GetAttribute("Scale") or enemyData.scale or 1), DEATH_SPLAT_DROPS)
+			end
 
 			-- Гора вырастает из трупа и поглощает его (Corpses.Absorb в TowerBuilder.BuildBarrier),
 			-- но она вполне может встать РАНЬШЕ, чем сюда дойдёт очередь — тогда труп появился бы
@@ -1240,6 +1254,7 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 				Corpses.Leave(enemy, {
 					fraction = math.max(previousHp - currentHp, 0) / maxHp,
 					from = typeof(from) == "Vector3" and from or nil,
+					remains = remains,
 				})
 			end
 

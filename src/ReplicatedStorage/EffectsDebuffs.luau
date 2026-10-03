@@ -648,6 +648,7 @@ return function(deps)
 		local _, powerScale = amplifier(target)
 		local damage = scaled(plan.damage, powerScale)
 		hp = math.max(0, hp - damage)
+		Effects.MarkHit(target, elementData)
 		target:SetAttribute("HP", hp)
 		DamageDealtRemote:FireAllClients(target:GetPivot().Position, damage, false)
 		print(("[Эффект] %s пробивает %s: %d урона мимо брони, осталось %d HP")
@@ -684,7 +685,8 @@ return function(deps)
 
 	-- Урон по площади. Броня работает как против обычного попадания — это удар, а не отравление;
 	-- пробитие самого элемента при этом учитывается. Возвращает, скольких задело.
-	local function damageAround(center, radius, amount, exclude, limit, elementData, sourceName)
+	-- remainsOf — чьи останки у добитого, если не того же elementData (подрыв Пороха).
+	local function damageAround(center, radius, amount, exclude, limit, elementData, sourceName, remainsOf)
 		if amount <= 0 then
 			return 0
 		end
@@ -697,6 +699,9 @@ return function(deps)
 
 			local enemy = found.enemy
 			local damage = Effects.AfterArmor(enemy, amount, elementData)
+			if remainsOf and damage > 0 then
+				Effects.MarkHit(enemy, remainsOf)
+			end
 			local hp = math.max(0, (enemy:GetAttribute("HP") or 0) - damage)
 			enemy:SetAttribute("HP", hp)
 			DamageDealtRemote:FireAllClients(enemy:GetPivot().Position, damage, true)
