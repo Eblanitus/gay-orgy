@@ -487,11 +487,120 @@ local function onPyroExplosion(position, radius)
 	Debris:AddItem(anchor, 1.2)
 end
 
--- Развилка по третьему аргументу: цвет шлёт только подрыв дрона (Projectile.burst),
--- Порох и Взрыв (Effects) шлют два аргумента, как и шлали.
-local function onExplosion(position, radius, droneColor)
+-- Облачный взрыв (Облако, Дождь, Снег при смерти жука): облако лопается, а не горит.
+-- Ни вспышки, ни огня, ни тёмного дыма — мягкий шар пара раздувается до радиуса удара,
+-- клубы разлетаются и тают, пар поднимается вверх. Цвет элемента — в середине клубов:
+-- снежный взрыв холоднее дождевого, но оба читаются облаком, а не фугасом.
+local PUFF_TEXTURE = "rbxasset://textures/particles/smoke_main.dds"
+
+local function cloudBlast(position, radius, color)
+	radius = radius or BASE_EXPLOSION_RADIUS
+	color = color or Color3.fromRGB(225, 230, 240)
+	local scale = math.clamp(radius / BASE_EXPLOSION_RADIUS, 0.6, 2.5)
+	local anchor = makeAnchor(position)
+	local white = Color3.fromRGB(245, 248, 252)
+
+	-- Шар пара: светлый, плотный в начале, раздувается ровно до радиуса и тает.
+	-- Медленнее огненной вспышки — облако лопается мягко.
+	local puff = Instance.new("Part")
+	puff.Shape = Enum.PartType.Ball
+	puff.Size = Vector3.new(1, 1, 1) * radius * 0.4
+	puff.Anchored = true
+	puff.CanCollide = false
+	puff.CanQuery = false
+	puff.CastShadow = false
+	puff.Material = Enum.Material.SmoothPlastic
+	puff.Color = white:Lerp(color, 0.3)
+	puff.Transparency = 0.35
+	puff.Position = position
+	puff.Parent = anchor
+
+	TweenService:Create(puff, TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		Size = Vector3.new(1, 1, 1) * radius * 2,
+		Transparency = 1,
+	}):Play()
+
+	-- Волна по земле: широкое бледное кольцо, без неона — не огонь.
+	local ring = Instance.new("Part")
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.15, 1, 1)
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CastShadow = false
+	ring.Material = Enum.Material.SmoothPlastic
+	ring.Color = white
+	ring.Transparency = 0.45
+	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = anchor
+
+	TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.15, radius * 2.2, radius * 2.2),
+		Transparency = 1,
+	}):Play()
+
+	-- Клубы: крупные, разлетаются до края радиуса, тормозят и тают на месте.
+	local clouds = Instance.new("ParticleEmitter")
+	clouds.Texture = PUFF_TEXTURE
+	clouds.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, white),
+		ColorSequenceKeypoint.new(0.5, white:Lerp(color, 0.45)),
+		ColorSequenceKeypoint.new(1, white),
+	})
+	clouds.LightInfluence = 0.6
+	clouds.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.15),
+		NumberSequenceKeypoint.new(0.6, 0.45),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	clouds.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1.5 * scale),
+		NumberSequenceKeypoint.new(1, 4.5 * scale),
+	})
+	clouds.Lifetime = NumberRange.new(0.8, 1.3)
+	clouds.Speed = NumberRange.new(radius * 1.6, radius * 2.6)
+	clouds.Drag = 3
+	clouds.Rotation = NumberRange.new(0, 360)
+	clouds.RotSpeed = NumberRange.new(-40, 40)
+	clouds.SpreadAngle = Vector2.new(180, 180)
+	clouds.Rate = 0
+	clouds.Parent = anchor
+	clouds:Emit(math.floor(22 * scale + 0.5))
+
+	-- Пар: тонкие струйки поднимаются над местом смерти и висят дольше клубов.
+	local steam = Instance.new("ParticleEmitter")
+	steam.Texture = PUFF_TEXTURE
+	steam.Color = ColorSequence.new(white)
+	steam.LightInfluence = 0.6
+	steam.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.5),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	steam.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.8 * scale),
+		NumberSequenceKeypoint.new(1, 2.5 * scale),
+	})
+	steam.Lifetime = NumberRange.new(1.2, 1.8)
+	steam.Speed = NumberRange.new(2, 5)
+	steam.Acceleration = Vector3.new(0, 4, 0)
+	steam.Rotation = NumberRange.new(0, 360)
+	steam.SpreadAngle = Vector2.new(60, 60)
+	steam.EmissionDirection = Enum.NormalId.Top
+	steam.Rate = 0
+	steam.Parent = anchor
+	steam:Emit(math.floor(12 * scale + 0.5))
+
+	Debris:AddItem(anchor, 2)
+end
+
+-- Развилка по аргументам: цвет третьим шлёт только подрыв дрона (Projectile.burst),
+-- вид взрыва четвёртым — удар по области при смерти (Effects.applyKillDamage, поле blast).
+-- Порох и Взрыв шлют два аргумента, как и шлали.
+local function onExplosion(position, radius, droneColor, blast, color)
 	if droneColor then
 		droneBlast(position, radius, droneColor)
+	elseif blast == "cloud" then
+		cloudBlast(position, radius, color)
 	else
 		onPyroExplosion(position, radius)
 	end

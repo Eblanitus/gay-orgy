@@ -754,7 +754,8 @@ local function applyKillDamage(target, elementData)
 		end
 	end
 
-	ExplosionRemote:FireAllClients(position, plan.radius)
+	-- Вид взрыва (blast) и цвет элемента — клиенту: облако лопается паром, а не огнём.
+	ExplosionRemote:FireAllClients(position, plan.radius, nil, plan.blast, elementData.color)
 	if Effects.OnImpulseBlast then
 		Effects.OnImpulseBlast(position, plan.radius)
 	end

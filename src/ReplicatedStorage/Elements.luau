@@ -79,10 +79,12 @@
 --                                подброс: цель летит по дуге в случайную точку карты (Атмосфера)
 --   conductive = true            цель начинает проводить электричество (Плавление: Лава,
 --                                Вулкан). То же самое делает Мокрый (wet)
---   killDamage = { radius, damage | damagePerMaxHp + minDamage/maxDamage, spreadElement }
+--   killDamage = { radius, damage | damagePerMaxHp + minDamage/maxDamage, spreadElement, blast }
 --                                удар по площади в момент смерти цели. spreadElement — ключ
 --                                элемента, чьи эффекты получают задетые: Океан льёт Мокрость
---                                ("Water"), Облако и Дождь — Ошпаривание ("Steam")
+--                                ("Water"), Облако и Дождь — Ошпаривание ("Steam").
+--                                blast = "cloud" — клиент рисует облачный взрыв (клубы пара)
+--                                вместо огненного (Облако, Дождь, Снег)
 --   killZone = { duration, radius | radiusScale, damagePerSecond, growth, slowPercent,
 --                spreadElement, charges, dries, extendOnKill, radiusOnKill, unlimited }
 --                                зона на месте смерти, одна на турель: новая вытесняет
@@ -412,7 +414,7 @@ local Elements = {
 		-- Облачность: носитель разрывается в момент смерти и ошпаривает соседей.
 		-- Сам эффект берётся у Пара по ключу, а не выписывается вторым комплектом цифр:
 		-- два описания одного и того же Ошпаривания разошлись бы на первой же правке баланса.
-		killDamage = { radius = 8, damage = 20, spreadElement = "Steam" },
+		killDamage = { radius = 8, damage = 20, spreadElement = "Steam", blast = "cloud" },
 	},
 	Smog = {
 		name = "Смог",
@@ -848,7 +850,7 @@ local Elements = {
 		slowDuration = 3,
 		-- Две части одного события: сначала удар по области с ошпариванием,
 		-- потом на том же месте повисает туча и мочит всех под собой.
-		killDamage = { radius = 10, damage = 30, spreadElement = "Steam" },
+		killDamage = { radius = 10, damage = 30, spreadElement = "Steam", blast = "cloud" },
 		killZone = { radius = 10, duration = 8, spreadElement = "Water" },
 	},
 	Snow = {
@@ -865,7 +867,7 @@ local Elements = {
 		attackSlowPercent = 0.5,
 		regen = { slow = 0.4, duration = 5 },
 		-- Взрыв, а за ним снежное облако с тем же Охлаждением, что у Холода.
-		killDamage = { radius = 9, damage = 35 },
+		killDamage = { radius = 9, damage = 35, blast = "cloud" },
 		killZone = { radius = 10, duration = 8, spreadElement = "Cold" },
 	},
 	Frost = {
