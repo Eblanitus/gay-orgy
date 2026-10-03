@@ -756,8 +756,9 @@ return function(deps)
 	end
 
 	-- Нарастание урона (Кирпич, Стена): множитель растёт за каждое попадание по одной и той
-	-- же цели и сбрасывается после plan.hits ступеней. Первый выстрел всегда обычный —
-	-- это награда за долгую цель, а не бесплатная прибавка к каждому выстрелу.
+	-- же цели, через plan.hits ступеней упирается в потолок и держится на нём до смерти цели —
+	-- «нет таймера сброса». Первый выстрел всегда обычный: это награда за долгую цель,
+	-- а не бесплатная прибавка к каждому выстрелу.
 	local function rampMultiplier(target, elementData)
 		local plan = elementData.damageRamp
 
@@ -766,10 +767,7 @@ return function(deps)
 		ramps[target][elementData] = entry
 
 		local multiplier = 1 + plan.step * entry.hits
-		entry.hits += 1
-		if entry.hits > plan.hits then
-			entry.hits = 0
-		end
+		entry.hits = math.min(entry.hits + 1, plan.hits)
 
 		return multiplier
 	end
