@@ -767,13 +767,13 @@ return function(deps)
 		addPush(target, toSource.Unit * math.min(plan.distance, math.max(0, gap - 4)))
 	end
 
-	-- Подброс (Атмосфера): сторона и расстояние случайные, поэтому жук иногда
-	-- оказывается ближе к выходу, чем был. Так в документе и задумано.
+	-- Подброс (Атмосфера): жук улетает в случайную точку карты на случайной высоте,
+	-- поэтому иногда оказывается ближе к выходу, чем был. Так в документе и задумано.
+	-- Куда можно приземлиться и как лететь, знает сервер (EnemySpawner, Effects.OnToss).
 	local function applyToss(target, elementData)
-		local plan = elementData.toss
-		local angle = math.random() * 2 * math.pi
-		local distance = plan.min + math.random() * (plan.max - plan.min)
-		addPush(target, Vector3.new(math.cos(angle), 0, math.sin(angle)) * distance)
+		if Effects.OnToss then
+			Effects.OnToss(target, elementData.toss)
+		end
 	end
 
 	-- Нарастание урона (Кирпич, Стена): множитель растёт за каждое попадание по одной и той

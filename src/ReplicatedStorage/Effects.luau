@@ -161,7 +161,9 @@ Effects.OnKillPlant = nil -- function(position, plan, elementData, healScale, th
 
 -- Керамическая статуя (Глина + огонь): статую ставит TowerBuilder, он же решает, есть ли
 -- для неё клетка. Возвращает true, если жук стал статуей и из боя вышел.
-Effects.OnPetrify = nil -- function(target, plan): boolean
+Effects.OnPetrify = nil
+-- Подброс Атмосферы: полёт в случайную точку карты ведёт EnemySpawner.
+Effects.OnToss = nil -- function(target, plan) -- function(target, plan): boolean
 
 -- petrifiable[target] = { expires, plan } — цель в стане Глины: огонь сейчас сделает
 -- из неё статую. Слабые ключи: запись умирает вместе с жуком.

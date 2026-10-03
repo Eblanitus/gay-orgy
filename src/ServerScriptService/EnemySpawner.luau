@@ -425,6 +425,25 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			continue
 		end
 
+		-- Подброс Атмосферы (Effects.OnToss): жук летит по дуге в выбранную точку и сам
+		-- не идёт. Приземлился — маршрут считается заново оттуда, где он упал.
+		local toss = state.toss
+		if toss then
+			local t = math.min((now - toss.start) / toss.duration, 1)
+			local position = toss.from:Lerp(toss.to, t) + Vector3.new(0, toss.height * 4 * t * (1 - t), 0)
+			enemy:PivotTo(CFrame.new(position) * enemy:GetPivot().Rotation)
+			setVelocity((toss.to - toss.from) / toss.duration)
+			if t >= 1 then
+				state.toss = nil
+				state.pathPosition = toss.to
+				climb = nil
+				dirty = true
+				lastRepath = 0
+				enemy:SetAttribute("Tossed", nil)
+			end
+			continue
+		end
+
 		-- Цель сменилась не из-за стройки, а по приказу Координатора или потому, что вышла
 		-- группа работяг (см. EnemyBehavior). Занятость клеток при этом не меняется, и
 		-- Grid.Changed не срабатывает — пометить маршрут устаревшим некому, кроме этого флага.
@@ -1372,6 +1391,39 @@ end
 local Lithosphere = require(ServerScriptService:WaitForChild("Lithosphere"))
 Effects.OnTerrain = function(position, plan, _elementData, owner)
 	Lithosphere.Erupt(position, plan, owner)
+end
+
+-- Атмосфера: подброс в случайную точку карты на случайной высоте. Точка — любая
+-- клетка, где жук может стоять (без постройки); летящих и уже подброшенных не трогаем.
+local TOSS_TRIES = 20
+Effects.OnToss = function(enemy, plan)
+	local state = walkers[enemy]
+	if not state or state.toss or state.ally or enemy:GetAttribute("Flying")
+		or EnemyBehavior.CarriedBy(enemy) then
+		return
+	end
+	local from = state.pathPosition or enemy:GetPivot().Position
+	for _ = 1, TOSS_TRIES do
+		local cx, cz = math.random(1, Grid.Cols), math.random(1, Grid.Rows)
+		if Grid.GetBlocker(cx, cz) == nil then
+			local cell = Grid.ToWorld(cx, cz)
+			local to = Vector3.new(cell.X, from.Y, cell.Z)
+			local height = plan.minHeight + math.random() * (plan.maxHeight - plan.minHeight)
+			-- Путь по дуге примерно вдвое длиннее высоты плюс прямая: от него и время.
+			local length = (to - from).Magnitude + height * 2
+			state.toss = {
+				from = from,
+				to = to,
+				height = height,
+				start = os.clock(),
+				duration = math.max(length / plan.speed, 0.5),
+			}
+			enemy:SetAttribute("Tossed", true)
+			enemy:SetAttribute("Push", nil)
+			print(("[Атмосфера] %s подброшен в клетку (%d,%d) на высоту %.1f"):format(enemy.Name, cx, cz, height))
+			return
+		end
+	end
 end
 
 -- Мыло: жук переходит на сторону игрока навсегда (документ дебаффов v2, «Очищение»).
