@@ -160,7 +160,9 @@ return function(deps)
 		end
 
 		table.insert(zones, zone)
-		zone.visual = spawnZoneVisual(position, radius, plan.duration, elementData.color)
+		-- Продлеваемую зону (Звезда) гасит тик-цикл в Effects, а не Debris по сроку.
+		local visualLife = plan.extendOnKill and 3600 or plan.duration
+		zone.visual = spawnZoneVisual(position, radius, visualLife, elementData.color)
 		return zone
 	end
 

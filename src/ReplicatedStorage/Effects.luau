@@ -559,6 +559,72 @@ local function applyChain(target, elementData, damage)
 	end
 end
 
+-- Звезда кормится убийствами: зона живёт дольше, растёт и краснеет. На пороге
+-- (plan.dwarf.threshold) она взрывается — удар по всей зоне силой нескольких секунд
+-- её горения — и сжимается в белого карлика: маленький радиус, урон в разы выше,
+-- рост по-прежнему без потолка. Карлика убийства только продлевают, зону не раздувают.
+local STAR_RED = Color3.fromRGB(255, 55, 25)
+local DWARF_COLOR = Color3.fromRGB(235, 245, 255)
+
+local function setZoneVisual(zone, color)
+	local disc = zone.visual
+	if disc and disc.Parent then
+		disc.Size = Vector3.new(disc.Size.X, zone.radius * 2, zone.radius * 2)
+		disc.Color = color
+	end
+end
+
+local function feedStar(zone, plan, elementData, target)
+	local dwarf = plan.dwarf
+	if zone.dwarf then
+		zone.expires += dwarf.extendOnKill
+		print(("[Эффект] %s: белый карлик кормится смертью %s, +%.1f сек")
+			:format(elementData.name, target.Name, dwarf.extendOnKill))
+		return
+	end
+
+	zone.expires += plan.extendOnKill
+	zone.radius += plan.radiusOnKill or 0
+	zone.kills = (zone.kills or 0) + 1
+	print(("[Эффект] %s кормит свою зону смертью %s: +%.1f сек, радиус %.1f, убийств %d")
+		:format(elementData.name, target.Name, plan.extendOnKill, zone.radius, zone.kills))
+
+	if not dwarf or zone.kills < dwarf.threshold then
+		local redness = dwarf and zone.kills / dwarf.threshold or 1
+		setZoneVisual(zone, elementData.color:Lerp(STAR_RED, redness))
+		return
+	end
+
+	local now = os.clock()
+	local perSecond = zone.damagePerSecond + (zone.growth or 0) * (now - zone.born)
+	local blast = math.floor(perSecond * dwarf.blastSeconds + 0.5)
+	local hits = damageAround(zone.position, zone.radius, blast, nil, nil, elementData,
+		elementData.name .. " (взрыв)")
+	ExplosionRemote:FireAllClients(zone.position, zone.radius)
+	if Effects.OnAreaBlast then
+		Effects.OnAreaBlast(zone.position, zone.radius, blast, elementData)
+	end
+
+	zone.dwarf = true
+	zone.radius = dwarf.radius
+	zone.damagePerSecond = perSecond * dwarf.powerScale
+	zone.born = now
+	setZoneVisual(zone, DWARF_COLOR)
+	print(("[Эффект] %s взрывается: %d урона по %d жукам, белый карлик жжёт %.0f в секунду")
+		:format(elementData.name, blast, hits, zone.damagePerSecond))
+end
+
+-- «Определённое время жизни зоны после последнего выстрела»: пока турель Звезды
+-- попадает, её зона (и карлик) не гаснет раньше полного срока от этого попадания.
+local function keepStarAlive(owner, elementData)
+	local life = os.clock() + elementData.killZone.duration
+	for _, zone in zones do
+		if zone.owner == owner and zone.element == elementData and zone.expires < life then
+			zone.expires = life
+		end
+	end
+end
+
 -- Зона-модификатор местности на месте смерти (Землетрясение, v2.2.1). Радиус — по габариту
 -- трупа, а не по таблице: форма зоны — свойство того, кто умер.
 -- Светящийся диск (spawnZoneVisual) — чисто картинка поверх той же записи: без него
@@ -575,10 +641,7 @@ local function applyKillZone(target, elementData, owner)
 		for _, zone in zones do
 			if zone.element == elementData and zone.owner == owner
 				and (position - zone.position).Magnitude <= zone.radius then
-				zone.expires += plan.extendOnKill
-				zone.radius += plan.radiusOnKill or 0
-				print(("[Эффект] %s кормит свою зону смертью %s: +%.1f сек, радиус %.1f")
-					:format(elementData.name, target.Name, plan.extendOnKill, zone.radius))
+				feedStar(zone, plan, elementData, target)
 				return
 			end
 		end
@@ -718,6 +781,10 @@ function Effects.Apply(target, elementData, damage, source, owner)
 
 	if elementData.chain and damage > 0 then
 		applyChain(target, elementData, damage)
+	end
+
+	if owner and damage > 0 and elementData.killZone and elementData.killZone.extendOnKill then
+		keepStarAlive(owner, elementData)
 	end
 
 	-- Плазма бьёт снарядом без урона — у неё в счёт идёт горение за секунду. Мёртвую цель
@@ -904,6 +971,11 @@ task.spawn(function()
 			local zone = zones[i]
 			if now >= zone.expires or (zone.charges and zone.charges <= 0) then
 				table.remove(zones, i)
+				-- Диск гасится вместе с зоной: продлённую (Звезда) или разряженную
+				-- (Уголь) зону Debris по первоначальному сроку не догонит.
+				if zone.visual then
+					zone.visual:Destroy()
+				end
 			elseif zone.damagePerSecond or zone.spread or zone.slowElement or zone.dries then
 				-- Урон зоны идёт мимо брони — это огонь на земле, а не удар снаряда,
 				-- и растёт от возраста зоны (Звезда), поэтому считается каждый тик заново.
