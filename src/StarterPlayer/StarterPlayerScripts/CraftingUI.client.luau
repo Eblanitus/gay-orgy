@@ -356,16 +356,10 @@ local function selectTab(name)
 	end
 	Theme.Status(statusLabel, name, TAB_STATUS[name] or "")
 	Theme.SetScene(root, TAB_SCENE[name] or "lab")
-	-- У производителя и справочника свои окна во всю ширину (CraftingProducer,
-	-- ReferenceFrame): общая шапка окна и строка статуса под ней им не нужны.
+	-- У всех трёх разделов свои окна во всю ширину (CraftingProducer, ReferenceFrame;
+	-- стол — с #282): общая шапка окна и строка статуса под ней им не нужны.
 	for _, inst in { title, matterLabel, closeButton, headerRule, footerRule, statusLabel } do
-		inst.Visible = name == "Крафт"
-	end
-	-- Помеха — только на глазах у игрока: первую вкладку выбирают ещё при сборке окна.
-	-- У производителя и справочника общей помехи нет: их мониторы раскрываются сами,
-	-- а своя помеха производителя — только по сменившейся ячейке апгрейдера (Show.Noise).
-	if gui.Enabled and name == "Крафт" then
-		Theme.Static()
+		inst.Visible = false
 	end
 end
 
@@ -400,8 +394,8 @@ local buyFrame = CraftingBuyTabExports.buyFrame
 local buyCountLabels = CraftingBuyTabExports.buyCountLabels
 -- Экран производителя: режимы «Купить», «Рулетка», «Апгрейдер» (buildProducer) — в модуле CraftingProducer.
 local CraftingProducerExports = require(script.Parent:WaitForChild("CraftingProducer"))({ReplicatedStorage = ReplicatedStorage, Remotes = Remotes, inventory = inventory, Theme = Theme, Elements = Elements, TextService = TextService, buyFrame = buyFrame, gui = gui, BASE_ORDER = BASE_ORDER, RequestBuyElement = RequestBuyElement, Settings = Settings, MobileUI = MobileUI, GuiService = GuiService, InventoryChanged = InventoryChanged})
--- Вкладка «Крафт»: слоты, кнопка, список инвентаря, подтверждение крафта — в модуле CraftingCraftTab.
-local CraftingCraftTabExports = require(script.Parent:WaitForChild("CraftingCraftTab"))({body = body, tabFrames = tabFrames, MobileUI = MobileUI, Theme = Theme, Elements = Elements, Recipes = Recipes, knownRecipes = knownRecipes, inventory = inventory, root = root, RequestCraft = RequestCraft})
+-- Вкладка «Крафт»: алхимический стол со своим окном (#282) — в модуле CraftingCraftTab.
+local CraftingCraftTabExports = require(script.Parent:WaitForChild("CraftingCraftTab"))({tabFrames = tabFrames, MobileUI = MobileUI, Theme = Theme, Elements = Elements, Recipes = Recipes, knownRecipes = knownRecipes, inventory = inventory, root = root, gui = gui, Remotes = Remotes, RequestCraft = RequestCraft})
 local refreshInventoryList = CraftingCraftTabExports.refreshInventoryList
 -- Вкладка «Справочник»: граф рецептов — рисование, кривые, перемещение и масштаб карты — в модуле CraftingReference.
 local CraftingReferenceExports = require(script.Parent:WaitForChild("CraftingReference"))({Theme = Theme, tabFrames = tabFrames, MobileUI = MobileUI, chromeButton = chromeButton, Elements = Elements, knownRecipes = knownRecipes, Graph = Graph, TweenService = TweenService, Recipes = Recipes, gui = gui, UserInputService = UserInputService, RunService = RunService, inventory = inventory, Remotes = Remotes, root = root})
@@ -443,6 +437,7 @@ RecipeLearned.OnClientEvent:Connect(function(resultKey)
 		drawGraph()
 	end
 	refreshBook()
+	CraftingCraftTabExports.onLearned()
 end)
 
 -- Стол привязан к ProximityPrompt (CraftPrompt в CraftInteraction) — окно открывается только после срабатывания
@@ -453,7 +448,7 @@ end)
 -- уровне файла: там уже упёрлись в предел Luau — 200 локальных на одну функцию.
 ProximityPromptService.PromptTriggered:Connect(function(prompt)
 	local section = ({
-		CraftPrompt = { tab = "Крафт", title = "Стол крафта" },
+		CraftPrompt = { tab = "Крафт", title = "Алхимический стол" },
 		BookPrompt = { tab = "Справочник", title = "Справочник" },
 		ElementPrompt = { tab = "Купить", title = "Производитель" },
 	})[prompt.Name]
@@ -465,12 +460,8 @@ ProximityPromptService.PromptTriggered:Connect(function(prompt)
 		-- под кнопками Roblox навсегда. К столу игрок подходит гораздо позже.
 		applyChrome()
 		gui.Enabled = true
-		-- Производитель и справочник — без раскрытия окна и без помехи: их мониторы
-		-- раскрываются сами (open в buildProducer и ReferenceFrame).
-		if section.tab == "Крафт" then
-			Theme.Open(root)
-			Theme.Static()
-		end
+		-- Без раскрытия окна и без помехи: мониторы всех разделов раскрываются сами
+		-- (open в buildProducer и ReferenceFrame).
 	end
 end)
 

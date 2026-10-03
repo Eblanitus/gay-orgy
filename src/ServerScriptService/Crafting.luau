@@ -74,7 +74,9 @@ function Crafting.RevealAll()
 	return revealed
 end
 
--- Скрещивает два элемента. Возвращает (true, ключ результата, впервые ли) либо (false, причина).
+-- Скрещивает два элемента. Возвращает (true, ключ результата, впервые ли) либо
+-- (false, причина, вид): вид "short" — не хватает штук, "nomix" — пара не смешивается.
+-- Вид нужен столу: «не смешиваются» он запоминает, «не хватает» — нет.
 function Crafting.Craft(a, b)
 	if not Elements[a] or not Elements[b] then
 		return false, "нет такого элемента"
@@ -88,13 +90,13 @@ function Crafting.Craft(a, b)
 	for elementKey, amount in needed do
 		if Inventory.Get(elementKey) < amount then
 			return false, ("не хватает: %s нужно %d, есть %d")
-				:format(Elements[elementKey].name, amount, Inventory.Get(elementKey))
+				:format(Elements[elementKey].name, amount, Inventory.Get(elementKey)), "short"
 		end
 	end
 
 	local resultKey = Recipes.Find(a, b)
 	if not resultKey then
-		return false, ("%s и %s не смешиваются"):format(Elements[a].name, Elements[b].name)
+		return false, ("%s и %s не смешиваются"):format(Elements[a].name, Elements[b].name), "nomix"
 	end
 
 	for elementKey, amount in needed do

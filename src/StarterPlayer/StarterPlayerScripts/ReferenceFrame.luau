@@ -27,11 +27,15 @@ local function place(inst, x, y, w, h)
 end
 
 -- root — окно лаборатории, gui — его ScreenGui, modes — { id, name } по порядку подвала.
-function Frame.Build(root, gui, modes)
+-- opts (необязательно; той же рамкой собран и стол, #282): title — заголовок, placeholder —
+-- подсказка поиска, name — имя вкладки, backdrop(mon, isOn) — свой фон вместо звёзд:
+-- возвращает { paint(w, h), frost(plate, layer) } (пузырьки стола, TableBubbles).
+function Frame.Build(root, gui, modes, opts)
+	opts = opts or {}
 	-- Вкладка лежит прямо на root и сама глухая, как у производителя: закрывает фон окна
 	-- и его шапку. Слой 1 — как у содержимого карты: при общей глубине окна (Global)
 	-- ребёнок ниже рамки лёг бы под неё.
-	local bookFrame = make("Frame", "BookTab", root, 1)
+	local bookFrame = make("Frame", opts.name or "BookTab", root, 1)
 	bookFrame.Size = UDim2.fromScale(1, 1)
 	bookFrame.BackgroundColor3 = Theme.color.panel
 	bookFrame.BackgroundTransparency = 0
@@ -51,14 +55,17 @@ function Frame.Build(root, gui, modes)
 	Theme.Brackets(mon)
 	-- Фон окна — редкие тусклые звёзды (Theme.Stars, #270, #271): свой узор у каждого
 	-- окна. Первым ребёнком рамки, под всем содержимым.
-	local paintDots = Theme.Stars(mon, { zIndex = 1 })
-	local glass = Glass.Mount(mon)
+	local backdrop = opts.backdrop and opts.backdrop(mon, function()
+		return gui.Enabled and bookFrame.Visible
+	end)
+	local paintBackdrop = backdrop and backdrop.paint or Theme.Stars(mon, { zIndex = 1 })
+	local glass = Glass.Mount(mon, backdrop and backdrop.frost)
 
 	local head = make("TextLabel", "Title", mon, 3)
 	head.FontFace = Theme.font.strong
 	head.TextXAlignment = Enum.TextXAlignment.Left
 	head.TextTruncate = Enum.TextTruncate.AtEnd
-	head.Text = "СПРАВОЧНИК"
+	head.Text = opts.title or "СПРАВОЧНИК"
 	Theme.Display(head)
 	head.TextColor3 = Theme.color.accent
 
@@ -67,7 +74,7 @@ function Frame.Build(root, gui, modes)
 	-- в поле пишут, кант горит в полную силу.
 	local searchBox = make("TextBox", "Search", mon, 3)
 	searchBox.ClearTextOnFocus = false
-	searchBox.PlaceholderText = "элемент или жук…"
+	searchBox.PlaceholderText = opts.placeholder or "элемент или жук…"
 	searchBox.Text = ""
 	searchBox.FontFace = Theme.font.body
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
@@ -156,7 +163,7 @@ function Frame.Build(root, gui, modes)
 		local CH = AH - CY - below
 		local MW, MH = CW + px * 2, CY + CH + below
 		place(mon, margin + math.floor((AW - MW) / 2), top + math.floor((AH - MH) / 2), MW, MH)
-		paintDots(math.floor(MW), math.floor(MH))
+		paintBackdrop(math.floor(MW), math.floor(MH))
 
 		local closeW, closeH = by(52, 44), by(34, 44)
 		local closeY = pt + math.max(0, math.floor((titleH - closeH) / 2))
@@ -205,6 +212,9 @@ function Frame.Build(root, gui, modes)
 		modeButtons = modeButtons,
 		searchBox = searchBox,
 		glass = glass,
+		mon = mon,
+		close = close,
+		backdrop = backdrop,
 	}
 end
 
