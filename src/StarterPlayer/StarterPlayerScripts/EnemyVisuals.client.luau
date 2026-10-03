@@ -115,6 +115,14 @@ local function attachVisuals(enemy)
 			fillTransparency = 0.8,
 			outlineColor = Color3.fromRGB(180, 165, 140),
 		},
+		-- Очищенный Мылом: последний в списке — эффектов на нём не бывает, и обводка
+		-- у него постоянная. Зелёная, чтобы своего в общей свалке было видно сразу.
+		{
+			attribute = "Ally",
+			fillColor = Color3.fromRGB(120, 230, 140),
+			fillTransparency = 0.7,
+			outlineColor = Color3.fromRGB(150, 255, 170),
+		},
 	}
 
 	local function updateHealth()
@@ -175,9 +183,20 @@ local function attachVisuals(enemy)
 	enemy:GetAttributeChangedSignal("Confused"):Connect(updateConfusion)
 	enemy:GetAttributeChangedSignal("Amplified"):Connect(updateMark)
 	enemy:GetAttributeChangedSignal("Stunned"):Connect(updateMark)
+	enemy:GetAttributeChangedSignal("Ally"):Connect(updateMark)
 end
 
 for _, enemy in enemiesFolder:GetChildren() do
 	attachVisuals(enemy)
 end
 enemiesFolder.ChildAdded:Connect(attachVisuals)
+
+-- Очищенные Мылом живут в своей папке (см. EnemySpawner). Переезд пересобирает тело
+-- (EnemyRender), поэтому полоска и метки вешаются заново — на новое.
+task.spawn(function()
+	local alliesFolder = Workspace:WaitForChild("Allies")
+	for _, ally in alliesFolder:GetChildren() do
+		task.spawn(attachVisuals, ally)
+	end
+	alliesFolder.ChildAdded:Connect(attachVisuals)
+end)

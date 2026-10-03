@@ -343,6 +343,11 @@ local function watch(folder)
 end
 
 watch(Workspace:WaitForChild("Enemies"))
+-- Очищенные Мылом переезжают в Allies (см. EnemySpawner): тело пересобирается там же,
+-- где жук стоял, — ChildRemoved в Enemies снимает старое, ChildAdded здесь строит новое.
+task.spawn(function()
+	watch(Workspace:WaitForChild("Allies"))
+end)
 task.spawn(function()
 	local arcade = Workspace:WaitForChild("Arcade", 30)
 	local bugs = arcade and arcade:WaitForChild("ArcadeBugs", 30)

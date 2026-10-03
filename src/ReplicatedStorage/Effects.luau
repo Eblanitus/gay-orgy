@@ -244,6 +244,10 @@ Effects.OnAbsorb = nil
 -- ConcreteFloor — он в ServerScriptService, а этот модуль общий.
 Effects.OnTerrain = nil
 
+-- Очищение (Мыло). Переманить жука может только серверный EnemySpawner: он ведёт жука
+-- и знает, ходит ли тот общим циклом. Возвращает true, если жук перешёл на сторону игрока.
+Effects.OnCleanse = nil -- function(target): boolean
+
 -- Сколько урона срезают свойства самого жука до того, как считается броня
 -- (design: alchemy_td_enemies.md, касты 2 и 3). Три источника, все читаются атрибутами:
 --
@@ -685,6 +689,31 @@ end
 -- Необязателен: без него притяжение просто не срабатывает, а не падает.
 -- owner — сама стрелявшая турель. Нужен зонам при убийстве: по вики зона одна на турель,
 -- и новая вытесняет старую той же турели. Без него зоны просто не вытесняются.
+-- Что видно на цели снаружи от эффектов. Снимается при очищении вместе с таблицами:
+-- атрибут, оставшийся без записи в таблице, уже никто бы не погасил.
+local CLEANSED_ATTRIBUTES = {
+	"Amplified", "ArmorShred", "AttackSlowPercent", "Bleeding", "Blinded", "Burning",
+	"Confused", "ConfusedDirection", "ConfusedUntil", "Infected", "Molten", "Primed",
+	"Push", "RegenScale", "Scorched", "SlowPercent", "Stunned", "StunnedUntil",
+	"Weakened", "Wet",
+}
+
+-- Очищение (Мыло, документ дебаффов v2): с цели снимается всё сразу — стеки, замедления,
+-- метки, накопления, порча, блокировка регенерации, в том числе вечная от Яда.
+-- Новых не ляжет: очищенный живёт в своей папке, и ни снаряды, ни площадь, ни зоны его не видят.
+function Effects.Cleanse(target)
+	for _, byTarget in { effects, slows, marks, counters, ramps, debuffs, dryings, primed,
+		growingSlows, blinds, stunCooldowns, kindMarks, pulls, catalysts, fuels, infections, regens } do
+		byTarget[target] = nil
+	end
+	for _, attribute in MARK_ATTRIBUTE do
+		target:SetAttribute(attribute, nil)
+	end
+	for _, attribute in CLEANSED_ATTRIBUTES do
+		target:SetAttribute(attribute, nil)
+	end
+end
+
 function Effects.Apply(target, elementData, damage, source, owner)
 	damage = damage or 0
 
@@ -747,6 +776,13 @@ function Effects.Apply(target, elementData, damage, source, owner)
 				Effects.OnTerrain(target:GetPivot().Position, elementData.terrain, elementData, owner)
 			end
 		end
+		return
+	end
+
+	-- Очищение — раньше всех эффектов: перешедшему на сторону игрока ничего из этого
+	-- выстрела уже не положено. Не перешёл (летун, Лицехват) — Мыло ему просто урон.
+	if elementData.cleanse and Effects.OnCleanse and Effects.OnCleanse(target) then
+		Effects.Cleanse(target)
 		return
 	end
 

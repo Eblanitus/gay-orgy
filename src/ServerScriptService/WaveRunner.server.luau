@@ -131,6 +131,14 @@ local function clearArena()
 		enemy:Destroy()
 	end
 
+	-- Очищенные Мылом — тоже жуки этого забега: в новый они не переходят.
+	local allies = Workspace:FindFirstChild("Allies")
+	if allies then
+		for _, ally in allies:GetChildren() do
+			ally:Destroy()
+		end
+	end
+
 	for _, tower in towersFolder:GetChildren() do
 		tower:Destroy()
 	end

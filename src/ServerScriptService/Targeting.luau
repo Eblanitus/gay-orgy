@@ -51,7 +51,7 @@ local sightExclude = {}
 
 local function rebuildExclude()
 	table.clear(sightExclude)
-	for _, name in { "Enemies", "Corpses", "Projectiles", "EnemyStructures" } do
+	for _, name in { "Enemies", "Allies", "Corpses", "Projectiles", "EnemyStructures" } do
 		local folder = Workspace:FindFirstChild(name)
 		if folder then
 			table.insert(sightExclude, folder)
@@ -75,7 +75,8 @@ for _, player in Players:GetPlayers() do
 end
 -- Папки трупов и снарядов заводятся лениво, уже после загрузки этого модуля.
 Workspace.ChildAdded:Connect(function(child)
-	if child.Name == "Corpses" or child.Name == "Projectiles" or child.Name == "EnemyStructures" then
+	if child.Name == "Corpses" or child.Name == "Projectiles" or child.Name == "EnemyStructures"
+		or child.Name == "Allies" then
 		rebuildExclude()
 	end
 end)

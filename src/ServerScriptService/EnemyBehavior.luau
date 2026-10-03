@@ -60,8 +60,10 @@ EnemyBehavior.Spawn = nil
 
 -- ============================ Общее ============================
 
+-- Очищенный Мылом (атрибут Ally) для трейтов всё равно что мёртв: копать, строить,
+-- лечить и звать своих он больше не будет — он теперь на стороне игрока.
 local function alive(enemy)
-	return enemy.Parent ~= nil and (enemy:GetAttribute("HP") or 0) > 0
+	return enemy.Parent ~= nil and (enemy:GetAttribute("HP") or 0) > 0 and not enemy:GetAttribute("Ally")
 end
 
 local function flat(v)
@@ -130,6 +132,23 @@ end
 function EnemyBehavior.Goal(enemy, enemyData, state)
 	local goal = enemyData.goal
 
+	-- Очищенный (Мыло) идёт к ближайшему наземному врагу — драться. Врагов нет —
+	-- стоит, где стоял, и ждёт следующей волны.
+	if state.ally then
+		local position = enemy:GetPivot().Position
+		local best, bestDistance = enemy, math.huge
+		for _, other in enemiesFolder:GetChildren() do
+			if alive(other) and not other:GetAttribute("Flying") then
+				local distance = flat(other:GetPivot().Position - position).Magnitude
+				if distance < bestDistance then
+					best, bestDistance = other, distance
+				end
+			end
+		end
+		local cx, cz = Grid.ToCell(best:GetPivot().Position)
+		return cx, cz, "ally"
+	end
+
 	-- Группа работяг вышла и встретила турель, или солдатам её указал Координатор —
 	-- турель перебивает любую свою цель. Сносят её той же общей грызнёй: подошли
 	-- вплотную — постройка встала переградой на пути, и механика грызни сама её ломает.
@@ -192,6 +211,10 @@ function EnemyBehavior.Arrived(enemy, enemyData, state, mode)
 		return nil -- турель стоит переградой, её грызёт обычная механика
 	end
 
+	if mode == "ally" then
+		return nil -- очищенный дошёл до врага: дальше кусает его, см. EnemySpawner
+	end
+
 	return "breach"
 end
 
@@ -233,7 +256,7 @@ local GROUP_RADIUS = 18
 -- и есть. Турелей нет вовсе — паниковать не от чего.
 function EnemyBehavior.Damaged(enemy, enemyData, state)
 	local panic = enemyData.panic
-	if not panic then
+	if not panic or state.ally then
 		return -- Хмурый брон слеп: не видит турели и не пугается
 	end
 
@@ -260,6 +283,11 @@ end
 -- Что жук делает этот кадр: nil — идёт по маршруту, "flee" — отходит, "hold" — стоит.
 function EnemyBehavior.State(enemy, enemyData, state)
 	local now = os.clock()
+
+	-- Очищенный (Мыло) живёт без касты: ни паники, ни трейтов — только идёт и дерётся.
+	if state.ally then
+		return nil
+	end
 
 	-- Трейт держит жука на месте (копает, маскируется, нацеливается, строит).
 	if state.holdUntil and now < state.holdUntil then
