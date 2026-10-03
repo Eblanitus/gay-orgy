@@ -121,6 +121,11 @@ local pulls = {}
 -- чужое горение, поэтому читается в момент, когда стек ложится.
 local catalysts = {}
 
+-- fuels[target] = burnBoost Угля. Тоже катализатор, но другой: Кислород ускоряет тики,
+-- Уголь делает сильнее каждый тик огня на цели — и своего, и чужого, и уже висящего.
+-- Поэтому множитель читается в тик-цикле, а не в момент, когда ложится стек.
+local fuels = {}
+
 -- infections[target] = { plan, name } — Болотный. Отдельно от slows: он расходится сам —
 -- тик-цикл ищет соседей каждого заражённого и заражает их тем же планом.
 local infections = {}
@@ -834,6 +839,12 @@ function Effects.Apply(target, elementData, damage, source)
 		applyCatalyst(target, elementData)
 	end
 
+	if elementData.burnBoost and not fuels[target] then
+		fuels[target] = elementData.burnBoost
+		print(("[Эффект] %s подпитывает горение на %s: огонь ×%.2f до смерти цели")
+			:format(elementData.name, target.Name, elementData.burnBoost.powerScale))
+	end
+
 	if elementData.regen then
 		applyRegen(target, elementData)
 	end
@@ -1037,7 +1048,7 @@ task.spawn(function()
 		-- Метки Пыли и Пороха срока не имеют и снимаются только вместе с целью, разгон
 		-- Кирпича и кулдаун стана — тоже: здесь только уборка, иначе таблицы держали бы
 		-- ссылки на всех убитых жуков забега. Счётчики притяжения и катализаторы — туда же.
-		for _, byTarget in { marks, primed, ramps, stunCooldowns, growingSlows, pulls, catalysts } do
+		for _, byTarget in { marks, primed, ramps, stunCooldowns, growingSlows, pulls, catalysts, fuels } do
 			for target in pairs(byTarget) do
 				if not target.Parent or (target:GetAttribute("HP") or 0) <= 0 then
 					byTarget[target] = nil
@@ -1094,6 +1105,10 @@ task.spawn(function()
 						local totalDamage = 0
 						for _, stack in stacks do
 							totalDamage += stack.damagePerTick
+						end
+						local fuel = fuels[target]
+						if fuel and elementData.ignites then
+							totalDamage = math.floor(totalDamage * fuel.powerScale + 0.5)
 						end
 						totalDamage = Effects.ApplyArmor(target, totalDamage, elementData)
 

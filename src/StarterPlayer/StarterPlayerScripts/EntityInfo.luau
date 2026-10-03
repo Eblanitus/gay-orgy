@@ -422,6 +422,7 @@ EntityInfo.ELEMENT_EFFECTS = {
 	{ field = "slowGrowth", label = "накапливающееся замедление" },
 	{ field = "slowRamp", label = "застывание" },
 	{ field = "burnCatalyst", label = "улучшает горение" },
+	{ field = "burnBoost", label = "усиливает горение" },
 	{ field = "amplifier", label = "усиливает эффекты" },
 	{ field = "blind", label = "слепота" },
 	{ field = "confusion", label = "сбивает с пути" },
