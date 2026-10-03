@@ -1094,6 +1094,11 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 	if enemyData.swarm then
 		enemy:SetAttribute("Swarm", true)
 	end
+	-- Скорость регена — наружу числом: кровотечение бьёт тем сильнее, чем быстрее
+	-- жук заживает (Effects), а про Enemies тот не знает.
+	if enemyData.regen then
+		enemy:SetAttribute("Regen", enemyData.regen.amount)
+	end
 	if enemyData.flying then
 		-- Атрибутом, а не только полем в Enemies: по нему турели отличают воздушные цели
 		-- от наземных (Towers[тип].targets, задача #53), а Targeting таблицу врагов не требует

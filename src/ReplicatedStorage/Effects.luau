@@ -135,6 +135,11 @@ local infections = {}
 -- как не знает про грызню (Weakened) и про броню (ArmorShred).
 local regens = {}
 
+-- Кровотечение-парадокс (дебаффы v2): тик кровотечения растёт от скорости регена цели.
+-- Множитель 1 + реген/BLEED_REGEN_REF, где реген — HP в секунду с учётом RegenScale:
+-- анти-реген ослабляет и кровь, а заживление после разморозки Льда — усиливает.
+local BLEED_REGEN_REF = 10
+
 -- Множитель от метки указанного рода. Лежит здесь, а не рядом с остальными метками:
 -- его читает AfterArmor выше по файлу, а локальная функция должна быть объявлена до него.
 local function markScale(target, kind, field)
@@ -1215,6 +1220,11 @@ task.spawn(function()
 						local fuel = fuels[target]
 						if fuel and elementData.ignites then
 							totalDamage = math.floor(totalDamage * fuel.powerScale + 0.5)
+						end
+						local regen = elementData.bleeds
+							and (target:GetAttribute("Regen") or 0) * (target:GetAttribute("RegenScale") or 1)
+						if regen and regen > 0 then
+							totalDamage = math.floor(totalDamage * (1 + regen / BLEED_REGEN_REF) + 0.5)
 						end
 						totalDamage = Effects.ApplyArmor(target, totalDamage, elementData)
 
