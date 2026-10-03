@@ -4,7 +4,8 @@
 --   1. Studio → Avatar/Home → Import 3D, по очереди все шесть файлов из папки «Модели/Жуки»:
 --      mini_beetle.glb, hmuryi_bron.glb, moth.glb, worker_beetle.glb, builder_beetle.glb,
 --      pelican_beetle.glb. Настройки импорта — по умолчанию. Импорт ляжет в Workspace
---      моделью с именем файла (worker_beetle и т.д.), так его скрипт и находит.
+--      моделью AuxScene — переименовать в имя файла (worker_beetle и т.д.), по нему скрипт
+--      и находит импорт.
 --   2. View → Command Bar, вставить весь файл, Enter. В Output — отчёт по каждому жуку.
 --   3. Ctrl+S / Save to Roblox.
 -- Отменить: Ctrl+Z сразу после запуска.
@@ -19,6 +20,7 @@
 --   * BeetleBodyInner / abdomen → AbdomenCore (вместе с ThoraxCore — коллайдер и хитбокс);
 --   * Root — копия Root у NormalBeetleTemplate: на 1 стад выше ступней, смотрит на голову;
 --   * шаблон кладётся в ReplicatedStorage под именем из Enemies.luau, сам импорт удаляется.
+--   * цвета деталей — из таблицы COLORS (сняты с материалов .glb: Import 3D их теряет).
 -- Цвета остаются авторскими: атрибутов Color* у новых шаблонов нет, игра их не перекрашивает.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
@@ -59,13 +61,131 @@ local SPECS = {
 	},
 }
 
+-- Цвета из .glb (baseColorFactor, линейные): Import 3D их не переносит, детали приходят серыми.
+-- Группа — один цвет: { r, g, b, имена деталей..., alpha = непрозрачность, если не 1 }.
+-- Имя ищется целиком, затем без цифр в конце, без «_L/_R», затем по началу имени (cheek_L → cheek).
+-- Крыльям Моли цвет даёт текстура (TextureID) — их Color не трогается.
+local COLORS = {
+	MiniBeetleTemplate = {
+		{ 0.254, 0.068, 0.014, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "MandibleBase", "MandibleJoint", "BeetleBodyInner", "BeetleNeckBottom", "BeetleNeckTop", "BeetlePlate", "BeetleSternite", "ROOT", "HeadBase", "AntNode", "AntSeg" },
+		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia", "MandibleTip", "Tooth1" },
+		{ 0.045, 0.05, 0.04, "Tarsus2" },
+		{ 0.01, 0.008, 0.008, "Eye" },
+	},
+	ArmoredBeetleTemplate = {
+		{ 0.023, 0.015, 0.009, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "HeadBase", "BeetleBodyInner", "BeetleNeckBottom", "BeetleNeckTop", "BeetlePlate", "BeetleSternite", "ROOT" },
+		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
+		{ 0.045, 0.05, 0.04, "Tarsus2" },
+		{ 0.107, 0.133, 0.162, "Armor_BeetlePlate", "head_casque", "bite_muscle" },
+		{ 0.042, 0.051, 0.065, "brow_ridge", "part_66", "part_67" },
+		{ 0.254, 0.275, 0.296, "jaw_L", "jaw_R" },
+	},
+	MothTemplate = {
+		{ 0.509, 0.456, 0.371, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "HeadBase", "thorax", "thorax_plate", "part_44", "labial_palp_1", "part_46", "labial_palp_-1" },
+		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
+		{ 0.045, 0.05, 0.04, "Tarsus2" },
+		{ 0.01, 0.008, 0.008, "Eye" },
+		{ 0.03, 0.036, 0.028, "neck_collar", "wing_costa" },
+		{ 0.042, 0.028, 0.018, "part_48" },
+		{ 1, 1, 1, "forewing", "hindwing", alpha = 0.7 },
+	},
+	WorkerBeetleTemplate = {
+		{ 0.147, 0.042, 0.012, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "BeetleBodyInner", "BeetleNeckBottom", "BeetleNeckTop", "BeetleSternite", "ROOT", "BeetlePlate", "HeadBase", "AntNode", "AntSeg" },
+		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
+		{ 0.045, 0.05, 0.04, "Tarsus2" },
+		{ 0.01, 0.008, 0.008, "Eye" },
+		{ 0.027, 0.01, 0.004, "MandibleBase", "MandibleJoint", "MandibleTip", "Tooth1" },
+	},
+	BuilderBeetleTemplate = {
+		{ 0.195, 0.068, 0.019, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "BeetleNeckBottom", "BeetleNeckTop", "BeetleSternite", "ROOT", "BeetlePlate", "BeetleBodyInner", "HeadBase", "AntNode", "AntSeg", "cheek" },
+		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
+		{ 0.045, 0.05, 0.04, "Tarsus2" },
+		{ 0.01, 0.008, 0.008, "Eye" },
+		{ 0.027, 0.01, 0.004, "MandibleBase", "MandibleJoint", "MandibleTip", "Tooth1" },
+		{ 0.687, 0.546, 0.332, "belly_fill" },
+		{ 0.254, 0.144, 0.065, "belly_seam" },
+		{ 0.068, 0.023, 0.007, "shovel" },
+	},
+	PelicanBeetleTemplate = {
+		{ 0.056, 0.021, 0.01, "ThoraxCore", "AnkleJoint", "Femur", "KneeJoint", "BeetleSternite", "ROOT", "BeetlePlate", "BeetleBodyInner", "AntNode", "AntSeg", "HeadBase", "neck" },
+		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
+		{ 0.045, 0.05, 0.04, "Tarsus2" },
+		{ 0.687, 0.651, 0.539, "Eye" },
+		{ 0.023, 0.01, 0.005, "MandibleBase", "MandibleJoint", "MandibleTip", "Tooth1" },
+		{ 0.624, 0.552, 0.392, "beak_tooth" },
+		{ 0.013, 0.006, 0.003, "neck_ruff" },
+		{ 0.006, 0.002, 0.001, "abdomen_fold" },
+		{ 0.61, 0.479, 0.296, "wing_membrane", alpha = 0.55 },
+		{ 0.048, 0.019, 0.008, "wing_vein" },
+	},
+}
+-- Детали, у которых цвет в вершинах меша: Color не трогать (у Моли брюшко полосатое).
+local VERTEX_COLORED = { MothTemplate = { AbdomenCore = true } }
+
+local function srgb(x)
+	x = math.clamp(x, 0, 1)
+	return x <= 0.0031308 and x * 12.92 or 1.055 * x ^ (1 / 2.4) - 0.055
+end
+
+local function paint(template)
+	local byName = {}
+	for _, group in COLORS[template.Name] or {} do
+		for i = 4, #group do
+			byName[group[i]] = group
+		end
+	end
+	local function lookup(name)
+		local found = byName[name] or byName[(name:gsub("%d+$", ""))]
+			or byName[(name:gsub("_?[%-%d]+$", ""):gsub("_[LR]$", ""))]
+		if found then
+			return found
+		end
+		for key, group in byName do
+			if name:sub(1, #key) == key then
+				return group
+			end
+		end
+		return nil
+	end
+
+	local keep = VERTEX_COLORED[template.Name] or {}
+	local missing = {}
+	for _, d in template:GetDescendants() do
+		if d:IsA("BasePart") and d.Name ~= "Root" and d.Transparency < 1 then
+			local group = lookup(d.Name)
+			if group then
+				if not keep[d.Name] and not (d:IsA("MeshPart") and d.TextureID ~= "") then
+					d.Color = Color3.new(srgb(group[1]), srgb(group[2]), srgb(group[3]))
+				end
+				d.Material = Enum.Material.SmoothPlastic
+				d.Transparency = 1 - (group.alpha or 1)
+			elseif not keep[d.Name] and d.Name ~= "AbdomenCore" and d.Name ~= "CoxaJoint" then
+				table.insert(missing, d.Name)
+			end
+		end
+	end
+	-- Брюшко и тазики — тем же хитином, что грудь (в .glb у них свой узел без материала).
+	local thorax = template:FindFirstChild("ThoraxCore", true)
+	if thorax then
+		for _, d in template:GetDescendants() do
+			if d:IsA("BasePart") and (d.Name == "AbdomenCore" or d.Name == "CoxaJoint")
+				and d.Transparency < 1 and not keep[d.Name] then
+				d.Color = thorax.Color
+				d.Material = Enum.Material.SmoothPlastic
+			end
+		end
+	end
+	return missing
+end
+
 local LEGS = {
 	"leg_front_left", "leg_front_right",
 	"leg_mid_left", "leg_mid_right",
 	"leg_rear_left", "leg_rear_right",
 }
 local LEG_PARTS = { "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus1", "Tarsus2" }
-local WING_PARTS = { "^forewing$", "^hindwing$", "^wing_costa$", "^wing_membrane$", "^wing_vein" }
+-- Studio дописывает цифру ко второму узлу с тем же именем: hindwing2, wing_costa2.
+local WING_PARTS = { "^forewing%d*$", "^hindwing%d*$", "^wing_costa%d*$", "^wing_membrane%d*$", "^wing_vein" }
 local ANTENNA_PARTS = { "^AntSeg%d", "^AntNode%d" }
 
 local function baseName(name)
@@ -126,6 +246,15 @@ local function prepare(spec, normalRoot)
 	end
 	-- Работа на копии: на любой ошибке исходный импорт остаётся как был.
 	local import = source:Clone()
+
+	-- Import 3D называет деталь по мешу (колено — AntNode1002, голень — Tarsus1006), а имя узла
+	-- .glb отдаёт модели-обёртке (KneeJoint006, Femur006_Node). Детали — имя узла.
+	for _, d in import:GetDescendants() do
+		local p = d.Parent
+		if d:IsA("BasePart") and p:IsA("Model") and #p:GetChildren() == 1 then
+			d.Name = (p.Name:gsub("_Node$", ""))
+		end
+	end
 
 	-- Все детали по базовому имени. Каждая — отдельно, в том числе вложенные друг в друга
 	-- (у Моли полоска крыла сидит внутри меша крыла).
@@ -352,6 +481,7 @@ local function prepare(spec, normalRoot)
 		template:SetAttribute("WingFlapAngle", math.rad(spec.flap.angle))
 	end
 	template.WorldPivot = rootCF
+	local unpainted = paint(template)
 
 	local old = ReplicatedStorage:FindFirstChild(spec.template)
 	if old then
@@ -362,8 +492,9 @@ local function prepare(spec, normalRoot)
 	source:Destroy()
 
 	local _, size = template:GetBoundingBox()
-	return true, ("%d деталей, %.1f × %.1f × %.1f стад (в игре × scale из Enemies.luau)")
-		:format(#parts, size.X, size.Y, size.Z)
+	local note = #unpainted > 0 and ("; без цвета: " .. table.concat(unpainted, ", ")) or ""
+	return true, ("%d деталей, %.1f × %.1f × %.1f стад (в игре × scale из Enemies.luau)%s")
+		:format(#parts, size.X, size.Y, size.Z, note)
 end
 
 local recording = ChangeHistoryService:TryBeginRecording("Шаблоны жуков из .glb")
