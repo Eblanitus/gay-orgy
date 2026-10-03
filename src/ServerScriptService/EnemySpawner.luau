@@ -799,11 +799,11 @@ local function flyToTurret(enemy, enemyData)
 			reserved = target
 			local targetPosition = target:GetPivot().Position + Vector3.new(0, FACEHUGGER_HEIGHT, 0)
 
+			-- Сквозь постройки не летит (задача #331): облетает их поверху и садится на свою
+			-- турель сверху — сначала в точку над ней, потом отвесно вниз на присоску.
 			while enemy.Parent and target.Parent do
 				local position = enemy:GetPivot().Position
-				local delta = targetPosition - position
-				local distance = delta.Magnitude
-				if distance <= FACEHUGGER_ATTACH_RANGE then
+				if (targetPosition - position).Magnitude <= FACEHUGGER_ATTACH_RANGE then
 					break
 				end
 
@@ -811,11 +811,14 @@ local function flyToTurret(enemy, enemyData)
 				if not enemy.Parent then
 					return
 				end
-				local heading = delta.Unit
-				local step = math.min(enemyData.speed * dt, distance)
-				local nextPosition = position + heading * step
-				enemy:PivotTo(CFrame.lookAt(nextPosition, nextPosition + heading) * CFrame.Angles(0, math.pi, 0))
-				enemy:SetAttribute("Velocity", heading * enemyData.speed)
+				local offset = targetPosition - position
+				if Vector3.new(offset.X, 0, offset.Z).Magnitude > 1 then
+					local above = Vector3.new(targetPosition.X,
+						math.max(EnemyBehavior.AboveTower(enemy, target), targetPosition.Y), targetPosition.Z)
+					EnemyBehavior.FlyStep(enemy, above, enemyData.speed, dt, 0.2, true)
+				else
+					EnemyBehavior.FlyStep(enemy, targetPosition, enemyData.speed, dt, 0.2, target)
+				end
 			end
 
 			if enemy.Parent and target.Parent then

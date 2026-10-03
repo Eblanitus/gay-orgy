@@ -332,8 +332,86 @@ end
 
 -- ============================ Летающие ============================
 
+-- Постройки — преграда для Моли и Лицехвата (задача #331): сквозь корпус они не пролетают,
+-- а перелетают поверх. Корпус — коробка модели (GetBoundingBox), раздутая на габарит
+-- летуна. Коробку пересчитываем не чаще раза в полсекунды: обход всех деталей турели
+-- каждый кадр на каждого летуна обходился бы дорого, а турель за это время не сдвинется.
+local BOX_REFRESH = 0.5
+local AVOID_LOOKAHEAD = 6 -- за сколько студов летун «видит» корпус впереди и начинает набирать высоту
+local AVOID_CLEARANCE = 1 -- зазор между летуном и корпусом
+local towerBoxes = setmetatable({}, { __mode = "k" })
+local flyerSizes = setmetatable({}, { __mode = "k" })
+
+local function towerBox(tower)
+	local box = towerBoxes[tower]
+	local now = os.clock()
+	if not box or now - box.at > BOX_REFRESH then
+		local cf, size = tower:GetBoundingBox()
+		box = { cf = cf, half = size / 2, at = now }
+		towerBoxes[tower] = box
+	end
+	return box
+end
+
+-- Габарит летуна: radius — полуразмах по горизонтали (у Моли это крылья), half — полувысота.
+local function flyerSize(enemy)
+	local size = flyerSizes[enemy]
+	if not size then
+		local extents = enemy:GetExtentsSize()
+		size = { radius = math.max(extents.X, extents.Z) / 2, half = extents.Y / 2 }
+		flyerSizes[enemy] = size
+	end
+	return size
+end
+
+-- Высота, выше которой летун над этой постройкой ничего не задевает (по его пивоту).
+local function clearTop(box, size)
+	return box.cf.Position.Y + box.half.Y + size.half + AVOID_CLEARANCE
+end
+
+-- Постройка, в чей раздутый корпус попадает точка. ignore — какую не считать.
+local function blockingTower(point, size, ignore)
+	for _, tower in towersFolder:GetChildren() do
+		if tower ~= ignore then
+			local box = towerBox(tower)
+			local p = box.cf:PointToObjectSpace(point)
+			local h = box.half
+			if math.abs(p.X) < h.X + size.radius + AVOID_CLEARANCE
+				and math.abs(p.Z) < h.Z + size.radius + AVOID_CLEARANCE
+				and math.abs(p.Y) < h.Y + size.half + AVOID_CLEARANCE then
+				return box
+			end
+		end
+	end
+	return nil
+end
+
+-- Куда сдвинуться за шаг, не влетая в постройки. Впереди корпус — летун набирает высоту
+-- на месте; уже выше него — летит ровно, не снижаясь, пока корпус не останется позади.
+-- Оказался внутри (турель поставили прямо под ним) — тоже просто всплывает.
+local function avoidStep(enemy, position, heading, step, reach, ignore)
+	local size = flyerSize(enemy)
+	local at = position + heading * step
+	local ahead = position + heading * math.min(math.max(step, AVOID_LOOKAHEAD), reach)
+	local box = blockingTower(at, size, ignore) or blockingTower(ahead, size, ignore)
+	if not box then
+		return at
+	end
+
+	local level = flat(heading)
+	if position.Y >= clearTop(box, size) and level.Magnitude > 1e-3 then
+		local over = position + level.Unit * step
+		if not blockingTower(over, size, ignore) then
+			return over
+		end
+	end
+	return position + Vector3.new(0, step, 0)
+end
+
 -- Общий шаг любого летуна к точке. Возвращает true, когда долетел.
-local function flyStep(enemy, target, speed, dt, arrive)
+-- avoid — облетать постройки (true; или сама постройка, которую облетать не надо —
+-- Лицехват на последнем отрезке садится на свою турель).
+local function flyStep(enemy, target, speed, dt, arrive, avoid)
 	local position = enemy:GetPivot().Position
 	local delta = target - position
 	local distance = delta.Magnitude
@@ -342,13 +420,30 @@ local function flyStep(enemy, target, speed, dt, arrive)
 	end
 
 	local heading = delta.Unit
-	local at = position + heading * math.min(speed * dt, distance)
-	enemy:PivotTo(CFrame.lookAt(at, at + heading) * CFrame.Angles(0, math.pi, 0))
-	enemy:SetAttribute("Velocity", heading * speed)
+	local step = math.min(speed * dt, distance)
+	local at = position + heading * step
+	if avoid then
+		at = avoidStep(enemy, position, heading, step, distance, typeof(avoid) == "Instance" and avoid or nil)
+	end
+
+	-- Смотрит туда, куда летит; набирая высоту строго вверх — туда, куда собирался.
+	local move = at - position
+	local look = flat(move).Magnitude > 1e-3 and move.Unit or flat(heading)
+	if look.Magnitude < 1e-3 then
+		look = heading
+	end
+	enemy:PivotTo(CFrame.lookAt(at, at + look) * CFrame.Angles(0, math.pi, 0))
+	enemy:SetAttribute("Velocity", move.Magnitude > 1e-3 and move.Unit * speed or Vector3.zero)
 	return false
 end
 
 EnemyBehavior.FlyStep = flyStep
+
+-- Точка над постройкой, где летун её уже не задевает: для Моли (вьётся над турелью)
+-- и Лицехвата (подлетает сверху, а не сквозь корпус).
+function EnemyBehavior.AboveTower(enemy, tower)
+	return clearTop(towerBox(tower), flyerSize(enemy))
+end
 
 -- Летуны со своим циклом движения не ходят по сетке и не толкаются. Каждый цикл кончается
 -- смертью жука — кроме Матки (улетает сама) и Пеликана (садится и дальше идёт пешком).
@@ -371,15 +466,18 @@ local function mothLoop(enemy, enemyData, state)
 		end)
 		local anchor = lit or nearestTurret(enemy:GetPivot().Position)
 		local center = anchor and anchor:GetPivot().Position or LabTable.Position()
+		-- Высота кругов — от верха корпуса турели, а не от её пивота: иначе круги
+		-- проходили сквозь Колбу (её верх ≈ 7.6 над пивотом).
+		local height = anchor and (EnemyBehavior.AboveTower(enemy, anchor) + plan.hover) or (center.Y + plan.hover)
 
 		-- Круги вокруг цели: именно они и есть всё её поведение — «просто летает
 		-- и мешает»: турель тратит на неё выстрелы, которые могла бы потратить на жуков.
 		angle += dt * math.pi * 2 / plan.period
-		local target = center + Vector3.new(
-			math.cos(angle) * plan.orbit,
-			plan.hover,
-			math.sin(angle) * plan.orbit)
-		flyStep(enemy, target, enemyData.speed, dt, 0.4)
+		local target = Vector3.new(
+			center.X + math.cos(angle) * plan.orbit,
+			height,
+			center.Z + math.sin(angle) * plan.orbit)
+		flyStep(enemy, target, enemyData.speed, dt, 0.4, true)
 	end
 end
 
