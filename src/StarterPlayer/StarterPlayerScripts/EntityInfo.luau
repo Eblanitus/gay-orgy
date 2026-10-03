@@ -497,6 +497,58 @@ function EntityInfo.ElementEffects(key, element)
 	return collect(EntityInfo.ELEMENT_EFFECTS, key, element)
 end
 
+-- ============ Останки ============
+-- Что элемент делает с трупом добитого жука (по вики). Порядок — как у сервера
+-- (Effects.RemainsOf): метка при смерти, статуя, свой вид, мокрый, горение, тело.
+EntityInfo.REMAINS_WORDS = {
+	crush = "давит жука в лепёшку",
+	melt = "плавит жука в лужицу",
+	dissolve = "растворяет жука",
+	gib = "разрывает жука, остаются лапы",
+	destroy = "сжигает жука без следа",
+	brittle = "промораживает труп, он лопается",
+	char = "обугливает, труп осыпается",
+	statue = "превращает жука в статую",
+	wet = "оставляет целый труп, тушит горящих",
+	body = "оставляет целый труп",
+}
+
+-- Метки при смерти: труп становится эффектом.
+EntityInfo.TRANSFORM_WORDS = {
+	Hurricane = "труп превращается в зону урагана",
+	Coal = "труп превращается в зону пепла",
+	Rain = "труп взрывается дождевой тучей",
+	Snow = "труп взрывается снежной тучей",
+	AcidRain = "труп превращается в кислотную зону",
+	Drought = "труп превращается в зону засухи",
+	Blizzard = "труп превращается в зону метели",
+	Cloud = "труп взрывается облаком",
+	Mountain = "труп становится горой",
+	Earthquake = "труп превращается в зону землетрясения",
+	Plant = "из трупа вырастает растение",
+	Tree = "из трупа вырастает растение",
+}
+
+-- Строка «останки» карточки элемента; у загадки (Антиматерия) — nil, строки нет.
+function EntityInfo.ElementRemains(key, element)
+	if EntityInfo.MYSTERY[key] then
+		return nil
+	end
+	local words = EntityInfo.REMAINS_WORDS
+	if element.deathMark then
+		return EntityInfo.TRANSFORM_WORDS[key] or "труп превращается в эффект"
+	elseif key == "Clay" then
+		return words.statue
+	elseif element.remains then
+		return words[element.remains]
+	elseif element.wet then
+		return words.wet
+	elseif element.burning or BURNS[key] then
+		return words.char
+	end
+	return words.body
+end
+
 
 -- ============ Характеристики жука словами ============
 -- Как у элементов: оценка словом, а не число. Точка отсчёта — Стандарт (30 HP, скорость 10,
