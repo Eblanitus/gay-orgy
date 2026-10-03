@@ -44,7 +44,7 @@ local WAYPOINT_PASS_BODIES = 4
 local ENEMY_Y = 1.5 -- studs над полом: на этой высоте пивота ноги жука касаются земли
 local REPATH_INTERVAL = 0.25 -- сек; чаще пересчитывать маршрут незачем даже при активной стройке
 local VELOCITY_EPSILON = 0.5 -- studs/сек: насколько должна измениться скорость, чтобы переписать атрибут
-local FACEHUGGER_HEIGHT = 3.6 -- studs над пивотом турели — над стеклянной сферой Колбы, не внутри неё
+local FACEHUGGER_HEIGHT = 3.6 -- studs над пивотом турели — над стеклянной сферой Колбы, не внутри неё (не ниже; выше — если корпус турели выше, см. clingPoint)
 -- Кровь на карте. Раненый жук капает не чаще BLEED_INTERVAL: без паузы тиковые
 -- турели (Испаритель — 5 тиков/сек) заливали бы пол целиком за одну волну. Смерть даёт
 -- отдельное большое пятно с брызгами — именно оно читается как «здесь кого-то убили».
@@ -773,6 +773,24 @@ end
 -- одинаково, отдельно летающих не выделяет. В момент смерти enemy.Destroying снимает и Claimed,
 -- и Suppressed с той, что за ним числилась — «турель немедленно возвращается к работе», как и требует ТЗ,
 -- независимо от того, успел он физически долететь или нет.
+-- Куда Лицехват садится на турель: на её верх над пивотом (луч сверху по самой турели),
+-- но не ниже FACEHUGGER_HEIGHT. Без луча высокая постройка (Станция FPV-дронов, ~19 студов)
+-- глотала его: точка присоски оказывалась внутри корпуса (задача #331).
+local function clingPoint(enemy, target)
+	local pivot = target:GetPivot().Position
+	local lowest = pivot + Vector3.new(0, FACEHUGGER_HEIGHT, 0)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = { target }
+	local from = Vector3.new(pivot.X, EnemyBehavior.AboveTower(enemy, target) + 5, pivot.Z)
+	local hit = Workspace:Raycast(from, Vector3.new(0, pivot.Y - from.Y, 0), params)
+	if not hit then
+		return lowest
+	end
+	local onTop = hit.Position.Y + enemy:GetExtentsSize().Y / 2
+	return Vector3.new(pivot.X, math.max(onTop, lowest.Y), pivot.Z)
+end
+
 local function flyToTurret(enemy, enemyData)
 	local reserved = nil -- турель, которую жук занял: Claimed на подлёте, Suppressed после присасывания
 
@@ -797,7 +815,7 @@ local function flyToTurret(enemy, enemyData)
 			-- друг к другу, выбрали бы одну и ту же ещё свободную турель — именно такой был баг.
 			target:SetAttribute("Claimed", true)
 			reserved = target
-			local targetPosition = target:GetPivot().Position + Vector3.new(0, FACEHUGGER_HEIGHT, 0)
+			local targetPosition = clingPoint(enemy, target)
 
 			-- Сквозь постройки не летит (задача #331): облетает их поверху и садится на свою
 			-- турель сверху — сначала в точку над ней, потом отвесно вниз на присоску.
