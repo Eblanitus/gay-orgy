@@ -50,7 +50,9 @@
 --   armorPierce                 доля брони, которую элемент игнорирует (Обсидиан 1, Металл 0.5)
 --   debuff                      порча самой цели: armorShred, weaken, duration (Кислота)
 --   explosion                   урон по площади в точке попадания: radius, damageShare
---   primer                      метка под взрыв: radius, damageShare, interval, explosionScale
+--   primer                      метка под взрыв: radius, damageShare, explosionScale
+--   ignites = true              огненный урон по времени — Горение, Плавление, Ошпаривание:
+--                                его попадание подрывает метку Пороха (кровотечение, Яд и кислота — нет)
 --   chain                       цепочка по соседям цели: targets, radius, damageShare
 --   killZone                    при убийстве оставляет на месте смерти зону-модификатор
 --                                местности: radiusScale (доля от габарита трупа), duration.
@@ -123,6 +125,7 @@ local Elements = {
 		name = "Огонь",
 		chars = true, -- Горение (дебаффы v2): убитый под ним обугливается (см. PhysicsFX.char)
 		color = Color3.fromRGB(255, 140, 0),
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime", -- урон по времени
 		damagePerSecond = 4,
 		tickInterval = 0.9,
@@ -191,6 +194,7 @@ local Elements = {
 		-- Удвоение Огня: тик вдвое сильнее при том же сроке и том же лимите стеков.
 		-- На выстреле в секунду держится 4 стека — 24 урона в секунду; с задачи #44 это больше
 		-- не «мимо брони» — тики тоже режутся (против брони 5 у Бронированного, задача #47, проходит 19).
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 8,
 		tickInterval = 0.8,
@@ -248,6 +252,7 @@ local Elements = {
 		fireRateBonus = 0.25,
 		-- Смешение Огня и Воды: оба свойства, каждое между родителем и удвоением.
 		-- Своего множителя нет — платит за второе свойство уроном снаряда. Кап снят.
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 4,
 		tickInterval = 0.9,
@@ -267,6 +272,7 @@ local Elements = {
 		damageMultiplier = 2.5,
 		-- Плавление, а не горение: расплавленная цель проводит электричество, как мокрая.
 		conductive = true,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 5,
 		tickInterval = 1,
@@ -354,6 +360,7 @@ local Elements = {
 		-- Чистый огонь шага и первое звено огненной спины: горение сильнее Энергии
 		-- (8 → 14 в секунду), урон снаряда отдан в него же, как у Жара.
 		damageMultiplier = 0.5,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 14,
 		tickInterval = 0.7,
@@ -471,6 +478,7 @@ local Elements = {
 		-- Землетрясения (см. его запись выше): один и тот же архетип, разные вещества,
 		-- поэтому осталось здесь, а не потому что переписали заново.
 		damageMultiplier = 2,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 9,
 		tickInterval = 1.25,
@@ -496,6 +504,7 @@ local Elements = {
 		-- Ошпаривание: горение по факту, но со сроком, который тоже пляшет от скорости —
 		-- на резвой цели держится дольше. damagePerSecond — то же число, что было у прежнего
 		-- горения Гейзера.
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		scald = {
 			damagePerSecond = 5,
 			tickInterval = 1,
@@ -531,6 +540,7 @@ local Elements = {
 		-- то есть 9/сек при том же сроке и лимите стеков. На четырёх стеках — 36 урона
 		-- в секунду; против брони 5 (задача #47, было 3) проходит 31 — тики теперь тоже режутся.
 		damageMultiplier = 1/3, -- удар перенесён в горение: держит удар ровно на 5 (было 15)
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 12,
 		tickInterval = 0.7,
@@ -601,14 +611,15 @@ local Elements = {
 		-- Плоский бонус темпа — тот же, что у Пыли: оба метят цель, а не бьют.
 		fireRateBonus = 0.6,
 		-- Своё свойство: как Пыль, но через взрывоопасность. Сам почти не бьёт (8),
-		-- но помеченная цель взрывается от любого огненного попадания соседней турели,
-		-- а Взрыв по ней бьёт по радиусу вполтора. Метка перманентная, но детонация
-		-- не чаще interval — иначе Плазма с её тремя выстрелами в секунду сносила бы волну целиком.
+		-- но помеченная цель взрывается от попадания Горением, Плавлением или Ошпариванием
+		-- (элементы с ignites), а Взрыв по ней бьёт по радиусу вполтора. После взрыва метка
+		-- спадает — один заряд на одну метку; пометить заново может снова Порох.
 		damageMultiplier = 0.5,
 		primer = {
 			radius = 10,
-			damageShare = 0.8, -- доля урона того попадания, которое подорвало метку
-			interval = 1,
+			-- Доля урона того попадания, которое подорвало метку. У Плазмы урона снаряда нет —
+			-- берётся урон её горения за секунду.
+			damageShare = 0.8,
 			explosionScale = 1.6, -- во сколько раз шире радиус Взрыва по помеченной цели
 		},
 	},
@@ -669,6 +680,7 @@ local Elements = {
 		color = Color3.fromRGB(70, 55, 170),
 		tier = 3,
 		damageMultiplier = 1,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 10,
 		tickInterval = 0.8,
@@ -744,6 +756,7 @@ local Elements = {
 		tier = 3,
 		-- Усиленное горение: 16 в секунду против 12 у Жара, пять базовых в составе.
 		damageMultiplier = 0.6,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 16,
 		tickInterval = 0.8,
@@ -854,6 +867,7 @@ local Elements = {
 		color = Color3.fromRGB(215, 170, 80),
 		tier = 3,
 		damageMultiplier = 1.5,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 12,
 		tickInterval = 0.8,
@@ -944,6 +958,7 @@ local Elements = {
 		-- урон по времени её игнорирует, а резать у Плазмы больше нечего.
 		damageMultiplier = 0,
 		fireRateBonus = 3,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 18,
 		tickInterval = 0.6,
@@ -986,6 +1001,7 @@ local Elements = {
 			resetAfter = 1,
 		},
 		damageMultiplier = 2.5,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 13,
 		tickInterval = 1.5,
@@ -1084,6 +1100,7 @@ local Elements = {
 		color = Color3.fromRGB(255, 250, 210),
 		tier = 4,
 		damageMultiplier = 0.75,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 20,
 		tickInterval = 0.6,
@@ -1165,6 +1182,7 @@ local Elements = {
 		-- Комбо всего сразу: и удар, и горение, и замедление. Девять базовых в составе
 		-- и есть его цена: никакого своего фокуса сверх этого нет.
 		damageMultiplier = 2,
+		ignites = true, -- огненный урон по времени: подрывает метку Пороха
 		damageType = "overtime",
 		damagePerSecond = 18,
 		tickInterval = 0.7,

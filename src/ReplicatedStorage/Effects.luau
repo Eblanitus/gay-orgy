@@ -68,9 +68,8 @@ local debuffs = {}
 -- делает эффект глубже. Наружу уходит сильнейшее из двух (см. refreshSlow).
 local dryings = {}
 
--- primed[target] = { plan, lastBlast, name } — метка Пороха. Перманентная, как метка Пыли,
--- но взводит не эффекты, а взрыв: попадание с уроном по времени детонирует цель.
--- lastBlast — чтобы часто стреляющая турель не взрывала её каждым выстрелом.
+-- primed[target] = { plan, name } — метка Пороха. Взводит не эффекты, а взрыв: попадание
+-- Горением, Плавлением или Ошпариванием детонирует цель, и метка спадает.
 local primed = {}
 
 -- growingSlows[target][elementData] = { hits = N } — Песок: сила замедления копится по
@@ -422,8 +421,9 @@ function Effects.HitDamage(target, elementData, damage)
 	return Effects.AfterArmor(target, damage, elementData)
 end
 
--- Метка Пороха. Однократная и перманентная, как метка Пыли: вторая пороховая турель
--- по той же цели ничего не даёт, а любая огненная рядом становится вдвое полезнее.
+-- Метка Пороха. Однократная: вторая пороховая турель по уже помеченной цели ничего не даёт,
+-- а любая огненная рядом становится вдвое полезнее. Держится до взрыва — после него спадает,
+-- и Порох может пометить цель снова.
 --
 -- Перекрашивает жука клиент (StarterPlayerScripts.EnemyRender) по атрибуту Primed: видимое тело
 -- живёт только у клиента, на сервере от жука остался невидимый якорь. Basalt вместо сгенерированного
@@ -437,24 +437,21 @@ local function applyPrimer(target, elementData)
 		return
 	end
 
-	primed[target] = { plan = elementData.primer, lastBlast = 0, name = elementData.name }
+	primed[target] = { plan = elementData.primer, name = elementData.name }
 	target:SetAttribute("Primed", true) -- по нему клиент красит жука (Basalt, цвет наполовину к чёрному)
 
-	print(("[Эффект] %s метит %s под взрыв до конца жизни цели")
+	print(("[Эффект] %s метит %s под взрыв")
 		:format(elementData.name, target.Name))
 end
 
--- Детонация метки Пороха. «Огненная турель» — это любой элемент с уроном по времени:
--- порох поджигает и горение, и кровотечение, и кислота. Сама помеченная цель и есть заряд,
--- поэтому взрыв бьёт и по ней тоже. У Плазмы урона снаряда нет вовсе, и метку она
--- не подрывает: детонирует удар, а не отрава.
+-- Детонация метки Пороха. Подрывает только огонь — элементы с ignites (Горение, Плавление,
+-- Ошпаривание); кровотечение, Яд и кислота метку не трогают. Сама помеченная цель и есть
+-- заряд, поэтому взрыв бьёт и по ней тоже. Заряд один: метка снимается до урона, чтобы
+-- взрыв не подорвал её второй раз.
 local function detonate(target, damage)
 	local mark = primed[target]
-	local now = os.clock()
-	if now - mark.lastBlast < mark.plan.interval then
-		return
-	end
-	mark.lastBlast = now
+	primed[target] = nil
+	target:SetAttribute("Primed", nil) -- клиент возвращает жуку его цвет
 
 	local blast = math.max(1, math.floor(damage * mark.plan.damageShare + 0.5))
 	local position = target:GetPivot().Position
@@ -469,11 +466,15 @@ end
 
 -- Взрыв — единственное свойство, у которого есть своя площадь: обычно радиус принадлежит
 -- турели, а не тому, чем она залита. По помеченной Порохом цели радиус шире — это и есть
--- заявленная в документе связка «Порох + Взрыв».
+-- заявленная в документе связка «Порох + Взрыв». Метка на этом расходуется, как и от огня.
 local function applyExplosion(target, elementData, damage)
 	local plan = elementData.explosion
 	local mark = primed[target]
 	local radius = plan.radius * (mark and mark.plan.explosionScale or 1)
+	if mark then
+		primed[target] = nil
+		target:SetAttribute("Primed", nil)
+	end
 	local share = math.max(1, math.floor(damage * plan.damageShare + 0.5))
 
 	local position = target:GetPivot().Position
@@ -699,8 +700,11 @@ function Effects.Apply(target, elementData, damage, source)
 		applyChain(target, elementData, damage)
 	end
 
-	if primed[target] and damage > 0 and elementData.damageType == "overtime" then
-		detonate(target, damage)
+	-- Плазма бьёт снарядом без урона — у неё в счёт идёт горение за секунду. Мёртвую цель
+	-- (Apply после добивающего попадания) не подрываем: урона нового нет, а она уже не заряд.
+	if primed[target] and elementData.ignites
+		and (damage > 0 or (target:GetAttribute("HP") or 0) > 0) then
+		detonate(target, math.max(damage, elementData.damagePerSecond or 0))
 	end
 
 	-- Круговая отдача — тоже до проверки на живучесть, по той же причине, что и взрыв:

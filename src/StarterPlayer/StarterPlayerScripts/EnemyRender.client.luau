@@ -220,12 +220,26 @@ local function applyPrimed(entry)
 		return
 	end
 	entry.primed = true
+	-- Исходный облик запоминается: после взрыва метка спадает, и жук возвращает свой цвет.
+	entry.colors = {}
 	for _, part in entry.visual:GetDescendants() do
 		if part:IsA("BasePart") and part.Transparency < 1 then
+			entry.colors[part] = { part.Color, part.Material }
 			part.Material = PRIMED_MATERIAL
 			part.Color = part.Color:Lerp(Color3.new(0, 0, 0), PRIMED_DARKEN)
 		end
 	end
+end
+
+local function clearPrimed(entry)
+	if not entry.primed then
+		return
+	end
+	entry.primed = nil
+	for part, look in entry.colors or {} do
+		part.Color, part.Material = look[1], look[2]
+	end
+	entry.colors = nil
 end
 
 local function buildVisual(model)
@@ -280,6 +294,8 @@ local function track(model)
 	model:GetAttributeChangedSignal("Primed"):Connect(function()
 		if model:GetAttribute("Primed") then
 			applyPrimed(entry)
+		else
+			clearPrimed(entry)
 		end
 	end)
 
