@@ -405,4 +405,71 @@ Effects.OnKillBarrier = function(position, hp, scale)
 	TowerBuilder.BuildBarrier(cx, cz, hp, scale)
 end
 
+-- Керамическая статуя (Глина + огонь, вики effects v4): жук застывает на своей клетке
+-- и становится стеной — не движется, лечится, при смерти ничего не делает, при разрушении
+-- просто исчезает (без руины). Сервер ставит только невидимый корпус с HP; видимое тело —
+-- копия тела жука в керамике, её собирает клиент (EnemyRender, событие "statue").
+function TowerBuilder.BuildStatue(cx, cz, hp, height)
+	if not Grid.FitsBuilding(cx, cz) or Grid.IsEntranceCell(cx, cz) or Grid.IsExitCell(cx, cz)
+		or Grid.IsTableCell(cx, cz)
+		or not Grid.IsFree(cx, cz) then
+		return false
+	end
+
+	local statue = Instance.new("Model")
+	statue.Name = ("Статуя (%d,%d)"):format(cx, cz)
+	local hull = Instance.new("Part")
+	hull.Name = "Hull"
+	hull.Size = Vector3.new(Grid.BuildSize - 0.4, height, Grid.BuildSize - 0.4)
+	hull.Anchored = true
+	hull.CanCollide = true
+	hull.CanTouch = false
+	hull.Transparency = 1
+	hull.CFrame = CFrame.new(Grid.ToWorld(cx, cz) + Vector3.new(0, height / 2, 0))
+	hull.Parent = statue
+	statue.PrimaryPart = hull
+	statue:SetAttribute("Type", "ClayStatue")
+	statue:SetAttribute("Height", height)
+	statue:SetAttribute("CellX", cx)
+	statue:SetAttribute("CellZ", cz)
+	statue:SetAttribute("MaxHP", hp)
+	statue:SetAttribute("HP", hp)
+	statue.Parent = towersFolder
+
+	Grid.Occupy(cx, cz, statue)
+
+	statue:GetAttributeChangedSignal("HP"):Connect(function()
+		if statue.Parent and (statue:GetAttribute("HP") or 0) <= 0 then
+			print(("[Постройка] %s рассыпалась, клетка (%d, %d) снова свободна"):format(statue.Name, cx, cz))
+			statue:Destroy()
+			Grid.Free(cx, cz)
+		end
+	end)
+
+	print(("[Глина] статуя в клетке (%d, %d): %d HP"):format(cx, cz, hp))
+	return true, statue
+end
+
+-- Поджог застаненного Глиной (Effects): только наземный жук своей волны — летуну
+-- и очищенному стоять статуей негде. Клетки нет — огонь бьёт как обычно.
+Effects.OnPetrify = function(enemy, plan)
+	if enemy.Parent ~= enemiesFolder or enemy:GetAttribute("Flying") then
+		return false
+	end
+	local cx, cz = Grid.ClampBuildCell(Grid.ToCell(enemy:GetPivot().Position))
+	local hp = math.max(1, math.floor((enemy:GetAttribute("MaxHP") or 1) * plan.hpScale + 0.5))
+	local height = math.max(enemy:GetExtentsSize().Y, 1.5)
+	local ok, statue = TowerBuilder.BuildStatue(cx, cz, hp, height)
+	if not ok then
+		return false
+	end
+	-- Тело уходит в статую до смерти жука: событие обгоняет Destroy, как и у трупа.
+	Corpses.Statue(enemy, statue)
+	-- Petrified читает EnemySpawner: награда как за убийство, но без трупа и без
+	-- последействий смерти — жук не умер, а застыл.
+	enemy:SetAttribute("Petrified", true)
+	enemy:SetAttribute("HP", 0)
+	return true
+end
+
 return TowerBuilder

@@ -77,6 +77,12 @@ function Corpses.Leave(enemy, hit)
 	return record
 end
 
+-- Жук застыл керамической статуей (Глина + огонь). Тоже ДО Destroy: клиент забирает
+-- видимое тело и ставит его копию в керамике внутрь статуи.
+function Corpses.Statue(enemy, statue)
+	EnemyFX:FireAllClients("statue", enemy, statue)
+end
+
 function Corpses.Splat(position, size, drops, floorY)
 	EnemyFX:FireAllClients("splat", position, size, drops or 0, floorY or Arena.floorY)
 end

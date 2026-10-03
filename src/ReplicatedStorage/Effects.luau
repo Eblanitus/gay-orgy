@@ -154,6 +154,14 @@ Effects.OnKillBarrier = nil -- function(position: Vector3, hp: number, scale: nu
 -- Растение из трупа (killHeal) — тот же приём: росток и плоды строит серверный Plants.
 Effects.OnKillPlant = nil -- function(position, plan, elementData, healScale, thornsScale)
 
+-- Керамическая статуя (Глина + огонь): статую ставит TowerBuilder, он же решает, есть ли
+-- для неё клетка. Возвращает true, если жук стал статуей и из боя вышел.
+Effects.OnPetrify = nil -- function(target, plan): boolean
+
+-- petrifiable[target] = { expires, plan } — цель в стане Глины: огонь сейчас сделает
+-- из неё статую. Слабые ключи: запись умирает вместе с жуком.
+local petrifiable = setmetatable({}, { __mode = "k" })
+
 -- Броня — число на самой цели (Enemies[...].armor → атрибут Armor), а не процент,
 -- зашитый в модель урона (задача #44, по alchemy_td_enemy_mechanics.md). Раньше здесь жил
 -- ARMOR_DAMAGE_REDUCTION (плоские −30% урона турели, только для прямого попадания) — теперь
@@ -677,7 +685,8 @@ local CLEANSED_ATTRIBUTES = {
 -- Новых не ляжет: очищенный живёт в своей папке, и ни снаряды, ни площадь, ни зоны его не видят.
 function Effects.Cleanse(target)
 	for _, byTarget in { effects, slows, marks, counters, ramps, debuffs, dryings, primed,
-		growingSlows, blinds, stunCooldowns, kindMarks, pulls, catalysts, fuels, infections, regens } do
+		growingSlows, blinds, stunCooldowns, kindMarks, pulls, catalysts, fuels, infections, regens,
+		petrifiable } do
 		byTarget[target] = nil
 	end
 	for _, attribute in MARK_ATTRIBUTE do
@@ -757,6 +766,16 @@ function Effects.Apply(target, elementData, damage, source, owner)
 	-- выстрела уже не положено. Не перешёл (летун, Лицехват) — Мыло ему просто урон.
 	if elementData.cleanse and Effects.OnCleanse and Effects.OnCleanse(target) then
 		Effects.Cleanse(target)
+		return
+	end
+
+	-- Поджог застаненного Глиной — керамическая статуя. Тоже раньше всех эффектов:
+	-- жук выходит из боя, и гореть, метиться и отталкиваться уже нечему. Нет клетки
+	-- под статую (занята, пролом) — огонь просто бьёт как обычно.
+	local clay = petrifiable[target]
+	if clay and elementData.ignites and os.clock() < clay.expires
+		and Effects.OnPetrify and Effects.OnPetrify(target, clay.plan) then
+		petrifiable[target] = nil
 		return
 	end
 
@@ -984,7 +1003,9 @@ task.spawn(function()
 					refreshSlow(target)
 
 					if drying.percent >= plan.max then
-						applyStun(target, plan.freezeDuration, 0, drying.name)
+						if applyStun(target, plan.freezeDuration, 0, drying.name) and plan.statue then
+							petrifiable[target] = { expires = os.clock() + plan.freezeDuration, plan = plan.statue }
+						end
 						drying.percent = plan.start
 						refreshSlow(target)
 					end

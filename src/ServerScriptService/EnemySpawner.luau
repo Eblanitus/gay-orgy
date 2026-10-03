@@ -1142,13 +1142,23 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 
 		if enemy.Parent and currentHp <= 0 then
 			print(("[Манекен] %s уничтожен"):format(enemy.Name))
-			EnemyDiedRemote:FireAllClients(enemy:GetPivot().Position)
+			-- Застывший статуей Глины (TowerBuilder.OnPetrify) не умирает, а стоит на поле
+			-- керамикой: ни вспышки смерти, ни трупа, ни последействий.
+			local petrified = enemy:GetAttribute("Petrified")
+			if not petrified then
+				EnemyDiedRemote:FireAllClients(enemy:GetPivot().Position)
+			end
 			-- Погибший очищенный — потеря игрока, а не его добыча: ни материи, ни плутония,
 			-- ни строки в журнале убийств.
 			if not enemy:GetAttribute("Ally") then
 				Matter.Add(enemyData.matter or 0)
 				Plutonium.AwardEnemyKill(enemyType)
 				ProfileStats.Kill(enemyType, enemy:GetAttribute("LastElement"))
+			end
+
+			if petrified then
+				enemy:Destroy()
+				return
 			end
 
 			-- Последействия смерти отдельных видов (design: alchemy_td_enemies.md). Все три —

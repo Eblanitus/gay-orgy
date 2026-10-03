@@ -50,6 +50,9 @@ local REVEAL_FADE = 0.3
 local TweenService = game:GetService("TweenService")
 local towersFolder = Workspace:WaitForChild("Towers")
 
+-- Обожжённая глина статуи (Глина + огонь): тёплая терракота, почти без следа цвета жука.
+local CERAMIC_COLOR = Color3.fromRGB(196, 128, 92)
+
 -- Подделка — только картинка: ни лучи, ни касания, ни игрок её не чувствуют.
 local function inert(part)
 	part.Anchored = true
@@ -403,6 +406,36 @@ EnemyFX.OnClientEvent:Connect(function(kind, a, b, c, d)
 			end
 			untrack(a)
 		end
+	elseif kind == "statue" then
+		-- Глина + огонь: тело жука застывает как было, в позе этой секунды, и встаёт
+		-- в серверную статую (Corpses.Statue). Снесут статую — уйдёт и копия.
+		local visual = a and a:FindFirstChild("Visual")
+		local entry = a and tracked[a]
+		if entry then
+			dropDisguise(entry, false)
+		end
+		if visual and b then
+			local copy = visual:Clone()
+			copy.Name = "Ceramic"
+			for _, item in copy:GetDescendants() do
+				if item:IsA("BasePart") then
+					inert(item)
+					item.Color = item.Color:Lerp(CERAMIC_COLOR, 0.85)
+					item.Material = Enum.Material.SmoothPlastic
+					item.Reflectance = 0.08
+				elseif not (item:IsA("Model") or item:IsA("Folder") or item:IsA("SpecialMesh")
+					or item:IsA("Attachment")) then
+					item:Destroy() -- полоска HP, огонь, обводка, суставы
+				end
+			end
+			for name in copy:GetAttributes() do
+				if name:sub(1, 4) ~= "RBX_" then
+					copy:SetAttribute(name, nil)
+				end
+			end
+			copy.Parent = b
+		end
+		untrack(a)
 	elseif kind == "splat" then
 		CorpseFX.Splat(a, b, c, d)
 	elseif kind == "absorb" then
