@@ -165,8 +165,11 @@ RunService.RenderStepped:Connect(function(dt)
 				EnemyGait.Step(entry.visual, dt, gait, entry.smooth, model:GetAttribute("Look"))
 			else
 				-- Летуны и жуки со своим циклом (Лицехват, Моль, Пеликан в воздухе): ног не
-				-- переставляют, тело просто идёт за якорем.
+				-- переставляют, тело просто идёт за якорем. Крылья в воздухе машут.
 				entry.visual:PivotTo(entry.smooth)
+				if model:GetAttribute("Flying") then
+					EnemyGait.Flap(entry.visual, dt)
+				end
 			end
 		end
 	end
