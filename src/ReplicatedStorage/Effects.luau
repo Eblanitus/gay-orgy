@@ -113,6 +113,13 @@ local kindMarks = {}
 -- сам факт метки, а не её цифры.
 local MARK_ATTRIBUTE = { rust = "Rusted", ash = "Ashed", soil = "Soiled" }
 
+-- deathMarks[target][elementData] = owner — метки при смерти (поле deathMark: Облако, Дождь,
+-- Снег, Метель, Кислотный дождь, Ураган, Засуха, Уголь, Растение, Дерево, Землетрясение, Гора).
+-- По вики метка держится до смерти жука, и смерть от чего угодно вызывает эффект. owner —
+-- турель, повесившая метку последней: зона при смерти одна на турель. Срабатывают
+-- в Effects.OnDeath; на клиент уходят атрибутом DeathMarks (ключи через запятую).
+local deathMarks = {}
+
 -- pulls[target][elementData] = сколько раз этот элемент уже стягивал эту цель. Пара
 -- «цель + элемент», а не просто цель: притянутого Воздухом всё ещё может стянуть Давление.
 local pulls = {}
@@ -208,6 +215,40 @@ do
 
 	for key, data in Elements do
 		basicsByData[data] = basicsOf(key)
+	end
+end
+
+-- Предки элемента по дереву рецептов и ключ записи. Из меток при смерти срабатывает
+-- только потомок (по вики): Гора, а не Землетрясение, из которого она скрафчена; Дерево,
+-- а не Растение. Считается один раз при загрузке, как и число базовых выше.
+local ancestorsByData = {}
+local keyByData = {}
+do
+	local parents = {}
+	for _, recipe in Recipes.List do
+		parents[recipe.result] = recipe
+	end
+
+	local function collect(key, into, seen)
+		local recipe = parents[key]
+		if not recipe then
+			return
+		end
+		for _, parentKey in { recipe.a, recipe.b } do
+			-- seen — та же страховка от цикла в дереве, что у basicsOf.
+			if not seen[parentKey] then
+				seen[parentKey] = true
+				into[Elements[parentKey]] = true
+				collect(parentKey, into, seen)
+			end
+		end
+	end
+
+	for key, data in Elements do
+		local into = {}
+		collect(key, into, {})
+		ancestorsByData[data] = into
+		keyByData[data] = key
 	end
 end
 
@@ -633,6 +674,29 @@ local function keepStarAlive(owner, elementData)
 	end
 end
 
+-- Метка при смерти: элемент запоминается на жуке до его смерти (по вики). Повторное попадание
+-- меняет только владельца — зона при смерти встанет от турели, метившей последней.
+local function putDeathMark(target, elementData, owner)
+	local byElement = deathMarks[target]
+	if not byElement then
+		byElement = {}
+		deathMarks[target] = byElement
+	end
+	local fresh = byElement[elementData] == nil
+	byElement[elementData] = owner or byElement[elementData] or false
+	if not fresh then
+		return
+	end
+
+	local keys = {}
+	for data in pairs(byElement) do
+		table.insert(keys, keyByData[data])
+	end
+	table.sort(keys)
+	target:SetAttribute("DeathMarks", table.concat(keys, ","))
+	print(("[Эффект] %s кладёт метку при смерти на %s"):format(elementData.name, target.Name))
+end
+
 -- Зона-модификатор местности на месте смерти (Землетрясение, v2.2.1). Радиус — по габариту
 -- трупа, а не по таблице: форма зоны — свойство того, кто умер.
 -- Светящийся диск (spawnZoneVisual) — чисто картинка поверх той же записи: без него
@@ -702,13 +766,14 @@ end
 -- Effects только считает усиления с трупа: метка Пепла — и плоды, и шипы, метка Грунта —
 -- только шипы («боевые свойства» в вики). Росток, плоды и шипы — серверный Plants через
 -- OnKillPlant: строить модели и лечить постройки по прилёту плода Effects не умеет.
-local function applyKillHeal(target, elementData)
+-- position — куда сажать, если не на место смерти: рядом с Горой (её преграда встаёт на клетку).
+local function applyKillHeal(target, elementData, position)
 	if not Effects.OnKillPlant then
 		return
 	end
 	local healScale = markScale(target, "ash", "healScale")
 	local thornsScale = markScale(target, "soil", "thornsScale") * markScale(target, "ash", "damageScale")
-	Effects.OnKillPlant(target:GetPivot().Position, elementData.killHeal, elementData, healScale, thornsScale)
+	Effects.OnKillPlant(position or target:GetPivot().Position, elementData.killHeal, elementData, healScale, thornsScale)
 end
 
 -- Физическая преграда на месте смерти (Гора, v2.2). Effects сам ничего не строит — только
@@ -730,6 +795,66 @@ local function applyKillBarrier(target, elementData)
 	Effects.OnKillBarrier(target:GetPivot().Position, hp, scale)
 end
 
+-- Метки при смерти срабатывают здесь: от любой смерти носителя, а не только когда добил
+-- сам элемент (по вики). Зовёт EnemySpawner в обработчике смерти, пока модель цела и стоит
+-- там, где жук умер. Метка, чей потомок по рецептам тоже висит на жуке, молчит —
+-- срабатывает потомок. Несвязанные метки срабатывают все. Возвращает true, если сработала
+-- хоть одна: тогда труп превратился в эффект, и останков нет.
+function Effects.OnDeath(target)
+	local byElement = deathMarks[target]
+	deathMarks[target] = nil
+	if not byElement then
+		return false
+	end
+
+	local fired = {}
+	local barrier = false
+	for elementData, owner in pairs(byElement) do
+		local superseded = false
+		for other in pairs(byElement) do
+			if ancestorsByData[other][elementData] then
+				superseded = true
+				break
+			end
+		end
+		if superseded then
+			print(("[Эффект] метка %s на %s уступает потомку"):format(elementData.name, target.Name))
+		else
+			table.insert(fired, { data = elementData, owner = owner or nil })
+			barrier = barrier or elementData.killBarrier ~= nil
+		end
+	end
+
+	-- Удары по области — первыми у всех меток, как в ветке смерти Apply: они считаются от HP
+	-- трупа, а зоны, растения и преграда встают на его место уже после.
+	for _, mark in fired do
+		if mark.data.killDamage then
+			applyKillDamage(target, mark.data)
+		end
+	end
+
+	-- Гора занимает клетку смерти, и растение рядом с ней встаёт на шаг постройки в сторону:
+	-- внутри горы его бы никто не увидел.
+	local plantAt = nil
+	if barrier then
+		local angle = math.random() * math.pi * 2
+		plantAt = target:GetPivot().Position + Vector3.new(math.cos(angle), 0, math.sin(angle)) * Arena.buildSize
+	end
+
+	for _, mark in fired do
+		if mark.data.killHeal then
+			applyKillHeal(target, mark.data, plantAt)
+		end
+		if mark.data.killZone then
+			applyKillZone(target, mark.data, mark.owner)
+		end
+		if mark.data.killBarrier then
+			applyKillBarrier(target, mark.data)
+		end
+	end
+	return #fired > 0
+end
+
 -- Навешивает на цель всё, что даёт элемент поверх урона снаряда (его списывает сам
 -- снаряд в момент попадания, см. Projectile). damage — сколько этот выстрел реально снял:
 -- от него считаются доли взрыва, цепочки и детонации.
@@ -746,7 +871,7 @@ end
 -- атрибут, оставшийся без записи в таблице, уже никто бы не погасил.
 local CLEANSED_ATTRIBUTES = {
 	"Amplified", "ArmorShred", "AttackSlowPercent", "Bleeding", "Blinded", "Burning",
-	"Confused", "ConfusedDirection", "ConfusedUntil", "Infected", "Molten", "Primed",
+	"Confused", "ConfusedDirection", "ConfusedUntil", "DeathMarks", "Infected", "Molten", "Primed",
 	"Push", "RegenScale", "Scorched", "SlowPercent", "Stunned", "StunnedUntil",
 	"Weakened", "Wet",
 }
@@ -757,7 +882,7 @@ local CLEANSED_ATTRIBUTES = {
 function Effects.Cleanse(target)
 	for _, byTarget in { effects, slows, marks, counters, ramps, debuffs, dryings, primed,
 		growingSlows, blinds, stunCooldowns, kindMarks, pulls, catalysts, fuels, infections, regens,
-		petrifiable } do
+		petrifiable, deathMarks } do
 		byTarget[target] = nil
 	end
 	for _, attribute in MARK_ATTRIBUTE do
@@ -813,7 +938,11 @@ function Effects.Apply(target, elementData, damage, source, owner)
 	-- или преграда (Гора). damage > 0 отсекает случай, когда Apply зовут на уже мёртвой
 	-- цели без нового урона (взрыв/цепочка после добивающего попадания).
 	if not target.Parent or (target:GetAttribute("HP") or 0) <= 0 then
-		if target.Parent and damage > 0 then
+		if target.Parent and damage > 0 and elementData.deathMark then
+			-- Добивающий удар элемента с меткой — тоже метка (по вики). Сам эффект
+			-- запустит Effects.OnDeath вместе с остальными метками жука.
+			putDeathMark(target, elementData, owner)
+		elseif target.Parent and damage > 0 then
 			-- Удар по области — первым: он считается от HP трупа, а зона и преграда
 			-- ставятся на его место уже после.
 			if elementData.killDamage then
@@ -872,6 +1001,10 @@ function Effects.Apply(target, elementData, damage, source, owner)
 
 	if elementData.washes then
 		washMark(target, elementData.washes)
+	end
+
+	if elementData.deathMark then
+		putDeathMark(target, elementData, owner)
 	end
 
 	-- Мокрый делает цель проводящей (Молния, Электронность), смывает Пепел и тушит Горение —
@@ -1125,9 +1258,19 @@ task.spawn(function()
 			end
 		end
 
+		-- Метки при смерти снимает сам Effects.OnDeath. Сюда доходят те, кто исчез без смерти:
+		-- дошёл до выхода, переехал к своим. По HP <= 0 не чистим — обработчик смерти ещё впереди.
+		for target in pairs(deathMarks) do
+			if not target.Parent then
+				deathMarks[target] = nil
+			end
+		end
+
 		-- Метка Грунта единственная со сроком; Ржавчина и Пепел висят до смерти или до смывки.
+		-- Снимаются, когда жук исчез, а не по HP: Пепел и Грунт растению читает Effects.OnDeath,
+		-- а от горения жук умирает прямо в этом цикле, раньше обработчика смерти.
 		for target, byKind in pairs(kindMarks) do
-			if not target.Parent or (target:GetAttribute("HP") or 0) <= 0 then
+			if not target.Parent then
 				kindMarks[target] = nil
 			else
 				for kind, entry in pairs(byKind) do

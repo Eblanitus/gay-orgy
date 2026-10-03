@@ -1224,11 +1224,15 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 			local deathPoint = enemy:GetPivot().Position
 			Corpses.Splat(deathPoint, DEATH_SPLAT_SIZE * (enemy:GetAttribute("Scale") or enemyData.scale or 1), DEATH_SPLAT_DROPS)
 
+			-- Метки при смерти (Облако, Гора, Растение и другие, по вики) срабатывают от любой
+			-- смерти. Сработала хоть одна — труп превратился в эффект, и тела не остаётся.
+			local transformed = Effects.OnDeath(enemy)
+
 			-- Гора вырастает из трупа и поглощает его (Corpses.Absorb в TowerBuilder.BuildBarrier),
 			-- но она вполне может встать РАНЬШЕ, чем сюда дойдёт очередь — тогда труп появился бы
 			-- уже внутри неё. Поэтому клетка проверяется и здесь: занята постройкой — останков нет.
 			local deathX, deathZ = Grid.ToCell(deathPoint)
-			if not Grid.GetOccupant(deathX, deathZ) then
+			if not transformed and not Grid.GetOccupant(deathX, deathZ) then
 				-- Добивающий удар в долях макс. HP (с перебоем) решает, сколько конечностей отлетит,
 				-- HitFrom (ставит Projectile) — куда.
 				local maxHp = math.max(enemy:GetAttribute("MaxHP") or hp, 1)

@@ -108,6 +108,10 @@
 --                                "ash" — сильнее растительные элементы и лечение (Пепел);
 --                                "soil" — усиливает Растение при убийстве (Грунт).
 --                                Без duration метка держится до смерти цели
+--   deathMark = true             эффект при смерти (killDamage, killZone, killHeal, killBarrier)
+--                                срабатывает не «добил этим элементом», а от метки: попадание
+--                                метит жука до смерти, и смерть от чего угодно вызывает эффект
+--                                (по вики). Без поля — только при убийстве этим элементом
 --   washes = "rust" | "ash"      элемент смывает чужую метку (Кислота — Ржавчину,
 --                                любой Мокрый — Пепел)
 --   burnCatalyst = { intervalScale, powerScale }
@@ -397,6 +401,7 @@ local Elements = {
 	},
 	Cloud = {
 		name = "Облако",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(225, 232, 240),
 		tier = 2,
 		fireRateBonus = 0.25,
@@ -439,6 +444,7 @@ local Elements = {
 	},
 	Plant = {
 		name = "Растение",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(95, 175, 70),
 		tier = 2,
 		-- Первый элемент, который лечит, а не бьёт: из трупа растёт растение (Plants), шлёт
@@ -463,6 +469,7 @@ local Elements = {
 	},
 	Earthquake = {
 		name = "Землетрясение",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(120, 112, 104),
 		tier = 2,
 		-- v2.2: горение было механическим сложением родителей и ничего не говорило про
@@ -722,6 +729,7 @@ local Elements = {
 	},
 	Hurricane = {
 		name = "Ураган",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(100, 140, 165),
 		tier = 3,
 		-- Чистый воздух шага: раскручивается быстрее Ветра и тянет чаще всех.
@@ -737,6 +745,7 @@ local Elements = {
 	},
 	Tree = {
 		name = "Дерево",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(70, 130, 60),
 		tier = 3,
 		damageMultiplier = 1,
@@ -768,6 +777,7 @@ local Elements = {
 	},
 	Coal = {
 		name = "Уголь",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(55, 50, 50),
 		tier = 3,
 		-- Усиление горения (вики: катализатор вместе с Кислородом). Своё горение как у Жара,
@@ -828,6 +838,7 @@ local Elements = {
 	},
 	Rain = {
 		name = "Дождь",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(90, 140, 190),
 		tier = 3,
 		fireRateBonus = 0.5,
@@ -842,6 +853,7 @@ local Elements = {
 	},
 	Snow = {
 		name = "Снег",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(235, 245, 255),
 		tier = 3,
 		damageMultiplier = 0.75,
@@ -870,6 +882,7 @@ local Elements = {
 	},
 	AcidRain = {
 		name = "Кислотный дождь",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(160, 200, 90),
 		tier = 3,
 		damageMultiplier = 0.5,
@@ -886,6 +899,7 @@ local Elements = {
 	},
 	Drought = {
 		name = "Засуха",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		chars = true, -- Горение
 		color = Color3.fromRGB(215, 170, 80),
 		tier = 3,
@@ -903,6 +917,7 @@ local Elements = {
 	},
 	Blizzard = {
 		name = "Метель",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(215, 235, 250),
 		tier = 3,
 		damageMultiplier = 0.75,
@@ -1080,6 +1095,7 @@ local Elements = {
 	},
 	Mountain = {
 		name = "Гора",
+		deathMark = true, -- эффект при смерти — метка: срабатывает от любой смерти жука
 		color = Color3.fromRGB(110, 115, 120),
 		tier = 3,
 		-- Земля + Землетрясение: наследует его логику скорости — быстрый жук огребает сильнее,
