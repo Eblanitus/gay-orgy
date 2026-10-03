@@ -455,6 +455,7 @@ local Remains = require(ReplicatedStorage:WaitForChild("CorpseRemains"))({
 	bloodThickness = BLOOD_THICKNESS,
 	corpseGroup = CORPSE_GROUP,
 	forget = forget,
+	EnemyGait = EnemyGait,
 })
 
 -- enemy — ВИДИМОЕ тело жука (модель EnemyRender). hit — чем убили (присылает сервер):
@@ -630,7 +631,7 @@ function Corpses.Leave(enemy, hit, id)
 		Remains.crumble(corpse, scale, hit and hit.floorY or Arena.floorY)
 	end
 	if hit and hit.swampy then
-		Remains.swampy(corpse, hull or root, scale)
+		Remains.swampy(corpse, scale, enemy:GetPivot().Position, hit.floorY or Arena.floorY)
 	end
 
 	-- Досадка на брюхо — общий цикл перед Corpses.Splat, для всех трупов сразу.

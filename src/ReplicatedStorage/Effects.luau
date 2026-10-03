@@ -453,6 +453,14 @@ function Effects.RemainsOf(target)
 	return "body"
 end
 
+-- Отдача добившего элемента (knockback.distance) или nil: лепёшка «давит» летит
+-- от турели на столько дальше (CorpseRemains.crush).
+function Effects.ThrowOf(target)
+	local key = target:GetAttribute("LastHit")
+	local killer = key and Elements[key] or nil
+	return killer and killer.knockback and killer.knockback.distance or nil
+end
+
 -- Урон снаряда с залитым элементом: базовый урон башни × число базовых элементов
 -- в составе, дальше — множитель свойства (damageMultiplier: Земля ×3, Пыль ×0.2).
 -- Пустая колба бьёт базовым уроном башни.

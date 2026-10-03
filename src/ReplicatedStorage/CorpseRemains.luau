@@ -7,6 +7,9 @@
 -- Числа — PhysicsFX.remains.
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 
 return function(deps)
 	local PhysicsFX = deps.PhysicsFX
@@ -20,6 +23,7 @@ return function(deps)
 	local THICKNESS = deps.bloodThickness
 	local CORPSE_GROUP = deps.corpseGroup
 	local forget = deps.forget -- убрать тушу из списка трупов (она уходит не по лимиту)
+	local EnemyGait = deps.EnemyGait
 
 	local plan = PhysicsFX.remains
 
@@ -132,61 +136,172 @@ return function(deps)
 
 	local AXES = { "X", "Y", "Z" }
 
+	-- Стены, о которые плющит отброшенного: стены локации и поле Аркады (как у походки).
+	local function wallParams()
+		local include = {}
+		local location = Workspace:FindFirstChild("Location")
+		local arcade = Workspace:FindFirstChild("Arcade")
+		for _, node in {
+			location and location:FindFirstChild("Walls"),
+			arcade and arcade:FindFirstChild("Field"),
+		} do
+			table.insert(include, node)
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = include
+		params.IgnoreWater = true
+		return params
+	end
+
+	-- Куда отбросило раздавленного: от турели на силу отдачи элемента, машиной — вместе с ней.
+	-- Без отдачи (Обсидиан, Стена, Литосфера сверху без выстрела) — nil, давит на месте.
+	local function throwOf(hit, center, scale)
+		local p = plan.crush
+		local direction, distance
+		if hit.carry and hit.carry.Magnitude > 1 then
+			direction = hit.carry
+			distance = hit.carry.Magnitude * p.carryTime
+		elseif hit.from and hit.throw then
+			direction = center - hit.from
+			distance = (p.throwBase + hit.throw * p.throwPerStud) * scale
+		end
+		if not direction then
+			return nil
+		end
+		direction = Vector3.new(direction.X, 0, direction.Z)
+		if direction.Magnitude < 1e-3 then
+			return nil
+		end
+		return direction.Unit, distance
+	end
+
 	-- ДАВИТ: расплющенное тёмное пятно в форме жука и пара отлетевших кусков.
-	-- Каждая видимая деталь ложится на пол там же, где была (чуть шире — раздавленное
-	-- расползается), своей самой вертикальной осью вверх, и сплющивается по ней. Силуэт
-	-- с растопыренными лапами остаётся узнаваемым: видно, кого раздавило.
+	-- Отдача отбрасывает жука от турели: он летит и плющится там, где упал, а встретил
+	-- стену — плющится о стену. Каждая видимая деталь ложится на эту плоскость (пол или стену)
+	-- там же, где была (чуть шире — раздавленное расползается), той своей осью, что ближе
+	-- всех к нормали плоскости, и сплющивается по ней. Силуэт с растопыренными лапами
+	-- остаётся узнаваемым: видно, кого раздавило.
 	local function crush(enemy, hit, scale, floorY)
 		local p = plan.crush
 		local clone = bodyClone(enemy)
 		local center = enemy:GetPivot().Position
+		local width = footprint(enemy)
 
 		-- Куски — до сплющивания: улетают целыми.
 		for _, group in chooseLimbs(clone, p.pieceFraction) do
 			detachPiece(clone, group, center, hit.from, p.pieceFraction, scale, hit.floorY, hit.carry)
 		end
 
+		-- Плоскость лепёшки: пол под жуком, пол там, куда отбросило, или стена на пути.
+		local planePoint, normal = Vector3.new(center.X, floorY, center.Z), Vector3.yAxis
+		local travel = Vector3.zero
+		local direction, distance = throwOf(hit, center, scale)
+		if direction then
+			local reach = width / 2
+			local result = Workspace:Raycast(center, direction * (distance + reach), wallParams())
+			if result and math.abs(result.Normal.Y) < p.wallSlope then
+				normal = Vector3.new(result.Normal.X, 0, result.Normal.Z).Unit
+				planePoint = result.Position
+				travel = direction * math.max(result.Distance - reach, 0)
+			else
+				travel = direction * distance
+				planePoint += travel
+			end
+		end
+		local onWall = normal.Y < 0.5
+		local base = center + travel
+		local contact = base - normal * (base - planePoint):Dot(normal)
+
+		-- Что дальше от плоскости, ложится поверх: без этого детали мерцают друг с другом.
+		local items, lowest = {}, math.huge
 		for _, part in clone:GetDescendants() do
 			if part:IsA("BasePart") and part.Transparency < 1 then
-				local cf = part.CFrame
-				local cols = { cf.RightVector, cf.UpVector, cf.LookVector }
-				local b = 1
-				for i = 2, 3 do
-					if math.abs(cols[i].Y) > math.abs(cols[b].Y) then
-						b = i
-					end
-				end
-				-- b — ось, что ближе всех к вертикали, a и c — следующие по кругу (b × a = c).
-				local a = b % 3 + 1
-				local c = a % 3 + 1
-				local flat = cols[a] * Vector3.new(1, 0, 1)
-				flat = flat.Magnitude > 1e-3 and flat.Unit or Vector3.xAxis
-				local m = {}
-				m[b] = Vector3.yAxis * (cols[b].Y >= 0 and 1 or -1)
-				m[a] = flat
-				m[c] = m[b]:Cross(m[a])
-
-				local size = part.Size
-				local thin = math.max(size[AXES[b]] * p.squash, p.minThickness)
-				local dims = { size.X, size.Y, size.Z }
-				dims[b] = thin
-
-				-- Что было выше, ложится поверх: без этого детали мерцают друг с другом.
-				local layer = math.clamp(cf.Position.Y - floorY, 0, 20) * p.layer
-				local rel = cf.Position - center
-				local position = Vector3.new(center.X + rel.X * p.spread, floorY + LIFT + thin / 2 + layer,
-					center.Z + rel.Z * p.spread)
-
-				part.Size = Vector3.new(dims[1], dims[2], dims[3])
-				part.CFrame = CFrame.fromMatrix(position, m[1], m[2], m[3])
-				part.Color = part.Color:Lerp(p.color, p.darken)
-				part.CastShadow = false
+				local height = (part.Position + travel - planePoint):Dot(normal)
+				lowest = math.min(lowest, height)
+				table.insert(items, { part = part, height = height })
 			end
+		end
+
+		local fallback = onWall and normal:Cross(Vector3.yAxis).Unit or Vector3.xAxis
+		for _, item in items do
+			local part = item.part
+			local cf = part.CFrame
+			local cols = { cf.RightVector, cf.UpVector, cf.LookVector }
+			local b = 1
+			for i = 2, 3 do
+				if math.abs(cols[i]:Dot(normal)) > math.abs(cols[b]:Dot(normal)) then
+					b = i
+				end
+			end
+			-- b — ось, что ближе всех к нормали, a и c — следующие по кругу (b × a = c).
+			local a = b % 3 + 1
+			local c = a % 3 + 1
+			local flat = cols[a] - normal * cols[a]:Dot(normal)
+			flat = flat.Magnitude > 1e-3 and flat.Unit or fallback
+			local m = {}
+			m[b] = normal * (cols[b]:Dot(normal) >= 0 and 1 or -1)
+			m[a] = flat
+			m[c] = m[b]:Cross(m[a])
+
+			local size = part.Size
+			local thin = math.max(size[AXES[b]] * p.squash, p.minThickness)
+			local dims = { size.X, size.Y, size.Z }
+			dims[b] = thin
+
+			local layer = math.clamp(item.height - lowest, 0, 20) * p.layer
+			local rel = part.Position + travel - contact
+			rel -= normal * rel:Dot(normal)
+			local position = contact + rel * p.spread + normal * (LIFT + thin / 2 + layer)
+			if onWall then
+				-- На стене деталь не уходит в пол: низ — не ниже пола.
+				local half = (math.abs(m[1].Y) * dims[1] + math.abs(m[2].Y) * dims[2] + math.abs(m[3].Y) * dims[3]) / 2
+				position = Vector3.new(position.X, math.max(position.Y, floorY + half), position.Z)
+			end
+			item.size = Vector3.new(dims[1], dims[2], dims[3])
+			item.cframe = CFrame.fromMatrix(position, m[1], m[2], m[3])
+			part.CastShadow = false
 		end
 
 		clone.Name = enemy.Name .. " (раздавлен)"
 		clone.Parent = container("Blood")
 		remember(stains, clone, maxStains)
+
+		-- Летит, потом плющится. На месте — только плющится.
+		local flight = travel.Magnitude > 0.5 and travel.Magnitude / p.throwSpeed or 0
+		local splat = TweenInfo.new(p.splatTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		for _, item in items do
+			local part = item.part
+			if flight > 0 then
+				TweenService:Create(part, TweenInfo.new(flight, Enum.EasingStyle.Linear), { CFrame = part.CFrame + travel }):Play()
+			end
+			task.delay(flight, function()
+				if part.Parent then
+					TweenService:Create(part, splat, {
+						Size = item.size,
+						CFrame = item.cframe,
+						Color = part.Color:Lerp(p.color, p.darken),
+					}):Play()
+				end
+			end)
+		end
+
+		-- След волочения по полу — от места смерти до лепёшки (или до стены).
+		local skid = travel.Magnitude
+		if skid > 1 then
+			task.delay(flight, function()
+				if not clone.Parent then
+					return
+				end
+				local streak = plainPart("Streak", clone)
+				streak.Material = Enum.Material.SmoothPlastic
+				streak.Color = p.color
+				streak.Transparency = 0.25
+				streak.Size = Vector3.new(width * p.streak, THICKNESS, skid)
+				local from = Vector3.new(center.X, floorY + LIFT, center.Z)
+				streak.CFrame = CFrame.lookAt(from + travel / 2, from + travel)
+			end)
+		end
 	end
 
 	-- ПЛАВИТ: жук раскаляется и оплывает в лужицу, лужица остывает в тёмную корку и тает.
@@ -211,7 +326,7 @@ return function(deps)
 
 		local pool = Instance.new("Model")
 		pool.Name = enemy.Name .. " (лужица)"
-		local spots = puddle(pool, center, floorY, width * p.size, p.glow, Enum.Material.Neon, p.sinkTime)
+		local spots = puddle(pool, center, floorY, width * p.size, p.pool, Enum.Material.Neon, p.sinkTime)
 		local steam = emitter(pool, center, floorY, width * 0.6, {
 			Texture = "rbxasset://textures/particles/smoke_main.dds",
 			Color = ColorSequence.new(Color3.fromRGB(120, 110, 100), Color3.fromRGB(200, 196, 190)),
@@ -297,6 +412,8 @@ return function(deps)
 		local p = plan.gib
 		local clone = bodyClone(enemy)
 		local center = enemy:GetPivot().Position
+		-- Лапы поджаты до отрыва: так летят и так ложатся, а не стоят торчком.
+		EnemyGait.DeathPose(clone, enemy, p.curlSplay, p.curlDrop)
 
 		local legs = {}
 		for _, item in clone:GetDescendants() do
@@ -442,9 +559,14 @@ return function(deps)
 			bit.Color = p.ember
 			TweenService:Create(bit, TweenInfo.new(p.emberTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 				{ Color = p.color }):Play()
+			-- Погас — чёрный уголь ещё лежит, потом исчезает.
 			task.delay(p.emberTime, function()
 				if bit.Parent then
 					bit.Material = Enum.Material.Slate
+				end
+			end)
+			task.delay(p.emberTime + p.coalTime, function()
+				if bit.Parent then
 					TweenService:Create(bit, TweenInfo.new(p.fadeTime), { Transparency = 1 }):Play()
 					Debris:AddItem(bit, p.fadeTime + 0.1)
 				end
@@ -605,68 +727,154 @@ return function(deps)
 		end
 	end
 
+	-- Лопнул: туша колется на свои же детали — они разлетаются и ложатся на пол кусками
+	-- льда, поверх брызжут мелкие осколки и снежная пыль. Полежав, всё тает в лужицу.
 	local function shatter(corpse, scale)
 		local p = PhysicsFX.brittle
 		local box, size = corpse:GetBoundingBox()
-		corpse:Destroy()
-
+		local center = box.Position
+		local floorY = center.Y - size.Y / 2
 		local folder = container("Debris")
-		local count = math.max(4, math.floor(p.shards * scale + 0.5))
 		local melt = TweenInfo.new(p.meltTime, Enum.EasingStyle.Linear)
+
+		-- Куски туши: без сварки и физики, долетают твином и ложатся на пол.
+		local parts = visibleParts(corpse)
+		for _, item in corpse:GetDescendants() do
+			if item:IsA("BasePart") then
+				item.Anchored = true
+				item.CanCollide = false
+			elseif item:IsA("WeldConstraint") or item:IsA("ParticleEmitter") then
+				item:Destroy()
+			end
+		end
+		corpse.Name = corpse.Name .. " (лопнул)"
+		corpse.Parent = folder
+		local fly = TweenInfo.new(p.flyTime, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+		for _, part in parts do
+			part.Material = Enum.Material.Ice
+			part.Transparency = math.min(part.Transparency, 0.1)
+			local out = part.Position - center
+			out = Vector3.new(out.X, 0, out.Z)
+			out = out.Magnitude > 1e-3 and out.Unit or Vector3.new(math.random() - 0.5, 0, math.random() - 0.5).Unit
+			local land = part.Position + out * p.scatter * scale * (0.3 + math.random())
+			local low = math.min(part.Size.X, part.Size.Y, part.Size.Z) / 2
+			local turn = CFrame.Angles((math.random() - 0.5) * 1.2, (math.random() - 0.5) * 2, (math.random() - 0.5) * 1.2)
+			TweenService:Create(part, fly, {
+				CFrame = CFrame.new(land.X, floorY + low, land.Z) * turn * (part.CFrame - part.Position),
+			}):Play()
+		end
+		task.delay(p.flyTime + p.lieTime, function()
+			for _, part in parts do
+				if part.Parent then
+					TweenService:Create(part, melt, { Transparency = 1, Size = part.Size * 0.5 }):Play()
+				end
+			end
+			Debris:AddItem(corpse, p.meltTime + 0.1)
+		end)
+
+		-- Мелкие осколки — физические, скачут по полу.
+		local count = math.max(4, math.floor(p.shards * scale + 0.5))
 		for _ = 1, count do
 			local shard = plainPart("IceShard", folder)
 			local edge = p.shardSize * scale * (0.5 + math.random())
 			shard.Size = Vector3.new(edge * 0.5, edge, edge * 0.8)
 			shard.CFrame = box * CFrame.new((math.random() - 0.5) * size.X, (math.random() - 0.5) * size.Y,
 				(math.random() - 0.5) * size.Z) * CFrame.Angles(math.random() * 6.3, math.random() * 6.3, 0)
-			shard.Material = Enum.Material.Glass
+			shard.Material = Enum.Material.Ice
 			shard.Color = p.color
-			shard.Reflectance = p.reflectance
-			shard.Transparency = p.transparency
+			shard.Transparency = 0.1
 			shard.CanCollide = true
 			shard.CollisionGroup = CORPSE_GROUP
 			shard.Anchored = false
-			local out = shard.Position - box.Position
+			local out = shard.Position - center
 			out = Vector3.new(out.X, 0, out.Z)
 			out = out.Magnitude > 1e-3 and out.Unit or Vector3.xAxis
 			shard.AssemblyLinearVelocity = (out + Vector3.yAxis * p.lift) * p.speed * (0.5 + math.random())
 			shard.AssemblyAngularVelocity = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5) * 16
-			task.delay(p.meltDelay, function()
+			task.delay(p.lieTime, function()
 				if shard.Parent then
 					TweenService:Create(shard, melt, { Transparency = 1, Size = shard.Size * 0.3 }):Play()
 					Debris:AddItem(shard, p.meltTime + 0.1)
 				end
 			end)
 		end
+
+		-- Снежная пыль в момент удара.
+		local dust = plainPart("FrostDust", folder)
+		dust.Transparency = 1
+		dust.Size = Vector3.one
+		dust.CFrame = CFrame.new(center)
+		local puff = Instance.new("ParticleEmitter")
+		puff.Texture = "rbxasset://textures/particles/smoke_main.dds"
+		puff.Color = ColorSequence.new(Color3.fromRGB(240, 248, 255), p.color)
+		puff.Transparency = NumberSequence.new(0.2, 1)
+		puff.Size = NumberSequence.new(0.6 * scale, 2.2 * scale)
+		puff.Lifetime = NumberRange.new(0.5, 0.9)
+		puff.Speed = NumberRange.new(4, 9)
+		puff.SpreadAngle = Vector2.new(180, 60)
+		puff.Drag = 4
+		puff.Rate = 0
+		puff.Parent = dust
+		puff:Emit(p.puff)
+		Debris:AddItem(dust, 1.2)
+
+		-- Талая лужица там, где лежат куски.
+		local water = Instance.new("Model")
+		water.Name = "Талая вода"
+		local spots = puddle(water, center, floorY, size.X * 0.9, p.water, Enum.Material.SmoothPlastic, p.flyTime + p.lieTime)
+		for _, spot in spots do
+			spot.Transparency = 0.45
+		end
+		water.Parent = container("Blood")
+		remember(stains, water, maxStains)
+		fadeAway(water, spots, p.flyTime + p.lieTime + p.meltTime, p.waterTime)
 	end
 
 	-- ============ Болотный труп ============
-	-- Умер Болотным — труп заражает прошедших (решает сервер). Игрок видит это так:
-	-- труп зеленеет и пускает пузыри, пока лежит.
-	local function swampy(corpse, holder, scale)
+	-- Умер Болотным — труп заражает прошедших (решает сервер, вокруг точки смерти).
+	-- Игрок видит это так: туша зеленеет, под ней болотная лужа ровно в радиус заразы,
+	-- в луже вздуваются и лопаются пузыри. Труп ушёл (съеден, лимит) — лужа сохнет.
+	local function swampy(corpse, scale, at, floorY)
 		local p = PhysicsFX.swampy
 		for _, part in visibleParts(corpse) do
 			part.Color = part.Color:Lerp(p.color, p.tint)
 		end
-		if holder then
-			local bubbles = Instance.new("ParticleEmitter")
-			bubbles.Name = "SwampBubbles"
-			bubbles.Texture = "rbxasset://textures/particles/smoke_main.dds"
-			bubbles.Color = ColorSequence.new(p.bubble)
-			bubbles.LightInfluence = 0.8
-			bubbles.Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 0.2),
-				NumberSequenceKeypoint.new(0.8, 0.4),
-				NumberSequenceKeypoint.new(1, 1),
-			})
-			bubbles.Size = NumberSequence.new(0.25 * scale, 0.5 * scale)
-			bubbles.Lifetime = NumberRange.new(0.6, 1.1)
-			bubbles.Speed = NumberRange.new(0.6, 1.4)
-			bubbles.SpreadAngle = Vector2.new(25, 25)
-			bubbles.EmissionDirection = Enum.NormalId.Top
-			bubbles.Rate = p.rate
-			bubbles.Parent = holder
+
+		local radius = Elements.Swamp.contagion.radius
+		local pool = Instance.new("Model")
+		pool.Name = corpse.Name .. " (болото)"
+		local spots = puddle(pool, at, floorY, radius * 2, p.pool, Enum.Material.SmoothPlastic, 0.6)
+		for _, spot in spots do
+			spot.Transparency = p.poolTransparency
 		end
+		pool.Parent = container("Blood")
+
+		local folder = corpse.Parent
+		task.spawn(function()
+			local grow = TweenInfo.new(p.bubbleTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			local pop = TweenInfo.new(0.12, Enum.EasingStyle.Linear)
+			while corpse.Parent == folder and pool.Parent do
+				local angle = math.random() * math.pi * 2
+				local distance = radius * 0.8 * math.sqrt(math.random())
+				local size = p.bubbleSize * scale * (0.6 + math.random() * 0.8)
+				local bubble = plainPart("Bubble", pool)
+				bubble.Shape = Enum.PartType.Ball
+				bubble.Material = Enum.Material.SmoothPlastic
+				bubble.Color = p.bubble
+				bubble.Transparency = 0.25
+				bubble.Size = Vector3.one * 0.05
+				bubble.CFrame = CFrame.new(at.X + math.cos(angle) * distance, floorY + LIFT, at.Z + math.sin(angle) * distance)
+				TweenService:Create(bubble, grow, { Size = Vector3.one * size }):Play()
+				task.delay(p.bubbleTime, function()
+					if bubble.Parent then
+						TweenService:Create(bubble, pop, { Size = Vector3.one * size * 1.4, Transparency = 1 }):Play()
+						Debris:AddItem(bubble, 0.15)
+					end
+				end)
+				task.wait(1 / p.rate)
+			end
+			fadeAway(pool, spots, 0, p.fadeTime)
+		end)
 	end
 
 	return {

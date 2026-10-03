@@ -1103,7 +1103,10 @@ end
 -- Анатомия берётся у ЖИВОГО жука (original), а не восстанавливается обратным счётом
 -- по готовым частям клона: бёдра и стойки уже записаны в состоянии походки, и второй
 -- способ их узнать — лишний.
-function EnemyGait.DeathPose(corpse, original)
+-- splay, drop — насколько далеко и низко ступня (по умолчанию поза трупа); меньше — лапы поджаты.
+function EnemyGait.DeathPose(corpse, original, splay, drop)
+	splay = splay or DEATH_SPLAY
+	drop = drop or DEATH_DROP
 	local state = states[original]
 	local body = corpse.PrimaryPart
 	if not state or not body then
@@ -1121,9 +1124,9 @@ function EnemyGait.DeathPose(corpse, original)
 			-- Ступня уезжает наружу и поднимается почти до уровня брюха: лапы лежат
 			-- плашмя вокруг тела, и корпус садится на землю, а не стоит на ходулях.
 			local foot = body.CFrame * Vector3.new(
-				leg.rest.X * DEATH_SPLAY,
-				leg.hip.Y - DEATH_DROP * modelScale,
-				leg.rest.Z * DEATH_SPLAY
+				leg.rest.X * splay,
+				leg.hip.Y - drop * modelScale,
+				leg.rest.Z * splay
 			)
 			local length = (foot - hip).Magnitude
 			if length > 1e-3 then
