@@ -4,7 +4,7 @@ import re
 
 from species import SPECIES
 
-TEMPLATES = {"mini_beetle": "MiniBeetleTemplate", "hmuryi_bron": "ArmoredBeetleTemplate",
+TEMPLATES = {"standard_beetle": "NormalBeetleTemplate", "mini_beetle": "MiniBeetleTemplate", "hmuryi_bron": "ArmoredBeetleTemplate",
              "moth": "MothTemplate", "worker_beetle": "WorkerBeetleTemplate",
              "builder_beetle": "BuilderBeetleTemplate", "pelican_beetle": "PelicanBeetleTemplate"}
 

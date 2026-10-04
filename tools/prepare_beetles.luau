@@ -1,10 +1,10 @@
--- Шаблоны жуков из .glb (Мини, Хмурый брон, Моль, Работяга, Строитель, Пеликан).
+-- Шаблоны жуков из .glb (Мини, Хмурый брон, Моль, Работяга, Строитель, Пеликан, Стандарт).
 -- Сами .glb собирает tools/beetles/build_all.py (python3, numpy) — правка формы там, не в Blender.
 --
 -- Порядок:
---   1. Studio → Avatar/Home → Import 3D, по очереди все шесть файлов из папки «Модели/Жуки»:
+--   1. Studio → Avatar/Home → Import 3D, по очереди все семь файлов из папки «Модели/Жуки»:
 --      mini_beetle.glb, hmuryi_bron.glb, moth.glb, worker_beetle.glb, builder_beetle.glb,
---      pelican_beetle.glb. Настройки импорта — по умолчанию. Импорт ляжет в Workspace
+--      pelican_beetle.glb, standard_beetle.glb. Настройки импорта — по умолчанию. Импорт ляжет в Workspace
 --      моделью AuxScene — переименовать в имя файла (worker_beetle и т.д.), по нему скрипт
 --      и находит импорт.
 --   2. View → Command Bar, вставить весь файл, Enter. В Output — отчёт по каждому жуку.
@@ -60,6 +60,9 @@ local SPECS = {
 		mandible = { "^beak_tooth$" },
 		flap = { freq = 3.5, angle = 30 },
 	},
+	-- Стандарт — последним: Root всех шаблонов берётся с прежнего NormalBeetleTemplate,
+	-- а его самого prepare заменяет новым (старый удаляется).
+	{ source = "standard_beetle", template = "NormalBeetleTemplate", length = 3.1 },
 }
 
 -- Цвета из .glb (baseColorFactor, линейные): Import 3D их не переносит, детали приходят серыми.
@@ -67,13 +70,20 @@ local SPECS = {
 -- Группа — один цвет: { r, g, b, имена деталей..., alpha = непрозрачность, если не 1 }.
 -- Имя ищется целиком, затем без цифр в конце, без «_L/_R», затем по началу имени (cheek_L → cheek).
 local COLORS = {
-	WorkerBeetleTemplate = {
-		{ 0.14, 0.045, 0.016, "BeetleBodyInner" },
-		{ 0.1, 0.028, 0.01, "BeetleSternite", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
-		{ 0.2, 0.055, 0.018, "BeetlePlate" },
-		{ 0.04, 0.016, 0.007, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+	NormalBeetleTemplate = {
+		{ 0.075, 0.032, 0.012, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.16, 0.07, 0.025, "BeetlePlate" },
+		{ 0.66, 0.57, 0.39, "elytra_spot" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
 		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
-		{ 0.02, 0.008, 0.004, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
+	},
+	WorkerBeetleTemplate = {
+		{ 0.11, 0.05, 0.015, "BeetleBodyInner", "BeetleSternite", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.2, 0.1, 0.03, "BeetlePlate" },
+		{ 0.04, 0.02, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.02, 0.01, 0.004, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
 	},
 	MiniBeetleTemplate = {
 		{ 0.055, 0.02, 0.008, "BeetleBodyInner", "BeetleSternite", "ThoraxCore", "ROOT", "HeadBase", "MandibleJoint", "MandibleBase", "MandibleTip", "AntSeg", "AntNode" },
