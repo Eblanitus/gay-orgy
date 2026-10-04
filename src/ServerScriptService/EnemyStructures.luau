@@ -181,9 +181,14 @@ end
 
 -- Руина на месте разрушенного. maxHp — прочность того, что снесли: от неё зависят
 -- и размер кучи, и сколько из неё можно вынести.
+-- Сколько единиц материала даёт разрушенное с такой прочностью. Отдельно — то же число
+-- нужно обломкам турелей (TowerDebris): там материал — сами отломанные детали.
+function EnemyStructures.MaterialFor(maxHp)
+	return math.clamp(math.round((maxHp or 0) / HP_PER_MATERIAL), 1, MAX_MATERIAL)
+end
+
 function EnemyStructures.Ruin(position, maxHp)
-	local material = math.clamp(math.round((maxHp or 0) / HP_PER_MATERIAL), 1, MAX_MATERIAL)
-	return EnemyStructures.DropMaterial(position, material)
+	return EnemyStructures.DropMaterial(position, EnemyStructures.MaterialFor(maxHp))
 end
 
 -- Оставить кучу с заданным запасом материала —

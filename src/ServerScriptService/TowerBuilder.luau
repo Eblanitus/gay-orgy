@@ -243,13 +243,13 @@ local function placeTower(cx, cz, towerType, turn)
 		if tower.Parent and (tower:GetAttribute("HP") or 0) <= 0 then
 			print(("[Постройка] %s разрушена, клетка (%d, %d) снова свободна")
 				:format(tower.Name, cx, cz))
-			-- Руина на месте постройки: Строитель «ест обломки стены или мебели» и строит
-			-- из них (каста 1). Размер кучи и запас материала
-			-- в ней считаются от прочности снесённого: Стена оставляет больше, чем Испаритель.
-			EnemyStructures.Ruin(tower:GetPivot().Position, tower:GetAttribute("MaxHP"))
-			-- Обломки самой постройки: по ним жуки ходят (TowerDebris). Детали берутся с модели,
-			-- поэтому — до Destroy.
-			TowerDebris.Leave(tower, towerData.footprint)
+			-- Постройка распадается на свои детали (TowerDebris): по ним жуки ходят, а часть
+			-- деталей — материал. Строитель «ест обломки стены или мебели» и строит из них
+			-- (каста 1), Работяга носит их ему. Сколько деталей несут материал — от прочности
+			-- снесённого, как было у руины: Стена даёт больше, чем Испаритель. Детали берутся
+			-- с модели, поэтому — до Destroy.
+			TowerDebris.Leave(tower, towerData.footprint,
+				EnemyStructures.MaterialFor(tower:GetAttribute("MaxHP")))
 			tower:Destroy()
 			Grid.Free(cx, cz)
 		end

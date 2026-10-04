@@ -16,6 +16,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Workspace = game:GetService("Workspace")
 
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
+local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 local Towers = require(ReplicatedStorage:WaitForChild("Towers"))
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
@@ -24,6 +25,7 @@ local LabTable = require(ServerScriptService:WaitForChild("LabTable"))
 -- Справочник и производитель: целью не бывают, но взрывы их задевают.
 local LabStations = require(ServerScriptService:WaitForChild("LabStations"))
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
+local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 -- Рельеф бетонного пола: Строитель роет в нём настоящую ямку.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
@@ -670,7 +672,8 @@ TRAITS.builds = function(enemy, enemyData, state)
 
 		-- «Ест обломки стены или мебели.» Пока не набрал нужного — не строит.
 		if carried < plan.needMaterial then
-			if EnemyStructures.TakeMaterial(at, plan.gather) then
+			-- Детали разрушенных турелей — первыми, руины (от Горы, от Пеликана) — следом.
+			if TowerDebris.Consume(at, plan.gather) or EnemyStructures.TakeMaterial(at, plan.gather) then
 				carried += 1
 			end
 		else
@@ -1249,7 +1252,12 @@ TRAITS.carriesMaterial = function(enemy, enemyData, state)
 
 		local at = enemy:GetPivot().Position
 		if not state.hauling then
-			if EnemyStructures.TakeMaterial(at, 10) then
+			-- Деталь разрушенной турели несёт на спине — её видно, пока он идёт. Руину
+			-- (от Горы, от Пеликана) нести нечем, как и раньше: просто «взял единицу».
+			local part = TowerDebris.Carry(enemy, at, 10, EnemyBody.HalfHeight(enemy))
+			if part then
+				state.hauling = part
+			elseif EnemyStructures.TakeMaterial(at, 10) then
 				state.hauling = true
 			end
 		else
@@ -1257,7 +1265,11 @@ TRAITS.carriesMaterial = function(enemy, enemyData, state)
 			for _, other in enemiesAround(at, 20, enemy) do
 				local otherData = Enemies[other:GetAttribute("Type")]
 				if otherData and otherData.builds then
-					EnemyStructures.DropMaterial(other:GetPivot().Position, 1)
+					if typeof(state.hauling) == "Instance" then
+						TowerDebris.Drop(state.hauling, other:GetPivot().Position)
+					else
+						EnemyStructures.DropMaterial(other:GetPivot().Position, 1)
+					end
 					state.hauling = false
 					break
 				end

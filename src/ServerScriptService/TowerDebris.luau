@@ -1,43 +1,57 @@
--- Обломки разрушенных турелей: куски самой постройки, разбросанные по её следу.
+-- Обломки разрушенных турелей: турель РАСПАДАЕТСЯ на свои настоящие детали.
 --
--- Это не руина (EnemyStructures.Ruin) — руина остаётся как была: куча материала, которую
--- ест Строитель. Обломки — то, по чему жуки ХОДЯТ: тело поднимается на них (Crowd спрашивает
--- HeightAt), лапы ставятся на них (EnemyGait ловит лучом папку TowerDebris). Клеток сетки
--- они не занимают и маршрут не меняют: низкие, жук через них перешагивает, а не обходит.
+-- Когда постройка ломается, её детали отваливаются: верх разлетается дальше, низ оседает
+-- на месте, каждая кувыркается в полёте и ложится плашмя. Дальше детали делятся на два сорта:
 --
--- Каждый обломок — уменьшенная копия детали той самой постройки (её меш, цвет, материал),
--- положенная плашмя: по куску видно, что тут стояло. Деталей нет (не нашлось) — простой
--- брусок в цвет постройки.
+--   * куски (piece) — крупные детали и те, что годятся в материал. Остаются лежать, по ним
+--     жуки ХОДЯТ: тело поднимается на них (Crowd спрашивает HeightAt), лапы встают на них
+--     (EnemyGait ловит лучом папку TowerDebris). Клеток сетки не занимают, маршрут не меняют.
+--   * крошки — мелочь (винтики, трубки). Разлетаются вместе со всеми и через пару секунд тают:
+--     у Колбы под семь десятков деталей, и оставлять их все на поле незачем.
 --
--- Число деталей на поле ограничено (MAX_PIECES): новые вытесняют самые старые. Иначе к концу
--- длинного забега обломки копились бы сотнями — те же грабли, что с останками жуков.
+-- Часть кусков несёт материал (атрибут Material): это то, что жуки СОБИРАЮТ. Работяга
+-- поднимает деталь и несёт её на спине к Строителю (Pick/Carry/Drop), Строитель её съедает
+-- и строит из неё (Consume). Сколько деталей несут материал — та же формула, что у руины
+-- (EnemyStructures.MaterialFor): разрушенная турель даёт жукам столько же, сколько давала.
+--
+-- Полёт считается здесь же, кадрами, а не физикой движка: пол арены без коллизии
+-- (бетон — визуальный, см. ConcreteFloor), и отпущенная деталь провалилась бы сквозь него.
+--
+-- Число кусков на поле ограничено (MAX_PIECES): новые вытесняют самые старые.
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
 
 local TowerDebris = {}
 
--- Сколько обломков от одной постройки: от её ширины, в пределах [MIN_PER, MAX_PER].
-local MIN_PER, MAX_PER = 3, 7
-local PER_STUD = 0.6 -- обломков на студ ширины следа
+-- Сколько деталей одной постройки остаются лежать кусками (без учёта материала) и сколько
+-- разлетаются крошками. Остальная мелочь исчезает сразу, в момент распада.
+local KEEP = 6
+local CRUMBS = 24
 
--- Потолок обломков на всём поле.
+-- Потолок кусков на всём поле.
 local MAX_PIECES = 48
 
--- Обломок лежит плашмя и невысокий — по нему ходят, а не лезут. Высота куска над полом
--- не больше MAX_HEIGHT, длинная сторона — не больше доли ширины постройки.
-local MAX_HEIGHT = 0.7
-local MAX_LENGTH_SHARE = 0.35
-local MIN_LENGTH = 0.6
-local MAX_LENGTH = 3
+-- Деталь, которую жук может унести: самая длинная сторона не больше этого.
+local CARRY_MAX = 3.5
+
+-- Полёт: время, высота дуги, разлёт (доля ширины следа) и кувырок.
+local FLIGHT_TIME = { 0.55, 0.95 }
+local ARC_HEIGHT = { 1.5, 4 }
+local SCATTER = { 0.15, 0.75 }
+local SPIN = 2 * math.pi
+
+-- Крошки: сколько лежат после падения и за сколько тают.
+local CRUMB_LIFE = 2.5
+local CRUMB_FADE = 1
 
 -- Обгоревший вид: цвет детали подтемняется к этому.
 local SCORCH = Color3.fromRGB(40, 36, 32)
-local SCORCH_SHARE = 0.35
+local SCORCH_SHARE = 0.3
 
--- Ячейка пространственной сетки для HeightAt: спрашивают каждый кадр на каждого жука,
--- и проход по всем обломкам на каждый вопрос стоил бы зря.
+-- Ячейка пространственной сетки для HeightAt: спрашивают каждый кадр на каждого жука.
 local BUCKET = 4
 
 local folder = Workspace:FindFirstChild("TowerDebris")
@@ -47,14 +61,14 @@ if not folder then
 	folder.Parent = Workspace
 end
 
-local pieces = {} -- по порядку появления, старые первые
+local pieces = {} -- лежащие куски по порядку появления, старые первые
 local buckets = {} -- "bx|bz" -> { piece, ... }
+local flying = {} -- детали в полёте
 
 local function bucketKey(bx, bz)
 	return bx .. "|" .. bz
 end
 
--- Ячейки, которые накрывает обломок (по описанному кругу — с запасом, дёшево).
 local function eachBucket(piece, fn)
 	local r = piece.radius
 	local x0, x1 = math.floor((piece.x - r) / BUCKET), math.floor((piece.x + r) / BUCKET)
@@ -64,6 +78,17 @@ local function eachBucket(piece, fn)
 			fn(bucketKey(bx, bz))
 		end
 	end
+end
+
+local function index(piece)
+	eachBucket(piece, function(k)
+		local list = buckets[k]
+		if not list then
+			list = {}
+			buckets[k] = list
+		end
+		table.insert(list, piece)
+	end)
 end
 
 local function unindex(piece)
@@ -81,142 +106,227 @@ local function unindex(piece)
 	end)
 end
 
-local function removePiece(index)
-	local piece = table.remove(pieces, index)
-	if piece then
+-- Снять кусок с поля (из списка и сетки высот). Деталь при этом остаётся — её решает вызвавший.
+local function detach(piece)
+	local i = table.find(pieces, piece)
+	if i then
+		table.remove(pieces, i)
 		unindex(piece)
-		if piece.part.Parent then
-			piece.part:Destroy()
-		end
 	end
 end
 
-local function addPiece(part, flat, hx, hz, top)
-	local at = flat.Position
+local function destroyPiece(piece)
+	detach(piece)
+	if piece.part.Parent then
+		piece.part:Destroy()
+	end
+end
+
+-- Как положить деталь плашмя: самая тонкая её ось — вверх. Возвращает поворот укладки,
+-- толщину (высоту над полом) и две стороны по горизонтали.
+local function layFlat(size)
+	if size.Y <= size.X and size.Y <= size.Z then
+		return CFrame.identity, size.Y, size.X, size.Z
+	elseif size.X <= size.Z then
+		return CFrame.Angles(0, 0, math.pi / 2), size.X, size.Y, size.Z
+	end
+	return CFrame.Angles(math.pi / 2, 0, 0), size.Z, size.X, size.Y
+end
+
+-- Где и как деталь ляжет на полу в точке (x, z) с поворотом yaw.
+local function restingFrame(part, x, z, yaw)
+	local lay, up, a, b = layFlat(part.Size)
+	local floorY = ConcreteFloor.HeightAt(x, z)
+	local flat = CFrame.new(x, floorY + up / 2, z) * CFrame.Angles(0, yaw, 0)
+	return flat * lay, flat, up, a, b, floorY
+end
+
+-- Положить кусок на поле: по нему ходят, его можно подобрать (если несёт материал).
+local function rest(part, flat, up, a, b, floorY, material)
 	local piece = {
 		part = part,
-		x = at.X,
-		z = at.Z,
-		-- Плоский кадр (только поворот вокруг вертикали): в нём проверяется, накрывает ли
-		-- кусок точку. Наклон куска на высоту почти не влияет — им пренебрегаем.
+		x = flat.Position.X,
+		z = flat.Position.Z,
 		flat = flat,
-		hx = hx,
-		hz = hz,
-		top = top,
-		radius = math.sqrt(hx * hx + hz * hz),
+		hx = a / 2,
+		hz = b / 2,
+		top = floorY + up,
+		radius = math.sqrt(a * a + b * b) / 2,
+		material = material,
 	}
+	part:SetAttribute("Material", material)
 	table.insert(pieces, piece)
-	eachBucket(piece, function(k)
-		local list = buckets[k]
-		if not list then
-			list = {}
-			buckets[k] = list
-		end
-		table.insert(list, piece)
-	end)
+	index(piece)
 
 	while #pieces > MAX_PIECES do
-		removePiece(1)
+		destroyPiece(pieces[1])
+	end
+	return piece
+end
+
+-- Деталь отрывается от модели: чистая, анкорнутая, без коллизии (игрок и снаряды сквозь неё
+-- проходят, линию огня она не закрывает — Targeting берёт только то, что с коллизией),
+-- но ловится лучом (по ней ставятся лапы).
+-- Внешний вид детали (текстура меша, наклейки) остаётся, всё остальное — сварки, крепления,
+-- частицы, звуки — снимается: деталь больше не часть турели.
+local KEEP_CHILD = { SurfaceAppearance = true, Decal = true, Texture = true, SpecialMesh = true }
+
+local function prepare(part)
+	for _, child in part:GetChildren() do
+		if not KEEP_CHILD[child.ClassName] then
+			child:Destroy()
+		end
+	end
+	for name in part:GetAttributes() do
+		part:SetAttribute(name, nil)
+	end
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanTouch = false
+	part.CanQuery = true
+	part.Color = part.Color:Lerp(SCORCH, SCORCH_SHARE)
+	part.Parent = folder
+end
+
+local function crumbFade(part)
+	task.delay(CRUMB_LIFE, function()
+		local start = os.clock()
+		local base = part.Transparency
+		while part.Parent and os.clock() - start < CRUMB_FADE do
+			part.Transparency = base + (1 - base) * (os.clock() - start) / CRUMB_FADE
+			RunService.Heartbeat:Wait()
+		end
+		if part.Parent then
+			part:Destroy()
+		end
+	end)
+end
+
+-- Все детали в полёте ведёт одна подписка на кадр, а не по потоку на деталь.
+local connection = nil
+local function step()
+	local now = os.clock()
+	for i = #flying, 1, -1 do
+		local f = flying[i]
+		local t = math.min((now - f.start) / f.duration, 1)
+		if not f.part.Parent then
+			table.remove(flying, i)
+		else
+			local position = f.from.Position:Lerp(f.to.Position, t)
+				+ Vector3.new(0, f.arc * 4 * t * (1 - t), 0)
+			local rotation = f.from.Rotation:Lerp(f.to.Rotation, t)
+				* CFrame.fromAxisAngle(f.axis, f.spin * (1 - t) * t * 4)
+			f.part.CFrame = CFrame.new(position) * rotation
+			if t >= 1 then
+				table.remove(flying, i)
+				f.part.CFrame = f.to
+				f.landed()
+			end
+		end
+	end
+	if #flying == 0 and connection then
+		connection:Disconnect()
+		connection = nil
 	end
 end
 
--- Детали постройки, годные в обломки: видимые и не служебные. Самые крупные (платформа)
--- тоже годятся — их всё равно уменьшат до куска.
-local function sourceParts(tower)
+local function launch(part, to, arc, duration, landed)
+	table.insert(flying, {
+		part = part,
+		from = part.CFrame,
+		to = to,
+		arc = arc,
+		duration = duration,
+		start = os.clock(),
+		axis = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5).Unit,
+		spin = SPIN * (0.5 + math.random()),
+		landed = landed,
+	})
+	if not connection then
+		connection = RunService.Heartbeat:Connect(step)
+	end
+end
+
+local function between(range)
+	return range[1] + math.random() * (range[2] - range[1])
+end
+
+-- Видимые детали постройки, крупные первыми.
+local function partsOf(tower)
 	local list = {}
 	for _, part in tower:GetDescendants() do
-		if part:IsA("BasePart") and part ~= tower.PrimaryPart and part.Transparency < 0.6
-			and part.Size.Magnitude > 0.4 then
+		if part:IsA("BasePart") and part ~= tower.PrimaryPart and part.Transparency < 0.9
+			and part.Size.Magnitude > 0.3 then
 			table.insert(list, part)
 		end
 	end
+	table.sort(list, function(a, b)
+		local sa, sb = a.Size, b.Size
+		return sa.X * sa.Y * sa.Z > sb.X * sb.Y * sb.Z
+	end)
 	return list
 end
 
--- Делает из детали плоский кусок: тонкая ось — вверх, уменьшение — равномерное (меш не
--- плющится), так чтобы и высота, и длина влезли в пределы. Возвращает кусок и его размеры
--- по горизонтали и вертикали после укладки.
-local function shapeChunk(source, maxLength)
-	local chunk
-	if source then
-		chunk = source:Clone()
-		chunk:ClearAllChildren()
-		for name in chunk:GetAttributes() do
-			chunk:SetAttribute(name, nil)
-		end
-		chunk.Color = chunk.Color:Lerp(SCORCH, SCORCH_SHARE)
-	else
-		chunk = Instance.new("Part")
-		chunk.Color = Color3.fromRGB(96, 90, 82)
-		chunk.Material = Enum.Material.Metal
-		chunk.Size = Vector3.new(1.2, 0.4, 0.9)
-	end
-
-	local size = chunk.Size
-	local longest = math.max(size.X, size.Y, size.Z)
-	local thinnest = math.min(size.X, size.Y, size.Z)
-	local scale = math.min(1, maxLength / longest, MAX_HEIGHT / thinnest)
-	local length = math.clamp(longest * scale, MIN_LENGTH, maxLength)
-	scale = length / longest
-	-- Деталь-брусок (толщина почти равна длине) остаётся выше MAX_HEIGHT и после этого —
-	-- тогда она урезается по высоте ещё раз, уже ценой длины.
-	if thinnest * scale > MAX_HEIGHT then
-		scale = MAX_HEIGHT / thinnest
-	end
-	chunk.Size = size * scale
-	size = chunk.Size
-
-	-- Какую локальную ось класть вверх: самую тонкую.
-	local lay
-	local up, a, b
-	if size.Y <= size.X and size.Y <= size.Z then
-		lay, up, a, b = CFrame.identity, size.Y, size.X, size.Z
-	elseif size.X <= size.Z then
-		lay, up, a, b = CFrame.Angles(0, 0, math.pi / 2), size.X, size.Y, size.Z
-	else
-		lay, up, a, b = CFrame.Angles(math.pi / 2, 0, 0), size.Z, size.X, size.Y
-	end
-
-	chunk.Name = "Debris"
-	chunk.Anchored = true
-	-- Игрок и снаряды сквозь обломки проходят, линию огня они не закрывают (Targeting берёт
-	-- только то, что с коллизией). Луч походки их ловит — по белому списку папки.
-	chunk.CanCollide = false
-	chunk.CanTouch = false
-	chunk.CanQuery = true
-	chunk.CastShadow = true
-	return chunk, lay, up, a, b
-end
-
--- Оставляет обломки разрушенной постройки. Звать ДО tower:Destroy() — детали берутся с неё.
--- footprint — ширина следа в студах (Towers[type].footprint), по ней разбрасываются куски.
-function TowerDebris.Leave(tower, footprint)
+-- Турель распадается. Звать ДО tower:Destroy() — детали переезжают из модели в папку обломков.
+-- footprint — ширина следа в студах (Towers[type].footprint), material — сколько деталей
+-- понесут материал для жуков.
+function TowerDebris.Leave(tower, footprint, material)
 	local centre = tower:GetPivot().Position
 	local width = math.max(footprint or 4, 2)
-	local count = math.clamp(math.round(width * PER_STUD), MIN_PER, MAX_PER)
-	local maxLength = math.clamp(width * MAX_LENGTH_SHARE, MIN_LENGTH, MAX_LENGTH)
-	local sources = sourceParts(tower)
+	local parts = partsOf(tower)
 
-	for _ = 1, count do
-		local source = #sources > 0 and sources[math.random(1, #sources)] or nil
-		local chunk, lay, up, a, b = shapeChunk(source, maxLength)
+	-- Кто несёт материал: крупнейшие из тех, что жук способен унести.
+	local carriers, carrierCount = {}, 0
+	for _, part in parts do
+		if carrierCount >= (material or 0) then
+			break
+		end
+		if math.max(part.Size.X, part.Size.Y, part.Size.Z) <= CARRY_MAX then
+			carriers[part] = true
+			carrierCount += 1
+		end
+	end
 
-		-- Разлёт — по всему следу, гуще к центру.
-		local angle = math.random() * math.pi * 2
-		local distance = math.sqrt(math.random()) * width * 0.5
-		local x = centre.X + math.cos(angle) * distance
-		local z = centre.Z + math.sin(angle) * distance
-		local floorY = ConcreteFloor.HeightAt(x, z)
+	local kept, crumbs = 0, 0
+	for _, part in parts do
+		local role
+		if carriers[part] then
+			role = "material"
+		elseif kept < KEEP then
+			kept += 1
+			role = "piece"
+		elseif crumbs < CRUMBS then
+			crumbs += 1
+			role = "crumb"
+		end
 
-		-- Чуть утоплен в пол и с небольшим наклоном: кусок лежит, а не парит ровной плиткой.
-		local yaw = math.random() * math.pi * 2
-		local sink = up * 0.2
-		local flat = CFrame.new(x, floorY + up / 2 - sink, z) * CFrame.Angles(0, yaw, 0)
-		local tilt = CFrame.Angles((math.random() - 0.5) * 0.25, 0, (math.random() - 0.5) * 0.25)
-		chunk.CFrame = flat * tilt * lay
-		chunk.Parent = folder
+		if not role then
+			part:Destroy()
+		else
+			local from = part.CFrame
+			prepare(part)
 
-		addPiece(chunk, flat, a / 2, b / 2, floorY + up - sink)
+			-- Куда летит: от центра в сторону своего места на турели, и тем дальше, чем выше
+			-- деталь сидела. Низ (платформа) оседает почти на месте.
+			local offset = from.Position - centre
+			local outward = Vector3.new(offset.X, 0, offset.Z)
+			local angle = outward.Magnitude > 0.2 and math.atan2(outward.Z, outward.X) or math.random() * math.pi * 2
+			angle += (math.random() - 0.5) * 1.2
+			local lift = math.clamp(offset.Y / 4, 0, 1)
+			local distance = outward.Magnitude * 0.5 + width * between(SCATTER) * lift
+			local x = centre.X + math.cos(angle) * distance
+			local z = centre.Z + math.sin(angle) * distance
+			local to, flat, up, a, b, floorY = restingFrame(part, x, z, math.random() * math.pi * 2)
+
+			local unit = role == "material" and 1 or nil
+			launch(part, to, between(ARC_HEIGHT) * (0.3 + lift), between(FLIGHT_TIME), function()
+				if role == "crumb" then
+					crumbFade(part)
+				else
+					rest(part, flat, up, a, b, floorY, unit)
+				end
+			end)
+		end
 	end
 end
 
@@ -245,22 +355,101 @@ function TowerDebris.HeightAt(x, z)
 	return math.max(0, best - ConcreteFloor.HeightAt(x, z))
 end
 
--- Убирает обломки в круге — на месте новой постройки: она встаёт на чистый пол,
--- а не вперемешку с кусками старой.
+-- Ближайший лежащий кусок с материалом в радиусе.
+local function nearestMaterial(position, radius)
+	local best, bestDistance = nil, radius
+	for _, piece in pieces do
+		if piece.material then
+			local distance = Vector3.new(piece.x - position.X, 0, piece.z - position.Z).Magnitude
+			if distance <= bestDistance then
+				best, bestDistance = piece, distance
+			end
+		end
+	end
+	return best
+end
+
+-- Строитель съедает деталь: она уходит с поля. true — съел.
+function TowerDebris.Consume(position, radius)
+	local piece = nearestMaterial(position, radius)
+	if not piece then
+		return false
+	end
+	destroyPiece(piece)
+	return true
+end
+
+-- Положить деталь на пол в точке (с поля она уже снята): снова кусок, по которому ходят,
+-- снова материал, который можно подобрать.
+local function putDown(part, position, material)
+	local to, flat, up, a, b, floorY = restingFrame(part, position.X, position.Z, math.random() * math.pi * 2)
+	part.Anchored = true
+	part.CFrame = to
+	part.Parent = folder
+	rest(part, flat, up, a, b, floorY, material)
+end
+
+-- Работяга поднимает деталь и несёт её на спине: деталь приварена к его якорю и едет
+-- вместе с ним. Возвращает деталь (её потом отдают в Drop) или nil, если рядом нечего брать.
+-- Умер с ношей — деталь падает там, где он упал, и снова лежит материалом.
+function TowerDebris.Carry(enemy, position, radius, backHeight)
+	local root = enemy.PrimaryPart
+	local piece = root and nearestMaterial(position, radius)
+	if not piece then
+		return nil
+	end
+	detach(piece)
+
+	local part = piece.part
+	local lay, up = layFlat(part.Size)
+	part.Anchored = false
+	part.Massless = true
+	part.CFrame = root.CFrame * CFrame.new(0, (backHeight or 1) + up / 2, 0) * lay
+	-- Деталь остаётся в папке обломков, а не в модели жука: модель жука — это якорь с атрибутами,
+	-- и лишняя деталь внутри неё попалась бы всему, что меряет жука по его частям.
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = root
+	weld.Part1 = part
+	weld.Parent = part
+
+	enemy.Destroying:Once(function()
+		if weld.Parent and part.Parent then
+			local at = part.Position
+			weld:Destroy()
+			putDown(part, at, 1)
+		end
+	end)
+	return part
+end
+
+-- Положить принесённую деталь у ног Строителя.
+function TowerDebris.Drop(part, position)
+	if not part or not part.Parent then
+		return
+	end
+	local weld = part:FindFirstChildWhichIsA("WeldConstraint")
+	if weld then
+		weld:Destroy()
+	end
+	putDown(part, position, 1)
+end
+
+-- Убирает лежащие куски в круге — на месте новой постройки: она встаёт на чистый пол.
 function TowerDebris.ClearUnder(position, radius)
 	for i = #pieces, 1, -1 do
 		local piece = pieces[i]
 		local dx, dz = piece.x - position.X, piece.z - position.Z
 		if dx * dx + dz * dz <= (radius + piece.radius) ^ 2 then
-			removePiece(i)
+			destroyPiece(piece)
 		end
 	end
 end
 
 -- Сносит всё разом — для рестарта забега, как EnemyStructures.Clear.
 function TowerDebris.Clear()
+	table.clear(flying)
 	for i = #pieces, 1, -1 do
-		removePiece(i)
+		destroyPiece(pieces[i])
 	end
 	table.clear(buckets)
 	folder:ClearAllChildren()
