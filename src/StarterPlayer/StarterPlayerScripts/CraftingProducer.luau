@@ -587,8 +587,11 @@ return function(deps)
 			Theme.Button(up.go, st.busy and "muted" or "action")
 
 			-- Выбранный режим — вывороткой плашки. Скобка «>» убрана: занимала место (просьба автора).
+			-- На обучении (задача #298) рулетки и апгрейдера нет — остаётся только покупка.
+			local restricted = ReplicatedStorage:GetAttribute("TutorialRestricted") == true
 			for _, m in MODES do
 				local on = m.id == st.mode
+				modeButtons[m.id].Visible = not restricted or m.id == "Buy"
 				Theme.Button(modeButtons[m.id], on and "active" or "ghost")
 				modeButtons[m.id].Text = Theme.Caps(m.name)
 			end
@@ -637,6 +640,14 @@ return function(deps)
 				setMode(m.id)
 			end)
 		end
+
+		ReplicatedStorage:GetAttributeChangedSignal("TutorialRestricted"):Connect(function()
+			if ReplicatedStorage:GetAttribute("TutorialRestricted") == true and st.mode ~= "Buy" then
+				setMode("Buy")
+			else
+				refresh()
+			end
+		end)
 
 		-- ============ Раскладка ============
 		-- Всё считается от размера вкладки. Телефон, низкое или узкое окно — «компактно»: те же

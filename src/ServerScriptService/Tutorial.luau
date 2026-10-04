@@ -5,6 +5,7 @@
 -- Клиенту состояние уходит атрибутами на ReplicatedStorage, как TurretsUnlocked у TowerUnlocks:
 --   TutorialHint   — текст текущего шага ("" — плашку не показывать)
 --   TutorialTowers — открытые постройки через запятую ("" — ограничений нет)
+--   TutorialRestricted — идёт обучение с ограничениями (прячет рулетку и апгрейдер)
 --
 -- Промокод test снимает ограничения на весь сервер до перезапуска (как и прочие коды):
 -- это инструмент проверки, перевводить его каждый забег было бы мучением.
@@ -42,6 +43,7 @@ local function publish()
 		end
 	end
 	ReplicatedStorage:SetAttribute("TutorialTowers", table.concat(towers, ","))
+	ReplicatedStorage:SetAttribute("TutorialRestricted", restricted())
 end
 
 -- Начало забега. levelInfo — запись из Levels.
