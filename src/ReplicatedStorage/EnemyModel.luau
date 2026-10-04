@@ -18,6 +18,9 @@ local EnemyModel = {}
 EnemyModel.CollisionGroup = "Enemies"
 
 local ENEMY_Y = 1.5 -- studs над полом: на этой высоте пивота ноги примитива касаются земли
+-- Шаблонный жук в scale 3.0 — того же размера, что примитив в scale 1 (Стандарт).
+-- Нужен, только пока шаблона вида нет в месте: тогда жук собирается примитивом.
+local TEMPLATE_TO_PRIMITIVE = 3
 
 local LEG_NAMES = {
 	"leg_front_left", "leg_front_right",
@@ -49,6 +52,28 @@ local function sameColor(a, b)
 	end
 	local eps = 2.5 / 255
 	return math.abs(a.R - b.R) < eps and math.abs(a.G - b.G) < eps and math.abs(a.B - b.B) < eps
+end
+
+-- Перекраска шаблона без атрибутов Color* (авторские модели из .glb, tools/prepare_beetles):
+-- роль детали — по началу имени. Чего нет в списке (глаза, бронепластины, крылья, клюв,
+-- светлое брюшко Строителя), остаётся авторским: это акценты модели, а не панцирь.
+local ROLE_BY_NAME = {
+	{ "^BeetlePlate", "elytra" },
+	{ "^BeetleSternite", "chitin" }, { "^BeetleBodyInner", "chitin" }, { "^AbdomenCore", "chitin" },
+	{ "^ThoraxCore", "chitin" }, { "^BeetleNeck", "chitin" }, { "^ROOT", "chitin" },
+	{ "^thorax", "chitin" }, { "^neck$", "chitin" },
+	{ "^HeadBase", "head" }, { "^AntNode", "head" }, { "^AntSeg", "head" }, { "^Mandible", "head" },
+	{ "^Tooth", "head" }, { "^cheek", "head" }, { "^shovel", "head" }, { "^labial_palp", "head" }, { "^part_4[46]$", "head" },
+	{ "^Femur", "head" }, { "^KneeJoint", "head" }, { "^AnkleJoint", "head" },
+	{ "^Tibia", "joints" }, { "^Tarsus", "joints" }, { "^CoxaJoint", "joints" },
+}
+local function roleByName(name)
+	for _, rule in ROLE_BY_NAME do
+		if name:match(rule[1]) then
+			return rule[2]
+		end
+	end
+	return nil
 end
 
 -- Шаблонный жук: клон, масштаб, перекраска, лапы в походку. recolor — таблица врага
@@ -83,19 +108,23 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 			part.CanCollide = false
 			part.CanTouch = false
 			if recolor then
-				local own = part.Color
-				if sameColor(own, chitin) then
-					part.Color = color
-				elseif sameColor(own, joints) then
-					part.Color = legColor
-				elseif sameColor(own, elytra) then
-					part.Color = elytraColor
-				elseif sameColor(own, head) then
-					part.Color = headColor
+				local role
+				if chitin then
+					local own = part.Color
+					role = sameColor(own, chitin) and "chitin" or sameColor(own, joints) and "joints"
+						or sameColor(own, elytra) and "elytra" or sameColor(own, head) and "head" or nil
+				else
+					role = roleByName(part.Name)
 				end
-				-- Панцирь матовый (BugPalette): блеск остаётся статусам.
-				part.Material = Enum.Material.SmoothPlastic
-				part.Reflectance = 0
+				local paint = role == "chitin" and color or role == "joints" and legColor
+					or role == "elytra" and elytraColor or role == "head" and headColor or nil
+				if paint then
+					part.Color = paint
+					-- Панцирь матовый (BugPalette): блеск остаётся статусам. Акценты модели
+					-- (бронепластины, крылья) своего материала не теряют.
+					part.Material = Enum.Material.SmoothPlastic
+					part.Reflectance = 0
+				end
 			end
 		end
 	end
@@ -134,9 +163,9 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 end
 
 -- Примитив: приплюснутое тело (шар с неравномерным Size), голова, 4 ноги. PrimaryPart = Body.
-local function buildPrimitive(enemyData)
+local function buildPrimitive(enemyData, scale)
 	local model = Instance.new("Model")
-	local scale = enemyData.scale or 1
+	scale = scale or enemyData.scale or 1
 	local color = enemyData.color or (enemyData.armor and Color3.fromRGB(120, 120, 130) or Color3.fromRGB(55, 80, 45))
 	local material = enemyData.material or (enemyData.armor and Enum.Material.Metal or Enum.Material.SmoothPlastic)
 	local legColor = enemyData.legColor or (enemyData.armor and Color3.fromRGB(60, 60, 66) or Color3.fromRGB(30, 25, 20))
@@ -202,15 +231,35 @@ local function buildPrimitive(enemyData)
 	return model
 end
 
+-- Шаблона вида нет в месте (его ещё не импортировали и не подготовили —
+-- tools/prepare_beetles.luau): предупредить один раз на вид, а не на каждого жука.
+local missingWarned = {}
+local function hasTemplate(templateName)
+	if ReplicatedStorage:FindFirstChild(templateName) then
+		return true
+	end
+	if not missingWarned[templateName] then
+		missingWarned[templateName] = true
+		warn(("[EnemyModel] нет шаблона ReplicatedStorage.%s — жук собран примитивом"):format(templateName))
+	end
+	return false
+end
+
 -- Полная видимая модель врага. scale — масштаб экземпляра (атрибут Scale серверной модели);
 -- nil — выбрать (так делает сервер при появлении).
 function EnemyModel.Build(enemyData, scale)
 	local model
-	if enemyData.model then
+	if enemyData.model and hasTemplate(enemyData.model) then
 		scale = scale or EnemyModel.PickScale(enemyData)
 		model = EnemyModel.FromTemplate(enemyData.model, scale, enemyData)
 		-- Высота пивота при ходьбе: явный rideHeight вида или прямо масштаб клона.
 		model:SetAttribute("RideHeight", enemyData.rideHeight or scale)
+	elseif enemyData.model then
+		-- Атрибут Scale остаётся шаблонным: по нему клиент соберёт того же жука.
+		scale = scale or EnemyModel.PickScale(enemyData)
+		model = buildPrimitive(enemyData, scale / TEMPLATE_TO_PRIMITIVE)
+		model:SetAttribute("Scale", scale)
+		model:SetAttribute("RideHeight", ENEMY_Y)
 	else
 		model = buildPrimitive(enemyData)
 		model:SetAttribute("RideHeight", enemyData.rideHeight or ENEMY_Y)

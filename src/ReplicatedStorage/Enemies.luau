@@ -114,6 +114,12 @@ local Enemies = {
 		-- Не лазает вовсе (climbSpeed/climbHeight нет): тяжёлый, любую преграду прогрызает.
 		armor = 5, -- было 3 (+2); вычитается из каждого попадания и тика (см. Effects.ApplyArmor) — не процент
 		matter = 10, -- было 15
+		-- Авторская модель hmuryi_bron.glb (шлем, бронепластины поверх панциря). Длина тела
+		-- как у Стандарта: 2.7 × 3.45 (тело модели) ≈ 3.0 × 3.1 (тело NormalBeetleTemplate).
+		-- Цвета — BugPalette: шаблон без атрибутов Color* перекрашивается по именам деталей.
+		model = "ArmoredBeetleTemplate",
+		scale = 2.7,
+		tone = -0.6, -- раскраска BugPalette; бронепластины модели остаются своим цветом
 	},
 	-- Тир 0 (design: alchemy_td_enemies_t0.md). Меньше HP и меньше физический размер
 	-- модели — читается на поле без взгляда на полоску HP. Своей механики роя нет —
@@ -133,10 +139,12 @@ local Enemies = {
 		chewRate = 1,
 		climbSpeed = 2.5,
 		climbHeight = 1.6,
-		scaleRange = {0.55, 1.80}, -- диапазон: 0.55 (очень маленький) .. 1.80 (почти Стандарт)
-		-- модель Same-as-Standard: NormalBeetleTemplate (AI-панцирь ShellDorsal + ноги/голова/брюхо)
-		model = "NormalBeetleTemplate",
-		tone = 0.45, -- мелкий — светлее Стандарта
+		-- Авторская модель mini_beetle.glb. Тело модели 2.96 против 3.1 у NormalBeetleTemplate,
+		-- поэтому диапазон чуть шире прежнего {0.55, 1.80} — в студах жуки те же:
+		-- от очень маленького до почти Стандарта.
+		scaleRange = {0.58, 1.88},
+		model = "MiniBeetleTemplate",
+		tone = 0.45, -- мелкий — светлее Стандарта (BugPalette)
 		matter = 3,
 	},
 	-- Тир 0 (design: alchemy_td_enemies_t0.md). Летающий: не участвует в поиске пути по сетке
@@ -181,8 +189,12 @@ local Enemies = {
 		-- hover — на сколько студов выше турели вьётся, orbit — радиус кругов, period —
 		-- за сколько секунд облетает круг. Движение и есть вся её роль.
 		glow = { hover = 5, orbit = 3.5, period = 4 },
-		color = Color3.fromRGB(228, 216, 176),
-		scale = 0.6,
+		-- Авторская модель moth.glb: тело ≈ 4 стада, размах крыльев ≈ 10. Крылья машут,
+		-- пока она в воздухе (EnemyGait.Flap).
+		model = "MothTemplate",
+		scale = 1.2,
+		family = "bone",
+		tone = 0,
 		matter = 2,
 	},
 
@@ -205,7 +217,10 @@ local Enemies = {
 		climbHeight = 4,
 		-- «Могут таскать строй-материалы»: подбирает обломок с пола и несёт Строителю.
 		carriesMaterial = true,
-		color = Color3.fromRGB(96, 74, 40),
+		-- Авторская модель worker_beetle.glb, длина тела как у Стандарта (2.43 × 3.82 ≈ 9.3).
+		model = "WorkerBeetleTemplate",
+		scale = 2.43,
+		tone = 0,
 		matter = 8,
 	},
 
@@ -221,11 +236,14 @@ local Enemies = {
 		speed = 8,
 		chewDamage = 4,
 		chewRate = 1,
-		scale = 1.3, -- толстый
+		-- Авторская модель builder_beetle.glb: толстый — на 30% длиннее Стандарта
+		-- (2.78 × 4.35 ≈ 1.3 × 9.3) и сам по себе шире в боках.
+		model = "BuilderBeetleTemplate",
+		scale = 2.78,
 		-- needMaterial — сколько обломков уходит на одну постройку, interval — пауза между
 		-- ними, gather — в каком радиусе он видит обломки на полу.
 		builds = { needMaterial = 2, interval = 8, gather = 26 },
-		color = Color3.fromRGB(84, 96, 52),
+		tone = -0.4, -- толстый — темнее
 		matter = 14,
 	},
 
@@ -278,8 +296,11 @@ local Enemies = {
 		-- eat — сколько трупов ему надо, чтобы наесться; bite — секунд на один труп;
 		-- material — сколько обломков оставляет жукам, когда наелся.
 		scavenges = { eat = 3, bite = 1.5, material = 2 },
-		color = Color3.fromRGB(118, 112, 96),
-		scale = 1.15,
+		-- Авторская модель pelican_beetle.glb (клюв, крылья): на 15% длиннее Стандарта
+		-- (3.93 × 2.72 ≈ 1.15 × 9.3). Крылья машут в воздухе, наевшись — сложены.
+		model = "PelicanBeetleTemplate",
+		scale = 3.93,
+		tone = 0.15,
 		matter = 12,
 	},
 

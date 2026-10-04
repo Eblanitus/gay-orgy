@@ -102,6 +102,14 @@ local MODEL_STEP_PLANT = 0.84
 local VELOCITY_SMOOTH = 10
 local GAIT_TUNED_SCALE = 3.0
 
+-- Крылья летунов (Моль, Пеликан): группы wing_L / wing_R шаблона машут вокруг своего
+-- внутреннего края, пока жук в воздухе. Частота — взмахов в секунду, угол — в радианах
+-- от покоя вверх и вниз. Шаблон может задать свои атрибутами WingFlapFreq / WingFlapAngle.
+local WING_FLAP_FREQ = 3
+local WING_FLAP_ANGLE = math.rad(35)
+-- Как быстро крыло складывается в покой после посадки, 1/сек.
+local WING_FOLD = 6
+
 -- ======================= Тело несут ноги =======================
 --
 -- Референс — живой жук (автор так и сформулировал: «у нас есть референс из самой лучшей
@@ -543,6 +551,69 @@ local function poseHead(state, body, dt, mode, turnRate, headLead)
 	workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
 end
 
+-- Крылья: детали групп wing_L / wing_R в кадре тела и шарнир — точка у внутреннего края
+-- (ближе всего к оси тела). Нет крыльев — nil.
+local function captureWings(model)
+	local pivot = model:GetPivot()
+	local wings = {}
+	for _, name in { "wing_L", "wing_R" } do
+		local wing = model:FindFirstChild(name)
+		if wing then
+			local parts, inner, sumX, sumY, sumZ, count = {}, math.huge, 0, 0, 0, 0
+			for _, part in wing:GetDescendants() do
+				if part:IsA("BasePart") then
+					local rest = pivot:ToObjectSpace(part.CFrame)
+					table.insert(parts, { part = part, rest = rest })
+					local half = part.Size * 0.5
+					for _, sx in { -1, 1 } do
+						for _, sz in { -1, 1 } do
+							local corner = rest * Vector3.new(half.X * sx, 0, half.Z * sz)
+							inner = math.min(inner, math.abs(corner.X))
+						end
+					end
+					sumX += rest.X
+					sumY += rest.Y
+					sumZ += rest.Z
+					count += 1
+				end
+			end
+			if count > 0 then
+				local side = sumX >= 0 and 1 or -1
+				table.insert(wings, {
+					parts = parts,
+					hinge = Vector3.new(inner * side, sumY / count, sumZ / count),
+					side = side,
+				})
+			end
+		end
+	end
+	if #wings == 0 then
+		return nil
+	end
+	return {
+		wings = wings,
+		freq = model:GetAttribute("WingFlapFreq") or WING_FLAP_FREQ,
+		angle = model:GetAttribute("WingFlapAngle") or WING_FLAP_ANGLE,
+		phase = math.random() * math.pi * 2,
+		open = 0, -- текущий размах: 1 — машет в полную силу, 0 — сложены
+		clock = 0,
+	}
+end
+
+local function poseWings(rig, body)
+	local amount = rig.open * rig.angle * math.sin(rig.clock * rig.freq * math.pi * 2 + rig.phase)
+	local parts, frames = {}, {}
+	for _, wing in rig.wings do
+		-- Поворот вокруг оси нос–хвост: крыло слева и справа поднимаются вместе.
+		local joint = around(wing.hinge, CFrame.Angles(0, 0, amount * wing.side))
+		for _, entry in wing.parts do
+			table.insert(parts, entry.part)
+			table.insert(frames, body * joint * entry.rest)
+		end
+	end
+	workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
+end
+
 -- Крен в повороте и вздрагивание — поверх качки от ног (см. carryBody).
 local function react(state, body, dt, turnRate)
 	local up = body.UpVector
@@ -796,9 +867,23 @@ function EnemyGait.Attach(model, legs)
 	state.strut = #state.legs > 0 and strutSum / #state.legs or 1
 
 	state.head = captureHead(model)
+	state.wings = captureWings(model)
 
 	states[model] = state
 	return state
+end
+
+-- Летун в воздухе: ноги не переставляет (их ведёт EnemyRender простым PivotTo), а крылья
+-- машут. Зовётся каждый кадр после PivotTo. Без крыльев — ничего.
+function EnemyGait.Flap(model, dt)
+	local state = states[model]
+	local wings = state and state.wings
+	if not wings then
+		return
+	end
+	wings.open = math.min(1, wings.open + dt * WING_FOLD)
+	wings.clock += dt
+	poseWings(wings, model:GetPivot())
 end
 
 -- Отскок живого жука от попадания. from — откуда прилетело, strength — доля макс. HP
@@ -897,6 +982,13 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook)
 	end
 	if state.head then
 		poseHead(state, body, dt, mode, turnRate, headLead)
+	end
+	-- На земле крылья складываются (Пеликан сел, наевшись).
+	local wings = state.wings
+	if wings and wings.open > 0 then
+		wings.open = math.max(0, wings.open - dt * WING_FOLD)
+		wings.clock += dt
+		poseWings(wings, body)
 	end
 	local up = body.UpVector
 	local nose = body:VectorToWorldSpace(Vector3.new(0, 0, 1)) -- голова модели смотрит по +Z
