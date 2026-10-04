@@ -11,47 +11,26 @@
 --   * логические записи трупов { id, position, alive } — их ест Пеликан (EnemyBehavior).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local PhysicsService = game:GetService("PhysicsService")
 local Workspace = game:GetService("Workspace")
 
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
+local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 
 local EnemyFX = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("EnemyFX")
-
-local ENEMY_GROUP = "Enemies"
-local CORPSE_GROUP = "Corpses"
 
 -- Тот же потолок, что у туш на клиенте (CorpseFX MAX_CORPSES): съесть можно только то, что видно.
 local MAX_CORPSES = 60
 
 local Corpses = {}
 
--- Группы заводятся один раз при загрузке модуля, а не руками в Studio: иначе работающий
--- код зависит от настройки, которой нет ни в одном файле.
-local function registerGroups()
-	for _, name in { ENEMY_GROUP, CORPSE_GROUP } do
-		if not PhysicsService:IsCollisionGroupRegistered(name) then
-			PhysicsService:RegisterCollisionGroup(name)
-		end
-	end
-
-	-- Жук толкает труп — и больше ничего. С полом, постройками и игроком его тело
-	-- не сталкивается.
-	PhysicsService:CollisionGroupSetCollidable(ENEMY_GROUP, CORPSE_GROUP, true)
-	PhysicsService:CollisionGroupSetCollidable(ENEMY_GROUP, "Default", false)
-	PhysicsService:CollisionGroupSetCollidable(ENEMY_GROUP, ENEMY_GROUP, false)
-	PhysicsService:CollisionGroupSetCollidable(CORPSE_GROUP, "Default", true)
-	PhysicsService:CollisionGroupSetCollidable(CORPSE_GROUP, CORPSE_GROUP, true)
-end
-registerGroups()
-
--- Имена групп — отсюда, а не строкой в других скриптах: две копии названия разойдутся
--- при первой же опечатке.
-Corpses.EnemyCollisionGroup = ENEMY_GROUP
-Corpses.CorpseCollisionGroup = CORPSE_GROUP
+-- Группы столкновений заводит общий физический слой (Loose): тут только вызов при загрузке
+-- и имена для старых обращений.
+Loose.SetupGroups()
+Corpses.EnemyCollisionGroup = Loose.Groups.Enemies
+Corpses.CorpseCollisionGroup = Loose.Groups.Corpses
 
 local records = {} -- по порядку смерти, самый старый первый
 local nextId = 0
