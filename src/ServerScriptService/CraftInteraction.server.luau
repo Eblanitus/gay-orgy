@@ -50,6 +50,10 @@ prompt.ActionText = "Стол крафта"
 prompt.ObjectText = "Лаборатория"
 prompt.HoldDuration = 0
 prompt.MaxActivationDistance = 12
+-- Без проверки прямой видимости, как у подсказок станций: подсказка висит на невидимой
+-- столешнице Top, а её со всех сторон закрывает твёрдый с #386 корпус стола (MapCollision) —
+-- с проверкой стол не открывался вовсе.
+prompt.RequiresLineOfSight = false
 -- Стол берётся из LabTable: при смене локации подсказка переезжает на её стол.
 local function attachPrompt(craftTable)
 	prompt.Parent = craftTable:FindFirstChild("Top") or craftTable.PrimaryPart
