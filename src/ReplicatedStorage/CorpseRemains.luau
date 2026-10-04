@@ -217,6 +217,68 @@ return function(deps)
 		return top
 	end
 
+	-- Раскол панциря: самая крупная видимая деталь туши — панцирь. Поверх неё рождаются
+	-- пластины его же цвета и материала, тяжёлые, с коллизией (всё на карте твёрдое), и через
+	-- общий слой Loose съезжают в стороны и валятся рядом. Под ними — слизь из трещин.
+	local function crackShell(clone, items, contact, scale, width, floorY)
+		local k = plan.crack
+		local p = plan.crush
+		local shell, volume = nil, 0
+		for _, item in items do
+			if not item.hide then
+				local size = item.size or item.part.Size
+				local v = size.X * size.Y * size.Z
+				if v > volume then
+					shell, volume = item, v
+				end
+			end
+		end
+		if not shell then
+			return
+		end
+		local frame, size = shell.cframe or shell.part.CFrame, shell.size or shell.part.Size
+		-- Две самые длинные стороны панциря — его «план», делится на пластины.
+		local dims = { size.X, size.Y, size.Z }
+		table.sort(dims)
+		local long, wide = dims[3], dims[2]
+		local count = math.random(k.plates[1], k.plates[2])
+		local top = frame.Position.Y + dims[1] / 2
+		for index = 1, count do
+			local plate = Instance.new("Part")
+			plate.Name = "ShellPlate"
+			local share = (0.75 + math.random() * 0.5) / math.sqrt(count)
+			plate.Size = Vector3.new(
+				math.max(long * share, k.minPlate * scale),
+				math.max(math.max(dims[1], 0.1) * k.thickness, k.minThickness),
+				math.max(wide * share, k.minPlate * scale)
+			)
+			plate.Color = shell.part.Color:Lerp(p.color, k.plateDarken)
+			plate.Material = shell.part.Material
+			plate.CastShadow = true
+			plate.CanQuery = false
+			plate.CanTouch = false
+			plate.CanCollide = true
+			plate.CustomPhysicalProperties = PhysicalProperties.new(k.density, k.friction, 0, 1, 1)
+			local angle = (index / count + math.random() * 0.15) * math.pi * 2
+			local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+			plate.CFrame = CFrame.new(
+				Vector3.new(contact.X, top + plate.Size.Y / 2, contact.Z) + out * (width * 0.15)
+			) * CFrame.Angles(0, math.random() * math.pi * 2, 0)
+				* CFrame.Angles((math.random() - 0.5) * k.tilt, 0, (math.random() - 0.5) * k.tilt)
+			Loose.Spawn(plate, {
+				group = "Corpses",
+				folder = "Debris", -- рядом с лапами: их толкают машина и взрывы
+				velocity = out * k.slide * (0.6 + math.random() * 0.8) + Vector3.yAxis * k.pop,
+				spin = Loose.RandomSpin(k.spin),
+			})
+			Loose.Track(plate, "plate")
+		end
+		-- Слизь растекается из-под туши медленно, не брызгами.
+		local at = Vector3.new(contact.X, 0, contact.Z)
+		puddle(clone, at, Loose.FloorAt(at.X, at.Z, floorY), width * k.slimeSize, k.slime,
+			Enum.Material.SmoothPlastic, k.slimeGrow)
+	end
+
 	local function crush(enemy, hit, scale, floorY)
 		local p = plan.crush
 		local clone = bodyClone(enemy)
@@ -245,9 +307,20 @@ return function(deps)
 			end
 		end
 		local onWall = normal.Y < 0.5
+		-- Лепёшка — только о стену. На полу сильный удар не плющит жука в картинку, а колет
+		-- панцирь (решение автора по плейтесту: гора лепёшек читалась стопкой листов): туша
+		-- проседает, лапы подгибаются, панцирь лопается на несколько тяжёлых пластин, они
+		-- съезжают и валятся рядом, из трещин вытекает слизь. Числа — PhysicsFX.remains.crack.
+		local cracked = not onWall
+		local k = plan.crack
+		local squash = cracked and k.squash or p.squash
+		local spreadOut = cracked and k.spread or p.spread
+		if cracked then
+			EnemyGait.DeathPose(clone, enemy, k.curlSplay, k.curlDrop)
+		end
 		local base = center + travel
 		local contact = base - normal * (base - planePoint):Dot(normal)
-		local radius = width / 2 * p.spread
+		local radius = width / 2 * spreadOut
 		local near = onWall and {} or cakesNear(contact, radius)
 		local spots = {}
 
@@ -284,7 +357,7 @@ return function(deps)
 			m[c] = m[b]:Cross(m[a])
 
 			local size = part.Size
-			local thin = math.max(size[AXES[b]] * p.squash, p.minThickness)
+			local thin = math.max(size[AXES[b]] * squash, p.minThickness)
 			local dims = { size.X, size.Y, size.Z }
 			dims[b] = thin
 			return m, dims, thin
@@ -344,7 +417,7 @@ return function(deps)
 			local layer = math.clamp(item.height - lowest, 0, 20) * p.layer
 			local rel = part.Position + travel - contact
 			rel -= normal * rel:Dot(normal)
-			local offset = rel * p.spread
+			local offset = rel * spreadOut
 			local position = contact + offset + normal * (LIFT + thin / 2 + layer)
 
 			local folded, foldNormal = fold(offset, normal)
@@ -391,7 +464,7 @@ return function(deps)
 					TweenService:Create(part, splat, {
 						Size = item.size,
 						CFrame = item.cframe,
-						Color = part.Color:Lerp(p.color, p.darken),
+						Color = part.Color:Lerp(p.color, cracked and k.darken or p.darken),
 						Transparency = item.hide and 1 or part.Transparency,
 					}):Play()
 					-- Лепёшка — твёрдая: лапы, трупы, машина ложатся на неё сверху, а не проходят
@@ -423,6 +496,14 @@ return function(deps)
 				streak.Size = Vector3.new(width * p.streak, THICKNESS, skid)
 				local from = Vector3.new(center.X, floorY + LIFT, center.Z)
 				streak.CFrame = CFrame.lookAt(from + travel / 2, from + travel)
+			end)
+		end
+
+		if cracked then
+			task.delay(flight + p.splatTime, function()
+				if clone.Parent then
+					crackShell(clone, items, contact, scale, width, floorY)
+				end
 			end)
 		end
 	end
