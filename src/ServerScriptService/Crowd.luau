@@ -62,6 +62,9 @@ local FOOT_RADIUS = 0.2
 -- Лапы ниже уровня тела не больше чем на это тоже его держат.
 local FOOT_SLACK = 0.25
 
+-- На чужих спинах лапы поджимаются до этой доли высоты пивота (брюхо ложится на спину).
+local CROUCH = 0.5
+
 -- Объёмы двух тел должны пересекаться по высоте хотя бы на столько, чтобы толкаться:
 -- ступни стоящего сверху касаются спины нижнего, и это не столкновение.
 local VERTICAL_TOLERANCE = 0.1
@@ -99,11 +102,11 @@ local AHEAD_DOT = -0.3 -- нормаль перекрытия против хо�
 -- развернувшийся поперёк жук) так рассыпается сама. Застрявший заодно протискивается:
 -- ему можно войти в соседа на глубину до SQUEEZE, и разворот в тесноте перестаёт его запирать.
 local STUCK_PROGRESS = 0.3
-local STUCK_TIME = 0.6
+local STUCK_TIME = 0.4
 local STUCK_SPREAD = 0.8
-local BACKOFF_TIME = 0.5
+local BACKOFF_TIME = 0.9
 local BACKOFF_SPEED = 4
-local SQUEEZE = 0.25
+local SQUEEZE = 0.4
 
 -- Запас к поиску соседей рядом, studs.
 local SUPPORT_MARGIN = 0.3
@@ -341,6 +344,8 @@ function Crowd.Add(model)
 		front = front or 0,
 		back = back or 0,
 		halfHeight = EnemyBody.HalfHeight(model),
+		top = (EnemyBody.Shell(model)),
+		bottom = select(2, EnemyBody.Shell(model)),
 		bodyHeight = EnemyBody.TopHeight(model), -- высота спины: пролезет ли под постройкой
 		groundY = position.Y,
 		-- На сколько пивот жука выше поверхности под ним. Запоминается один раз в
@@ -456,7 +461,7 @@ local function feetOf(record, y)
 end
 
 local function topOf(record, y)
-	return (y or record.y) + record.halfHeight
+	return (y or record.y) + record.top
 end
 
 -- Стоит ли хоть одна лапа record на target (по прошлому кадру).
@@ -470,29 +475,19 @@ end
 -- (брюхо выше его спины) с ним уже не сталкивается.
 local function overlapsVertically(me, y, other)
 	if restsOn(me, other) or restsOn(other, me) then
-		return topOf(me, y) - me.halfHeight * 2 < topOf(other) - VERTICAL_TOLERANCE
-			and topOf(other) - other.halfHeight * 2 < topOf(me, y) - VERTICAL_TOLERANCE
+		return (y or me.y) - me.bottom < topOf(other) - VERTICAL_TOLERANCE
+			and other.y - other.bottom < topOf(me, y) - VERTICAL_TOLERANCE
 	end
 	return feetOf(me, y) < topOf(other) - VERTICAL_TOLERANCE
 		and feetOf(other) < topOf(me, y) - VERTICAL_TOLERANCE
 end
 
--- Высота спины other над точкой (x, z) или nil, если точка не над ним. Спина — купол над
--- следом-капсулой: над хребтом верх тела, к борту ниже. Тот же купол у лап на клиенте
--- (EnemyGait.neighbourBack), чтобы ступни стояли там, где их держит толкучка.
---
--- margin — толщина ступни: ступня, задевшая борт, на пол рядом уже не встаёт, а ложится на
--- край спины (на высоте пивота соседа).
+-- Высота спины other над точкой (x, z) или nil, если точка не над ним: купол по видимому
+-- панцирю (EnemyBody.BackHeight — та же формула у лап на клиенте). margin — толщина ступни.
 local function shellTop(other, x, z, margin)
-	local dx, dz = x - other.x, z - other.z
-	local along = math.clamp(dx * other.fx + dz * other.fz, other.back, other.front)
-	local px, pz = dx - other.fx * along, dz - other.fz * along
-	local across = math.sqrt(px * px + pz * pz)
-	local radius = other.radius - BODY_CLEARANCE
-	if across >= radius + (margin or 0) then
-		return nil
-	end
-	return other.y + other.halfHeight * math.sqrt(math.max(0, 1 - (across / radius) ^ 2))
+	local height = EnemyBody.BackHeight(x - other.x, z - other.z, other.fx, other.fz,
+		other.radius - BODY_CLEARANCE, other.front, other.back, other.top, margin)
+	return height and other.y + height
 end
 
 -- Пол под точкой: бетон (он двигается: ямы Строителя, Литосфера) и обломки турелей поверх.
@@ -507,7 +502,9 @@ end
 local function footing(me, x, z, bodyY, nearby)
 	local top, by = nil, nil
 	for _, other in nearby do
-		if other.model.Parent and not restsOn(other, me) then
+		-- Тот, чьё брюхо выше нашего пивота, — над нами (стоит у нас на спине или проходит
+		-- поверху): пол под лапой он не закрывает.
+		if other.model.Parent and not restsOn(other, me) and other.y - other.bottom <= bodyY then
 			local shell = shellTop(other, x, z, me.footRadius)
 			if shell and (not top or shell > top) then
 				top, by = shell, other
@@ -516,7 +513,7 @@ local function footing(me, x, z, bodyY, nearby)
 	end
 	local lowest = bodyY - me.lift * LEG_REACH
 	if top then
-		if top <= bodyY + me.halfHeight and top >= lowest then
+		if top <= bodyY + me.top and top >= lowest then
 			return top, by
 		end
 		return nil
@@ -587,6 +584,8 @@ local function probe(model, position)
 		front = front or 0,
 		back = back or 0,
 		halfHeight = EnemyBody.HalfHeight(model),
+		top = (EnemyBody.Shell(model)),
+		bottom = select(2, EnemyBody.Shell(model)),
 		bodyHeight = EnemyBody.TopHeight(model), -- высота спины: пролезет ли под постройкой
 		y = position.Y,
 		groundY = position.Y, -- появляются на земле
@@ -902,30 +901,75 @@ function Crowd.Resolve(model, desired, dt, facing)
 	-- поджаты: лапы на одном соседе тело не поднимают, а на двух — поднимают, и жук лезет
 	-- им на спины. Таких лап нет — тело падает.
 	local planted = {}
-	for _, foot in me.feet do
-		if foot.planted then
-			table.insert(planted, foot)
+	local function findLevel()
+		table.clear(planted)
+		for _, foot in me.feet do
+			if foot.planted then
+				table.insert(planted, foot)
+			end
 		end
+		table.sort(planted, function(a, b)
+			return a.y > b.y
+		end)
+		for i, foot in planted do
+			local count = i
+			while planted[count + 1] and planted[count + 1].y >= foot.y - FOOT_SLACK do
+				count += 1
+			end
+			if surrounds(planted, count, x, z) or onTwo(planted, count, x, z, rightX, rightZ) then
+				local onBacks = false
+				for k = 1, count do
+					onBacks = onBacks or planted[k].by ~= nil
+				end
+				return foot.y, onBacks
+			end
+		end
+		return nil, false
 	end
-	table.sort(planted, function(a, b)
-		return a.y > b.y
-	end)
-	local level = nil
-	for i, foot in planted do
-		local count = i
-		while planted[count + 1] and planted[count + 1].y >= foot.y - FOOT_SLACK do
-			count += 1
+	local level, onBacks = findLevel()
+	if not level then
+		-- Лапы отстали по одну сторону (тело толкнули вбок, оно сдало назад) — жук не падает,
+		-- а переставляет все лапы на свои места разом и смотрит ещё раз. Падает, только если
+		-- и под своими местами лапам не на что встать.
+		table.clear(under)
+		for _, foot in me.feet do
+			local fx0 = x + rightX * foot.ox + fx * foot.oz
+			local fz0 = z + rightZ * foot.ox + fz * foot.oz
+			local height, by = footing(me, fx0, fz0, me.y, nearby)
+			if height then
+				foot.planted, foot.x, foot.y, foot.z, foot.by = true, fx0, height, fz0, by
+				if by then
+					under[by] = true
+				end
+			else
+				foot.planted, foot.by = false, nil
+			end
 		end
-		if surrounds(planted, count, x, z) or onTwo(planted, count, x, z, rightX, rightZ) then
-			level = foot.y
-			break
-		end
+		level, onBacks = findLevel()
 	end
 
 	me.slideX, me.slideZ = nil, nil
 	local y = me.y
 	if level then
 		local targetY = level + me.lift
+		if onBacks then
+			-- На чужих спинах жук не стоит на вытянутых лапах, а садится: лапы поджимаются,
+			-- пока брюхо не ляжет на спину под ним (или пока не поджаты до CROUCH).
+			local rest = level + me.lift * CROUCH
+			local middle = (me.front + me.back) / 2
+			for _, along in { middle, me.front, me.back } do
+				local px, pz = x + fx * along, z + fz * along
+				for _, other in nearby do
+					if other.model.Parent and not restsOn(other, me) then
+						local shell = shellTop(other, px, pz)
+						if shell then
+							rest = math.max(rest, shell + me.bottom)
+						end
+					end
+				end
+			end
+			targetY = math.min(targetY, rest)
+		end
 		if y < targetY then
 			y = math.min(targetY, y + CLIMB_SPEED * dt)
 		elseif y > targetY then
@@ -946,7 +990,7 @@ function Crowd.Resolve(model, desired, dt, facing)
 	end
 	-- Ниже пола тело не проваливается: брюхом лежит на земле.
 	me.groundY = groundAt(x, z) + me.lift
-	y = math.max(y, me.groundY - me.lift + me.halfHeight)
+	y = math.max(y, me.groundY - me.lift + me.bottom)
 
 	me.x, me.y, me.z = x, y, z
 	me.fx, me.fz = fx, fz
