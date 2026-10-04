@@ -25,6 +25,7 @@ local Grid = require(ServerScriptService:WaitForChild("Grid"))
 local WaveState = require(ServerScriptService:WaitForChild("WaveState"))
 -- Только за Absorb: выросшая Гора забирает труп, из которого выросла.
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
+local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 -- Только за Ruin: разрушенная постройка оставляет руину, из которой строит
 -- Строитель (каста 1).
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
@@ -202,12 +203,31 @@ local function turnCFrame(turn)
 	return CFrame.Angles(0, math.rad(90 * ((turn or 0) % 4)), 0)
 end
 
+-- Каждая видимая деталь турели твёрдая: ствол, головка, баки, лопасти — игрок упирается
+-- в саму форму, а не в коробку вокруг. Раньше коллизия была только у подставки (Колба)
+-- или станины (Инжектор), остальное — меши без неё.
+--
+-- Новые твёрдые детали — в группе TowerSolid: игрок и трупы о них стукаются, а луч
+-- линии огня (группа Probe, Targeting) их не видит, как не видел и раньше, когда они
+-- были без коллизии. Детали, которые и так были твёрдыми, остаются в Default: преградой
+-- для луча турели остаётся ровно то же, что было.
+local function solidify(tower)
+	for _, part in tower:GetDescendants() do
+		if part:IsA("BasePart") and part ~= tower.PrimaryPart and not part.CanCollide
+			and part.Transparency < 1 then
+			part.CanCollide = true
+			part.CollisionGroup = Loose.Groups.TowerSolid
+		end
+	end
+end
+
 local function placeTower(cx, cz, towerType, turn)
 	local towerData = Towers[towerType]
 	local build = MODELS[towerType] or (towerData.fireRate and buildTowerModel or buildWallModel)
 	local tower = build(towerData)
 	tower.Name = ("%s (%d,%d)"):format(towerData.name, cx, cz)
 	tower:PivotTo(CFrame.new(Grid.ToWorld(cx, cz) + Vector3.new(0, TOWER_Y, 0)) * turnCFrame(turn))
+	solidify(tower)
 	tower:SetAttribute("Type", towerType)
 	tower:SetAttribute("CellX", cx)
 	tower:SetAttribute("CellZ", cz)

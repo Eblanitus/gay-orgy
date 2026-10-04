@@ -87,7 +87,7 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 			end
 		end
 	end
-	-- Единственный коллайдер — грудь и брюшко: толкают трупы, в остальном жук анкорнут
+	-- Единственный коллайдер — грудь и брюшко: толкают трупы и игрока, в остальном жук анкорнут
 	-- и ходит маршрутом. Друг сквозь друга живые не проходят по капсуле толкучки (Crowd).
 	for _, coreName in { "ThoraxCore", "AbdomenCore" } do
 		local core = model:FindFirstChild(coreName, true)

@@ -30,13 +30,17 @@ Loose.Groups = {
 	Corpses = "Corpses", -- трупы, лапы, осколки: лежат на полу и платформах, толкаются друг о друга
 	Car = "ArcadeCar", -- корпус машины Аркады
 	Wheel = "ArcadeWheel", -- колёса машины: пол держат лучи подвески, колёса только расшвыривают останки
+	Barrier = "PlayerBarrier", -- невидимые крышки над стенами (MapBarriers): держат только игрока
+	TowerSolid = "TowerSolid", -- детали турелей, твёрдые для игрока и трупов, но не для луча линии огня
+	Probe = "Probe", -- группа луча линии огня (Targeting): не видит Barrier и TowerSolid
 }
 
 -- Кто с кем сталкивается. Пары, которых нет в списке, — как задано движком по умолчанию.
 local COLLIDE = {
-	-- Жук толкает труп — и больше ничего. С полом, постройками и игроком его тело не сталкивается.
+	-- Жук толкает трупы и игрока: сквозь живого жука не пройти. Жук анкорнут и ходит
+	-- маршрутом, так что пол и постройки (тоже на якоре) физически на него не влияют.
 	{ "Enemies", "Corpses", true },
-	{ "Enemies", "Default", false },
+	{ "Enemies", "Default", true },
 	{ "Enemies", "Enemies", false },
 	{ "Corpses", "Default", true },
 	{ "Corpses", "Corpses", true },
@@ -51,6 +55,24 @@ local COLLIDE = {
 	{ "Wheel", "Wheel", false },
 	{ "Wheel", "Enemies", false },
 	{ "Wheel", "Corpses", true },
+	-- Крышка над стенами не даёт игроку уйти поверху, а всё остальное пропускает: труп,
+	-- подброшенный выше потолка, не должен остаться лежать на невидимой плите.
+	{ "Barrier", "Default", true },
+	{ "Barrier", "Barrier", false },
+	{ "Barrier", "Enemies", false },
+	{ "Barrier", "Corpses", false },
+	{ "Barrier", "Car", false },
+	{ "Barrier", "Wheel", false },
+	-- Детали турелей держат игрока и трупы; жук сквозь них не ходит и так (сетка Grid).
+	{ "TowerSolid", "Default", true },
+	{ "TowerSolid", "Corpses", true },
+	{ "TowerSolid", "TowerSolid", false },
+	{ "TowerSolid", "Barrier", false },
+	{ "TowerSolid", "Enemies", false },
+	-- Луч линии огня идёт сквозь крышки и через детали турелей, ставшие твёрдыми только
+	-- ради игрока, — преграды для него те же, что до них.
+	{ "Probe", "Barrier", false },
+	{ "Probe", "TowerSolid", false },
 }
 
 -- Заводит группы. Только на сервере (клиенту группы реплицируются) и один раз при загрузке,

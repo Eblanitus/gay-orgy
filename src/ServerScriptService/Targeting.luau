@@ -34,15 +34,21 @@ local Targeting = {}
 --   — сама стреляющая постройка: луч начинается внутри неё и ткнулся бы в себя же;
 --   — сами жуки и трупы: иначе передний жук закрывал бы собой всю колонну, а это
 --     отдельная механика Щитоносца, а не свойство любого тела;
---   — снаряды и сам игрок: пробегающий мимо игрок не должен глушить свою же турель.
+--   — снаряды и сам игрок: пробегающий мимо игрок не должен глушить свою же турель;
+--   — невидимые крышки над стенами (MapBarriers) и детали турелей, твёрдые только ради
+--     игрока (группы PlayerBarrier и TowerSolid, луч идёт группой Probe).
 --
--- Стены Строителя лучом не ловятся вовсе: они без коллизии (сквозь них должен
--- проходить игрок), и их закрывание линии огня считается отдельно (EnemyStructures.BlocksLine).
+-- Постройки жуков (папка EnemyStructures) лучом не ловятся вовсе: руина или кокон
+-- не должны глушить турель, а закрывание линии огня Стеной Строителя считается
+-- отдельно (EnemyStructures.BlocksLine).
 local sightParams = RaycastParams.new()
 sightParams.FilterType = Enum.RaycastFilterType.Exclude
 -- Главное слово задачи: преграда — это то, у чего есть коллизия. Заодно это само
 -- выкидывает невидимый ArenaFloor: он без коллизии с задачи про бетонный пол.
 sightParams.RespectCanCollide = true
+-- Крышки над стенами и детали турелей, твёрдые ради игрока (группы PlayerBarrier, TowerSolid),
+-- луч не видит: он идёт группой Probe. Преграды для него — те же, что были до них.
+sightParams.CollisionGroup = "Probe"
 
 -- Список исключений собирается редко и переиспользуется: лучей тысячи в секунду,
 -- и новая таблица на каждый из них — мусор для сборщика на ровном месте.
@@ -51,7 +57,7 @@ local sightExclude = {}
 
 local function rebuildExclude()
 	table.clear(sightExclude)
-	for _, name in { "Enemies", "Allies", "Corpses", "Projectiles", "EnemyStructures" } do
+	for _, name in { "Enemies", "Allies", "Corpses", "Projectiles", "EnemyStructures", "MapBarriers" } do
 		local folder = Workspace:FindFirstChild(name)
 		if folder then
 			table.insert(sightExclude, folder)
@@ -76,7 +82,7 @@ end
 -- Папки трупов и снарядов заводятся лениво, уже после загрузки этого модуля.
 Workspace.ChildAdded:Connect(function(child)
 	if child.Name == "Corpses" or child.Name == "Projectiles" or child.Name == "EnemyStructures"
-		or child.Name == "Allies" then
+		or child.Name == "Allies" or child.Name == "MapBarriers" then
 		rebuildExclude()
 	end
 end)

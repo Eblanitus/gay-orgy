@@ -287,6 +287,7 @@ local function prepare(part)
 	part.CanCollide = false
 	part.CanTouch = false
 	part.CanQuery = true
+	part.CollisionGroup = "Default" -- у живой турели детали в TowerSolid (TowerBuilder.solidify)
 	part.Color = part.Color:Lerp(SCORCH, SCORCH_SHARE)
 	part.Parent = folder
 end

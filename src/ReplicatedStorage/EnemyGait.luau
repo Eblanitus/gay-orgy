@@ -265,6 +265,8 @@ local function groundFilter(underTower)
 		not underTower and Workspace:FindFirstChild("Towers") or nil,
 		location and location:FindFirstChild("Walls"),
 		Workspace:FindFirstChild("TowerDebris"),
+		-- Постройки жуков твёрдые, жук перелезает их (Crowd поднимает тело) — лапы встают сверху.
+		Workspace:FindFirstChild("EnemyStructures"),
 	} do
 		table.insert(include, node)
 	end
