@@ -53,6 +53,13 @@
 -- и прочие) — особые механики отдельных видов. Наличие поля и есть включатель
 -- механики: нет поля — нет поведения, и отдельных флагов под них нет. Сами механики —
 -- в ServerScriptService.EnemyBehavior, одна функция на поле.
+--
+-- tone / family — раскраска (ReplicatedStorage.BugPalette): цвет панциря задаёт каста,
+-- tone (-1..1) — вес, мелкие светлее, тяжёлые темнее; family — семейство вместо кастового
+-- там, где этого требует сам вид (Моль, Личинка, Мимик, Тень). Свои RGB видам не пишем:
+-- цвета на рандом и были той пестротой, от которой ушли.
+local BugPalette = require(script.Parent:WaitForChild("BugPalette"))
+
 local Enemies = {
 	-- Каста 0, Стандарт: базовый разведчик и точка отсчёта всего остального.
 	-- «Может грызть стены, но не будет» — именно поэтому chewDamage у него есть,
@@ -84,12 +91,7 @@ local Enemies = {
 		-- В 3 раза больше Мини по линейке тела: шкала 3.0 (мини 0.55).
 		-- Применяется к шаблону через Model:ScaleTo в buildTemplateModel.
 		scale = 3.0,
-		-- Цвета оригинала из шаблона (бледный хитин), а не тёмно-зелёный дефолт
-		-- спавнера: иначе Стандарт выглядит не как задуманная модель.
-		color = Color3.fromRGB(104, 108, 92),
-		legColor = Color3.fromRGB(78, 76, 64),
-		elytraColor = Color3.fromRGB(114, 122, 95),
-		headColor = Color3.fromRGB(82, 95, 71),
+		tone = 0, -- раскраска: BugPalette (каста — цвет, тон — вес)
 		-- Пивот шаблона едет ниже примитивного, но выше прежних 0.65/0.8: инверсия
 		-- дотягивается полной длиной (бедро + голень), а не согнутой стойкой.
 		-- Поднят пропорционально масштабу (1.0 x 3.0), иначе длинные ноги не достают.
@@ -113,6 +115,7 @@ local Enemies = {
 		-- Не лазает вовсе (climbSpeed/climbHeight нет): тяжёлый, любую преграду прогрызает.
 		armor = 5, -- было 3 (+2); вычитается из каждого попадания и тика (см. Effects.ApplyArmor) — не процент
 		matter = 10, -- было 15
+		tone = -0.6,
 	},
 	-- Тир 0 (design: alchemy_td_enemies_t0.md). Меньше HP и меньше физический размер
 	-- модели — читается на поле без взгляда на полоску HP. Своей механики роя нет —
@@ -135,11 +138,7 @@ local Enemies = {
 		scaleRange = {0.55, 1.80}, -- диапазон: 0.55 (очень маленький) .. 1.80 (почти Стандарт)
 		-- модель Same-as-Standard: NormalBeetleTemplate (AI-панцирь ShellDorsal + ноги/голова/брюхо)
 		model = "NormalBeetleTemplate",
-		-- цвета как у Стандарта, но ещё бледнее
-		color = Color3.fromRGB(130, 135, 120),
-		legColor = Color3.fromRGB(90, 95, 90),
-		elytraColor = Color3.fromRGB(140, 145, 130),
-		headColor = Color3.fromRGB(100, 110, 90),
+		tone = 0.45,
 		matter = 3,
 	},
 	-- Тир 0 (design: alchemy_td_enemies_t0.md). Летающий: не участвует в поиске пути по сетке
@@ -164,7 +163,7 @@ local Enemies = {
 		-- не помог умереть раньше. На подлёте не тикает вовсе: цена — за висение
 		-- на турели, а не за жизнь вообще. Нет поля — летун висит вечно, как и висел.
 		clingDecay = 1,
-		color = Color3.fromRGB(205, 225, 130),
+		tone = 0.5,
 		matter = 4, -- было 12
 	},
 
@@ -184,7 +183,8 @@ local Enemies = {
 		-- hover — на сколько студов выше турели вьётся, orbit — радиус кругов, period —
 		-- за сколько секунд облетает круг. Движение и есть вся её роль.
 		glow = { hover = 5, orbit = 3.5, period = 4 },
-		color = Color3.fromRGB(228, 216, 176),
+		family = "bone",
+		tone = 0,
 		scale = 0.6,
 		matter = 2,
 	},
@@ -208,7 +208,7 @@ local Enemies = {
 		climbHeight = 4,
 		-- «Могут таскать строй-материалы»: подбирает обломок с пола и несёт Строителю.
 		carriesMaterial = true,
-		color = Color3.fromRGB(96, 74, 40),
+		tone = 0,
 		matter = 8,
 	},
 
@@ -228,7 +228,7 @@ local Enemies = {
 		-- needMaterial — сколько обломков уходит на одну постройку, interval — пауза между
 		-- ними, gather — в каком радиусе он видит обломки на полу.
 		builds = { needMaterial = 2, interval = 8, gather = 26 },
-		color = Color3.fromRGB(84, 96, 52),
+		tone = -0.4,
 		matter = 14,
 	},
 
@@ -258,7 +258,7 @@ local Enemies = {
 		-- и Гигант торчал, оставаясь ниже пола всего на полстуда (замерено). core = 1 делает
 		-- дно плоским, а стенки отвесными — то есть окопом, а не воронкой.
 		digs = { time = 5, interval = 14, material = 1, radius = 5, depth = 6, core = 1 },
-		color = Color3.fromRGB(72, 62, 44),
+		tone = -0.6,
 		matter = 12,
 	},
 
@@ -281,7 +281,7 @@ local Enemies = {
 		-- eat — сколько трупов ему надо, чтобы наесться; bite — секунд на один труп;
 		-- material — сколько обломков оставляет жукам, когда наелся.
 		scavenges = { eat = 3, bite = 1.5, material = 2 },
-		color = Color3.fromRGB(118, 112, 96),
+		tone = 0.15,
 		scale = 1.15,
 		matter = 12,
 	},
@@ -300,7 +300,7 @@ local Enemies = {
 		-- softens — во сколько раз быстрее грызётся размягчённая постройка
 		-- («разрушают в разы быстрее»), duration — надолго ли хватает одного плевка.
 		spits = { range = 16, interval = 4, duration = 10, softens = 3 },
-		color = Color3.fromRGB(126, 158, 62),
+		tone = 0.3,
 		matter = 10,
 	},
 
@@ -317,7 +317,7 @@ local Enemies = {
 		speed = 12,
 		chewDamage = 0,
 		heals = { amount = 7, interval = 1.5, radius = 14, keepBehind = 10 },
-		color = Color3.fromRGB(196, 208, 214),
+		tone = 0.6,
 		matter = 12,
 	},
 
@@ -332,7 +332,7 @@ local Enemies = {
 		chewDamage = 0,
 		scale = 1.6,
 		lays = { type = "Larva", after = 4 },
-		color = Color3.fromRGB(142, 66, 108),
+		tone = -0.3,
 		matter = 20,
 	},
 
@@ -347,7 +347,8 @@ local Enemies = {
 		chewDamage = 0,
 		scale = 0.9,
 		hatches = { type = "Mini", count = 8, after = 15 },
-		color = Color3.fromRGB(214, 198, 160),
+		family = "bone",
+		tone = 0.3,
 		matter = 6,
 	},
 
@@ -366,7 +367,7 @@ local Enemies = {
 		-- «Стена получает множество урона. Сам уничтожается вместе с зарядом.»
 		-- arm — сколько он активирует заряд, стоя у стены (окно, в которое его можно снять).
 		charge = { damage = 400, radius = 9, arm = 1.2 },
-		color = Color3.fromRGB(150, 84, 40),
+		tone = 0.2,
 		matter = 12,
 	},
 
@@ -385,7 +386,7 @@ local Enemies = {
 		-- arc — ПОЛОВИНА лобового сектора в градусах, reduction — доля срезанного
 		-- урона, cover — на сколько студов позади него прикрыты идущие следом.
 		shield = { arc = 70, reduction = 0.85, cover = 7 },
-		color = Color3.fromRGB(104, 110, 122),
+		tone = -0.3,
 		matter = 14,
 	},
 
@@ -398,7 +399,7 @@ local Enemies = {
 		speed = 12,
 		chewDamage = 0,
 		commands = { radius = 45, interval = 2 },
-		color = Color3.fromRGB(180, 148, 52),
+		tone = 0.1,
 		matter = 15,
 	},
 
@@ -416,7 +417,7 @@ local Enemies = {
 		armor = 4,
 		scale = 1.45,
 		rams = { windup = 1.5, speed = 45, distance = 40, damage = 250, stun = 3, cooldown = 6 },
-		color = Color3.fromRGB(92, 82, 74),
+		tone = -0.5,
 		matter = 16,
 	},
 
@@ -433,7 +434,7 @@ local Enemies = {
 		climbSpeed = 3,
 		climbHeight = 2.4,
 		scale = 0.7,
-		color = Color3.fromRGB(188, 96, 72),
+		tone = 0.5,
 		matter = 8,
 	},
 
@@ -452,6 +453,7 @@ local Enemies = {
 		climbHeight = 6,
 		scale = 2.2,
 		matter = 30,
+		tone = -0.8,
 	},
 
 	-- «Очень высокая регенерация... Нужен тяжёлый снаряд или комбо чтобы
@@ -466,7 +468,7 @@ local Enemies = {
 		chewDamage = 6,
 		chewRate = 1,
 		regen = { amount = 18, pauseAfterDamage = 0.6 },
-		color = Color3.fromRGB(168, 92, 120),
+		tone = 0.3,
 		matter = 14,
 	},
 
@@ -488,7 +490,7 @@ local Enemies = {
 		-- capacity — сколько РАЗНЫХ элементов помещается, share — сколько впитанного
 		-- урона уходит в взрыв, radius — радиус взрыва на смерти.
 		absorbs = { capacity = 3, share = 1.5, radius = 12 },
-		color = Color3.fromRGB(126, 72, 158),
+		tone = 0,
 		matter = 14,
 	},
 
@@ -505,7 +507,7 @@ local Enemies = {
 		-- dive — сколько уходит под землю, under — сколько идёт под полом (неуязвим),
 		-- depth — на сколько студов утапливается модель.
 		burrows = { dive = 1.5, under = 6, depth = 4 },
-		color = Color3.fromRGB(78, 68, 58),
+		tone = 0.2,
 		matter = 14,
 	},
 
@@ -522,7 +524,7 @@ local Enemies = {
 		scale = 0.85,
 		-- Висит над столом («смотрит на лабораторию сверху») и ведёт Роевиков в radius.
 		directs = { radius = 70, hover = 14 },
-		color = Color3.fromRGB(196, 176, 88),
+		tone = 0.35,
 		matter = 12,
 	},
 
@@ -539,7 +541,7 @@ local Enemies = {
 		-- resistance — доля срезанного урона от того элемента, к которому он привык;
 		-- recheck — как часто пересматривает выбор (игрок мог сменить тактику).
 		evolves = { resistance = 0.7, recheck = 5 },
-		color = Color3.fromRGB(64, 148, 132),
+		tone = 0.1,
 		matter = 18,
 	},
 
@@ -555,7 +557,7 @@ local Enemies = {
 		chewRate = 1,
 		scale = 1.6,
 		carries = { type = "Worker", count = 4 },
-		color = Color3.fromRGB(88, 64, 72),
+		tone = -0.4,
 		matter = 18,
 	},
 
@@ -572,7 +574,7 @@ local Enemies = {
 		-- woundedBelow — кого считать раненым (доля от максимума HP), hatch — сколько
 		-- секунд зреет кокон (окно, в которое его можно расстрелять).
 		cocoons = { radius = 16, interval = 6, hatch = 8, woundedBelow = 0.5, hp = 40 },
-		color = Color3.fromRGB(150, 140, 176),
+		tone = -0.2,
 		matter = 16,
 	},
 
@@ -589,7 +591,7 @@ local Enemies = {
 		chewRate = 1,
 		scale = 1.35,
 		chitin = { interval = 3, radius = 9, speedBonus = 0.4 },
-		color = Color3.fromRGB(58, 90, 84),
+		tone = -0.5,
 		matter = 20,
 	},
 
@@ -606,7 +608,8 @@ local Enemies = {
 		-- Стоит неподвижно, пока игрок или турель не подойдёт ближе reveal,
 		-- но не дольше patience секунд — «в какой-то момент раскрывается».
 		mimics = { reveal = 18, patience = 25 },
-		color = Color3.fromRGB(112, 104, 92),
+		family = "bone",
+		tone = -0.5,
 		matter = 14,
 	},
 
@@ -622,10 +625,15 @@ local Enemies = {
 		chewDamage = 0,
 		scale = 0.6,
 		shadow = { delay = 1.2 },
-		color = Color3.fromRGB(38, 38, 46),
+		family = "tar",
+		tone = 0,
 		matter = 10,
 	},
 }
+
+for _, data in Enemies do
+	BugPalette.Paint(data)
+end
 
 -- Виды по кастам — собирается из самой таблицы, а не выписывается вторым списком:
 -- второй список разошёлся бы с таблицей на первом же новом жуке. Нужен Кукольнику:
