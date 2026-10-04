@@ -48,6 +48,12 @@ local YAW_DRIFT = 0.5 -- насколько деталь доворачивае�
 -- Время падения — от высоты, как у настоящего падения (растёт корнем), в этих пределах.
 local FALL_TIME_PER_ROOT = 0.25
 local FALL_TIME = { 0.45, 0.9 }
+-- Куча: деталь не ложится поверх других выше PILE_MAX над полом, а сползает дальше
+-- (до PILE_TRIES попыток, каждая на PILE_STEP ширины следа дальше от центра и чуть вбок).
+-- Не нашлось места ниже — ложится туда, где опора ниже всего.
+local PILE_MAX = 1.8
+local PILE_TRIES = 10
+local PILE_STEP = 0.1
 -- Детали отваливаются не все в один кадр, а вразнобой — верх раньше.
 local STAGGER = 0.25
 
@@ -142,11 +148,100 @@ local function layFlat(size)
 end
 
 -- Где и как деталь ляжет на полу в точке (x, z) с поворотом yaw.
+-- Верх того, что уже лежит (или вот-вот ляжет) в точке: куски на поле и запланированные
+-- в этом же развале. Без этого детали ложились на бетон и проваливались сквозь платформу
+-- турели, упавшую раньше них (найдено Play-тестом).
+local planned = {} -- куски текущего развала: место уже выбрано, но они ещё в полёте
+
+local function covers(piece, x, z)
+	local dx, dz = x - piece.x, z - piece.z
+	if dx * dx + dz * dz > piece.radius * piece.radius then
+		return false
+	end
+	local p = piece.flat:PointToObjectSpace(Vector3.new(x, piece.flat.Position.Y, z))
+	return math.abs(p.X) <= piece.hx and math.abs(p.Z) <= piece.hz
+end
+
+-- Целые постройки рядом тоже опора: деталь, отлетевшая на соседнюю турель, ложится на неё,
+-- а не внутрь. Луч сверху только по папке построек.
+-- Список собирается один раз на развал (aimTowers) — без самой разваливающейся турели:
+-- её детали ещё в модели, пока до них не дошла очередь, и луч ловил бы её призрак.
+local towerParams = RaycastParams.new()
+towerParams.FilterType = Enum.RaycastFilterType.Include
+towerParams.FilterDescendantsInstances = {}
+local PROBE_FROM = 40
+
+local function aimTowers(except)
+	local list = {}
+	local towers = Workspace:FindFirstChild("Towers")
+	if towers then
+		for _, tower in towers:GetChildren() do
+			if tower ~= except then
+				table.insert(list, tower)
+			end
+		end
+	end
+	towerParams.FilterDescendantsInstances = list
+end
+
+local function topAt(x, z)
+	local top = ConcreteFloor.HeightAt(x, z)
+	local list = buckets[bucketKey(math.floor(x / BUCKET), math.floor(z / BUCKET))]
+	if list then
+		for _, piece in list do
+			if piece.top > top and covers(piece, x, z) then
+				top = piece.top
+			end
+		end
+	end
+	for _, piece in planned do
+		if piece.top > top and covers(piece, x, z) then
+			top = piece.top
+		end
+	end
+	local hit = Workspace:Raycast(Vector3.new(x, top + PROBE_FROM, z), Vector3.new(0, -PROBE_FROM, 0), towerParams)
+	if hit and hit.Position.Y > top then
+		top = hit.Position.Y
+	end
+	return top
+end
+
+-- Где и как деталь ляжет в точке (x, z) с поворотом yaw: на самую высокую опору под всем
+-- своим лежачим силуэтом (центр, углы и середины сторон) — плашмя на платформу, а не в неё.
 local function restingFrame(part, x, z, yaw)
 	local lay, up, a, b = layFlat(part.Size)
-	local floorY = ConcreteFloor.HeightAt(x, z)
-	local flat = CFrame.new(x, floorY + up / 2, z) * CFrame.Angles(0, yaw, 0)
-	return flat * lay, flat, up, a, b, floorY
+	local turn = CFrame.Angles(0, yaw, 0)
+	local base = -math.huge
+	for _, u in { -0.5, 0, 0.5 } do
+		for _, v in { -0.5, 0, 0.5 } do
+			local at = turn * Vector3.new(a * u, 0, b * v)
+			base = math.max(base, topAt(x + at.X, z + at.Z))
+		end
+	end
+	local flat = CFrame.new(x, base + up / 2, z) * turn
+	return flat * lay, flat, up, a, b, base
+end
+
+-- Запомнить место куска текущего развала, чтобы следующие ложились поверх него.
+local function plan(flat, up, a, b, base)
+	local entry = {
+		x = flat.Position.X,
+		z = flat.Position.Z,
+		flat = flat,
+		hx = a / 2,
+		hz = b / 2,
+		top = base + up,
+		radius = math.sqrt(a * a + b * b) / 2,
+	}
+	table.insert(planned, entry)
+	return entry
+end
+
+local function unplan(entry)
+	local i = entry and table.find(planned, entry)
+	if i then
+		table.remove(planned, i)
+	end
 end
 
 -- Положить кусок на поле: по нему ходят, его можно подобрать (если несёт материал).
@@ -289,6 +384,7 @@ function TowerDebris.Leave(tower, footprint, material)
 	local centre = tower:GetPivot().Position
 	local width = math.max(footprint or 4, 2)
 	local parts = partsOf(tower)
+	aimTowers(tower)
 
 	-- Кто несёт материал: крупнейшие из тех, что жук способен унести.
 	local carriers, carrierCount = {}, 0
@@ -331,12 +427,30 @@ function TowerDebris.Leave(tower, footprint, material)
 			local size = part.Size
 			local light = 1 - math.clamp(size.X * size.Y * size.Z / HEAVY_VOLUME, 0, 1)
 			local distance = outward.Magnitude + width * between(SCATTER) * lift * (0.3 + 0.7 * light)
-			local x = centre.X + math.cos(angle) * distance
-			local z = centre.Z + math.sin(angle) * distance
 			-- Ложится почти как стояла, лишь немного довернувшись, — а не в случайную сторону:
 			-- полный случайный разворот в полёте читался как волчок.
 			local _, yaw = from:ToEulerAnglesYXZ()
-			local to, flat, up, a, b, floorY = restingFrame(part, x, z, yaw + (math.random() - 0.5) * YAW_DRIFT)
+			yaw += (math.random() - 0.5) * YAW_DRIFT
+
+			-- Ложится на то, что под ней (платформу, другие детали), а не в него. Если там уже
+			-- горка выше PILE_MAX — сползает дальше от центра: развал, а не столб из деталей.
+			local to, flat, up, a, b, floorY
+			for try = 0, PILE_TRIES do
+				local reach = distance + try * width * PILE_STEP
+				local swing = (try % 2 == 0 and 1 or -1) * math.ceil(try / 2) * 0.35
+				local x = centre.X + math.cos(angle + swing) * reach
+				local z = centre.Z + math.sin(angle + swing) * reach
+				local candidate = table.pack(restingFrame(part, x, z, yaw))
+				if not to or candidate[6] < floorY then
+					to, flat, up, a, b, floorY = table.unpack(candidate, 1, 6)
+				end
+				if floorY - ConcreteFloor.HeightAt(x, z) <= PILE_MAX then
+					break
+				end
+			end
+			-- Крошки ложатся последними (детали отсортированы от крупных), поэтому на них
+			-- никто не ляжет: им тоже можно занимать место, и они не проваливаются друг в друга.
+			local reserved = plan(flat, up, a, b, floorY)
 
 			local drop = math.max(from.Position.Y - to.Position.Y, 0)
 			local duration = math.clamp(math.sqrt(drop) * FALL_TIME_PER_ROOT, FALL_TIME[1], FALL_TIME[2])
@@ -345,6 +459,7 @@ function TowerDebris.Leave(tower, footprint, material)
 			local unit = role == "material" and 1 or nil
 			launch(part, to, between(ARC_HEIGHT) * lift * light, between(TUMBLE) * light,
 				duration, delay, function()
+				unplan(reserved)
 				if role == "crumb" then
 					crumbFade(part)
 				else
@@ -407,6 +522,7 @@ end
 -- Положить деталь на пол в точке (с поля она уже снята): снова кусок, по которому ходят,
 -- снова материал, который можно подобрать.
 local function putDown(part, position, material)
+	aimTowers(nil)
 	local to, flat, up, a, b, floorY = restingFrame(part, position.X, position.Z, math.random() * math.pi * 2)
 	part.Anchored = true
 	part.CFrame = to
@@ -473,6 +589,7 @@ end
 -- Сносит всё разом — для рестарта забега, как EnemyStructures.Clear.
 function TowerDebris.Clear()
 	table.clear(flying)
+	table.clear(planned)
 	for i = #pieces, 1, -1 do
 		destroyPiece(pieces[i])
 	end
