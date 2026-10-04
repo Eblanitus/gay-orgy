@@ -1,5 +1,4 @@
--- Толкучка жуков: столкновения врагов между собой — расталкивание в стороны, а когда
--- расталкиваться некуда, залезание друг другу на спину.
+-- Толкучка жуков: столкновения врагов между собой и то, на чём жук стоит.
 --
 -- Модель врага анкорнута и двигается через PivotTo (см. EnemySpawner), физики у неё нет —
 -- а значит, не было и столкновений: волна шла одной кучей, жуки стояли внутри друг друга и
@@ -8,23 +7,21 @@
 --
 -- Поэтому коллизия здесь позиционная. Жук раз в кадр отдаёт точку, куда его ведёт маршрут,
 -- и получает исправленную — с учётом соседей, края пола и построек. Про маршруты, волны и
--- бой модуль не знает ничего: он только разводит тела.
+-- бой модуль не знает ничего: он только разводит тела и ставит лапы.
 --
--- Оба нужных поведения растут из одного правила. Пока вокруг есть место, перекрытие
--- снимается вбок — группа сама расползается по площади. Тела непроницаемы, поэтому когда
--- снимать его некуда (упёрлись в постройку, в очередь к столу, сошлись в узком проходе),
--- жук стоит, упёршись в соседа впереди, и спустя STACK_DELAY лезет ему на спину.
+-- По горизонтали тела непроницаемы: перекрытие снимается вбок, и группа сама расползается
+-- по площади. Тело объёмное: от ступней (пивот минус lift) до верха спины (пивот плюс
+-- полувысота), спина — купол над следом-капсулой.
 --
--- Высота — не ярусы, а форма тела. Тело жука в толкучке объёмное: от ступней (пивот минус
--- lift) до верха спины (пивот плюс полувысота), а спина — купол над следом-капсулой.
--- Каждый кадр жук ищет опору под пятью точками брюха (CONTACTS): пол (тогда он стоит на
--- лапах на своей высоте) или чужую спину. Тело держится на спине, только если опора под
--- серединой брюха или с двух сторон от неё; иначе жук сползает с края и падает. Висеть
--- в воздухе рядом с соседом или «внутри» его яруса больше нечем: тела сталкиваются, пока
--- их объёмы пересекаются по высоте, и не сталкиваются, только если один целиком над другим.
+-- Высота тела — только из лап. У жука столько лап, сколько у модели (FeetLayout), каждая
+-- стоит в своей точке мира. Лапа, ушедшая от своего места под телом дальше шага, шагает:
+-- встаёт на то, что под новой точкой, — пол или чужую спину, если до неё дотянуться. Лапа
+-- не приклеена: сосед ушёл из-под неё — она срывается и ищет опору заново. Тело держится
+-- на самом высоком уровне, лапы которого стоят вокруг его центра. Поэтому лапы на одном
+-- соседе (сбоку, спереди) тело не поднимают, а на двух соседях с разных сторон —
+-- поднимают: жук залезает на спины. Лап вокруг центра нет — жук падает.
 --
--- Наверх не лезут на того, кто сам (через любое число ярусов) стоит на нас — см. standsOn:
--- пара «я на тебе, ты на мне» невозможна. Башня выше MAX_TIERS не растёт.
+-- Лапу не ставят на того, чьи лапы стоят на нас: пара «я на тебе, ты на мне» невозможна.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
@@ -48,47 +45,28 @@ local SEPARATION_SHARE = 0.5
 -- это рывок-телепорт; с потолком (чуть меньше скорости жука, 15) видно именно толчок.
 local PUSH_SPEED = 12
 
--- Когда жук считает, что места нет: он упёрся в соседа и за кадр продвинулся к цели меньше
--- этой доли того, что хотел. Глубину перекрытия мерить больше нельзя — тела непроницаемы,
--- и глубоко продавить жука теперь не выходит никогда (с порогом по глубине на спину не
--- лез никто, и очередь к столу стояла по 20 секунд).
-local STACK_PROGRESS = 0.35
+-- Лапы. Шаг — доля высоты пивота (крупный жук шагает шире), лапа шагает, уйдя от своего
+-- места под телом дальше шага, и срывается, растянувшись больше чем на OVERREACH шагов.
+-- Новую точку лапа берёт с выносом вперёд по ходу (LEAD шага).
+local STRIDE = 0.6
+local OVERREACH = 1.8
+local LEAD = 0.5
+-- Лапы шагают двумя группами по очереди (треногами), группа — раз в STEP_INTERVAL секунд.
+local STEP_INTERVAL = 0.12
+-- Вниз лапа достаёт на LEG_REACH высот пивота, вверх — до верха своей спины.
+local LEG_REACH = 1.4
+-- Толщина ступни, доля высоты пивота: в щель между телами уже неё лапа до пола не пролезает
+-- и ложится на борт соседа. Поэтому в плотной давке лапы встают на соседей, а в просвете — на пол.
+local FOOT_RADIUS = 0.2
 
--- ...и как долго это должно длиться. Без задержки жуки лезли бы наверх от любой пробки на
--- полсекунды — а расталкивание такую пробку разбирает само за несколько кадров.
-local STACK_DELAY = 0.35
-
--- Лезут только на того, кто сам стоит: идёт медленнее этого (studs/сек) — значит упёрся.
--- Идущего впереди догоняют и ждут за ним, а не лезут ему на спину: пара в пустом коридоре
--- (задний чуть быстрее переднего) иначе складывалась в стопку (плейтест).
-local STUCK_SPEED = 1
-
--- С какой скоростью давление забывается, когда прожим отпустил. Сбрасывать его в ноль нельзя:
--- в живой давке перекрытие дрожит и на кадр-другой проваливается ниже порога у кого угодно,
--- и с жёстким сбросом счётчик не доживал до STACK_DELAY почти ни у кого (замер в проходе:
--- 22 пары внахлёст, а наверх полез один жук из двадцати).
-local PRESSURE_RELIEF = 1.5
-
--- Ярусов, считая землю. Без потолка узкий проход собирает башню до неба.
-local MAX_TIERS = 3
-
--- Точки брюха: сторона (-1 левый борт, 1 правый) и место вдоль тела (-1 зад, 0 середина,
--- 1 перёд). Борта — на CONTACT_SPREAD ширины корпуса от оси. Первой идёт середина.
-local CONTACTS = { { 0, 0 }, { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 } }
-local CONTACT_SPREAD = 0.6
-
--- На сколько выше своего брюха жук встаёт на чужую спину, просто шагая (по спинам давки
--- с одной на соседнюю). Сосед на полу всегда выше — на него встают, только залезая.
-local STEP_UP = 0.35
-
--- Опоры ниже самой высокой не больше чем на это тоже держат тело.
-local CONTACT_SLACK = 0.25
+-- Лапы ниже уровня тела не больше чем на это тоже его держат.
+local FOOT_SLACK = 0.25
 
 -- Объёмы двух тел должны пересекаться по высоте хотя бы на столько, чтобы толкаться:
 -- ступни стоящего сверху касаются спины нижнего, и это не столкновение.
 local VERTICAL_TOLERANCE = 0.1
 
-local CLIMB_SPEED = 4 -- studs/сек вверх: ярус берётся примерно за треть секунды
+local CLIMB_SPEED = 4 -- studs/сек вверх: тело поднимается за лапами
 local FALL_SPEED = 10 -- studs/сек вниз: опора ушла — жук падает заметно быстрее, чем лез
 
 local DEFAULT_RADIUS = 1.3 -- если у модели нет PrimaryPart и мерить нечего
@@ -117,17 +95,7 @@ local AHEAD_DOT = -0.3 -- нормаль перекрытия против хо�
 -- Запас к поиску соседей рядом, studs.
 local SUPPORT_MARGIN = 0.3
 
--- Залезание: сколько секунд жук влезает на спину (его ведёт к хребту соседа, и лапы на нём
--- держат, хотя стоят ещё не с обеих сторон) и с какой скоростью по горизонтали.
-local MOUNT_TIME = 0.8
-local MOUNT_SPEED = 5
-
--- Слезание: давки нет уже столько секунд — верхний сходит со спины в сторону. Наверх лезут
--- только от тесноты, и, когда она кончилась, стопка разбирается сама.
-local STEP_OFF_DELAY = 0.6
-local STEP_OFF_SPEED = 5
-
--- Лапы держат только с одной стороны (жук на краю чужой спины) — сползает в сторону
+-- Лапы не стоят вокруг центра (жук на краю чужой спины) — тело сползает в сторону
 -- лап, которым не на что встать, с этой скоростью.
 local SLIDE_SPEED = 6
 
@@ -314,6 +282,28 @@ local function penetration(me, x, z, fx, fz, other)
 	return reach - distance, nx / distance, nz / distance
 end
 
+-- Лапы жука: где каждая стоит под телом в покое (ox — вбок, oz — вдоль хода, в осях модели)
+-- и её группа шага. Расстановку снимает сборка модели (EnemyModel, атрибут FeetLayout:
+-- "x,z,группа;..."); у модели без неё — шесть лап по бокам корпуса.
+local function readFeet(model, record)
+	local feet = {}
+	local layout = model:GetAttribute("FeetLayout")
+	if type(layout) == "string" then
+		for x, z, group in string.gmatch(layout, "([%-%d%.]+),([%-%d%.]+),(%d)") do
+			table.insert(feet, { ox = tonumber(x), oz = tonumber(z), group = tonumber(group) })
+		end
+	end
+	if #feet < 3 then
+		table.clear(feet)
+		local side = record.radius * 1.2
+		for i, along in { record.front, (record.front + record.back) / 2, record.back } do
+			table.insert(feet, { ox = side, oz = along, group = i % 2 + 1 })
+			table.insert(feet, { ox = -side, oz = along, group = (i + 1) % 2 + 1 })
+		end
+	end
+	return feet
+end
+
 -- Ставит жука в толкучку. Уровень земли берётся из его текущего пивота: высота спавна —
 -- забота EnemySpawner, дублировать её здесь константой значит завести второе место,
 -- где её надо править.
@@ -349,12 +339,18 @@ function Crowd.Add(model)
 		z = position.Z,
 		fx = facing.X,
 		fz = facing.Z,
-		support = nil, -- запись того, на ком стоим (nil — на земле)
-		level = 0, -- ярус: 0 — земля
-		pressed = 0, -- сколько секунд подряд его прижимают
+		under = {}, -- [запись] = true: на ком стоит хоть одна лапа
+		stepClock = 0,
+		stepGroup = 1,
 	}
-	-- Дальше этого от центра тело не торчит: грубый отсев соседей до точной проверки.
+	record.stride = math.max(0.3, record.lift * STRIDE)
+	record.footRadius = record.lift * FOOT_RADIUS
+	record.feet = readFeet(model, record)
+	-- Дальше этого от центра не торчат ни тело, ни лапы: грубый отсев соседей до точной проверки.
 	record.extent = math.max(math.abs(record.front), math.abs(record.back)) + record.radius
+	for _, foot in record.feet do
+		record.extent = math.max(record.extent, math.sqrt(foot.ox * foot.ox + foot.oz * foot.oz) + record.stride)
+	end
 
 	maxExtent = math.max(maxExtent, record.extent)
 
@@ -375,15 +371,13 @@ function Crowd.Remove(model)
 	-- Стоявшие на нём — падают. Ссылку надо снять сразу: иначе верхний ещё кадр висел бы
 	-- на высоте застреленного под ним.
 	for _, other in records do
-		if other.support == record then
-			other.support = nil
-			other.level = 0
-		end
-		if other.under then
+		if other.under[record] then
 			other.under[record] = nil
-		end
-		if other.climbOn == record then
-			other.climbOn = nil
+			for _, foot in other.feet do
+				if foot.by == record then
+					foot.planted, foot.by = false, nil
+				end
+			end
 		end
 	end
 end
@@ -421,12 +415,10 @@ function Crowd.Park(model, position, facing)
 		record.fx, record.fz = fx, fz
 	end
 	-- С чужой спины жук сошёл в тот же момент, когда полез на преграду.
-	record.support = nil
-	record.under = nil
-	record.climbOn = nil
-	record.mount = nil
-	record.level = 0
-	record.pressed = 0
+	table.clear(record.under)
+	for _, foot in record.feet do
+		foot.planted, foot.by = false, nil
+	end
 end
 
 -- Забывает всех разом — для рестарта забега (WaveRunner.clearArena сносит врагов пачкой,
@@ -454,10 +446,20 @@ local function topOf(record, y)
 	return (y or record.y) + record.halfHeight
 end
 
--- Толкаются, только пока объёмы пересекаются по высоте: стоящий сверху целиком над нижним
--- (его ступни на уровне чужой спины) — уже не столкновение. Ноги в объём входят: под
--- брюхом крупного жука мелкий не проходит, там его лапы.
+-- Стоит ли хоть одна лапа record на target (по прошлому кадру).
+local function restsOn(record, target)
+	return record.under ~= nil and record.under[target] == true
+end
+
+-- Толкаются, только пока объёмы пересекаются по высоте. Ноги в объём входят: под брюхом
+-- крупного жука мелкий не проходит, там его лапы. Но если лапы одного стоят на другом,
+-- считается только корпус: лапы лежат на спине соседа, а не в нём, и тело над соседом
+-- (брюхо выше его спины) с ним уже не сталкивается.
 local function overlapsVertically(me, y, other)
+	if restsOn(me, other) or restsOn(other, me) then
+		return topOf(me, y) - me.halfHeight * 2 < topOf(other) - VERTICAL_TOLERANCE
+			and topOf(other) - other.halfHeight * 2 < topOf(me, y) - VERTICAL_TOLERANCE
+	end
 	return feetOf(me, y) < topOf(other) - VERTICAL_TOLERANCE
 		and feetOf(other) < topOf(me, y) - VERTICAL_TOLERANCE
 end
@@ -465,36 +467,98 @@ end
 -- Высота спины other над точкой (x, z) или nil, если точка не над ним. Спина — купол над
 -- следом-капсулой: над хребтом верх тела, к борту ниже. Тот же купол у лап на клиенте
 -- (EnemyGait.neighbourBack), чтобы ступни стояли там, где их держит толкучка.
-local function shellTop(other, x, z)
+--
+-- margin — толщина ступни: ступня, задевшая борт, на пол рядом уже не встаёт, а ложится на
+-- край спины (на высоте пивота соседа).
+local function shellTop(other, x, z, margin)
 	local dx, dz = x - other.x, z - other.z
 	local along = math.clamp(dx * other.fx + dz * other.fz, other.back, other.front)
 	local px, pz = dx - other.fx * along, dz - other.fz * along
 	local across = math.sqrt(px * px + pz * pz)
 	local radius = other.radius - BODY_CLEARANCE
-	if across >= radius then
+	if across >= radius + (margin or 0) then
 		return nil
 	end
-	return other.y + other.halfHeight * math.sqrt(1 - (across / radius) ^ 2)
+	return other.y + other.halfHeight * math.sqrt(math.max(0, 1 - (across / radius) ^ 2))
 end
 
--- Под брюхом ли record у него target (по прошлому кадру).
-local function restsOn(record, target)
-	return record.under ~= nil and record.under[target] == true
+-- Пол под точкой: бетон (он двигается: ямы Строителя, Литосфера) и обломки турелей поверх.
+local function groundAt(x, z)
+	return ConcreteFloor.HeightAt(x, z) + TowerDebris.HeightAt(x, z)
 end
 
--- Стоит ли record (напрямую или через других) на спине target.
-local function standsOn(record, target)
-	local below = record.support
-	for _ = 1, MAX_TIERS do
-		if not below then
-			return false
+-- Куда встанет лапа в точке (x, z) у тела на высоте bodyY: высота и сосед, на котором
+-- она стоит (nil — пол), или nil, если опоры нет. Лапа встаёт на самое верхнее, что под
+-- точкой: чужое тело закрывает пол под собой. Выше своей спины лапа не тянется (тогда
+-- точка занята телом, до которого не достать), ниже LEG_REACH — не достаёт.
+local function footing(me, x, z, bodyY, nearby)
+	local top, by = nil, nil
+	for _, other in nearby do
+		if other.model.Parent and not restsOn(other, me) then
+			local shell = shellTop(other, x, z, me.footRadius)
+			if shell and (not top or shell > top) then
+				top, by = shell, other
+			end
 		end
-		if below == target then
-			return true
-		end
-		below = below.support
 	end
-	return false
+	local lowest = bodyY - me.lift * LEG_REACH
+	if top then
+		if top <= bodyY + me.halfHeight and top >= lowest then
+			return top, by
+		end
+		return nil
+	end
+	local ground = groundAt(x, z)
+	if ground >= lowest then
+		return ground, nil
+	end
+	return nil
+end
+
+-- Лапы из первых count стоят на двух разных соседях, и среди них есть лапы по обе стороны
+-- от оси тела (rightX, rightZ — вбок). Так жук упирается в две спины перед собой или с
+-- боков и лезет на них, хотя ещё не стоит над ними целиком.
+local function onTwo(feet, count, cx, cz, rightX, rightZ)
+	local first, second = nil, false
+	local left, right = false, false
+	for i = 1, count do
+		local foot = feet[i]
+		if foot.by then
+			if not first then
+				first = foot.by
+			elseif foot.by ~= first then
+				second = true
+			end
+			local side = (foot.x - cx) * rightX + (foot.z - cz) * rightZ
+			left = left or side < 0
+			right = right or side > 0
+		end
+	end
+	return second and left and right
+end
+
+-- Стоят ли точки вокруг центра (cx, cz): центр внутри их выпуклой оболочки, то есть
+-- между соседними по углу точками нет разрыва в пол-оборота и больше.
+local angles = {}
+local function surrounds(points, count, cx, cz)
+	if count < 3 then
+		return false
+	end
+	table.clear(angles)
+	for i = 1, count do
+		local point = points[i]
+		local dx, dz = point.x - cx, point.z - cz
+		if dx * dx + dz * dz < 1e-4 then
+			return true -- лапа прямо под центром
+		end
+		table.insert(angles, math.atan2(dz, dx))
+	end
+	table.sort(angles)
+	local gap = angles[1] + 2 * math.pi - angles[#angles]
+	for i = 2, #angles do
+		gap = math.max(gap, angles[i] - angles[i - 1])
+	end
+	return gap < math.pi - 0.05
 end
 
 -- Встанет ли ещё не зарегистрированное тело в точку, ни в кого не въехав. Появиться
@@ -587,18 +651,9 @@ function Crowd.Resolve(model, desired, dt, facing)
 	end
 
 	local pushX, pushZ = 0, 0
-	local deepest = 0 -- самое глубокое перекрытие: по нему считается давление
-	local blockedAhead = false -- упёрся в того, кто впереди (а не задет сбоку или сзади)
-	-- Кто-то стоит у нас на спине: тогда наверх не лезем и со спины не сходим.
-	local carrying = false
-	local supportCandidate, supportOverlap = nil, 0
-	local climbOn = me.mount and me.mount > 0 and me.climbOn or nil
-	if climbOn and not climbOn.model.Parent then
-		climbOn = nil
-	end
 
 	-- Соседи, с которыми тело обязано не пересекаться, и насколько они пересекаются уже.
-	-- nearby — все, кто рядом: под лапы годится любой из них.
+	-- nearby — все, кто рядом: лапа может встать на любого из них.
 	local solid, allowed, standing, nearby = {}, {}, {}, {}
 
 	for _, other in around(desired.X, desired.Z, me.extent + maxExtent + SUPPORT_MARGIN) do
@@ -612,14 +667,8 @@ function Crowd.Resolve(model, desired, dt, facing)
 			local near = me.extent + other.extent + SUPPORT_MARGIN
 			if cx * cx + cz * cz < near * near then
 				table.insert(nearby, other)
-				if restsOn(other, me) then
-					carrying = true
-				end
 
-				-- На ком стоим лапами, кто стоит на нас и на кого сейчас влезаем — с теми не
-				-- толкаемся: это опора, а не столкновение.
-				local stacked = restsOn(me, other) or restsOn(other, me) or other == climbOn
-				if not stacked and overlapsVertically(me, me.y, other) then
+				if overlapsVertically(me, me.y, other) then
 					local overlap, nx, nz = penetration(me, desired.X, desired.Z, fx, fz, other)
 					table.insert(solid, other)
 					-- Нормаль берётся из того, где мы СТОИМ (уже разведённые прошлым кадром),
@@ -630,9 +679,6 @@ function Crowd.Resolve(model, desired, dt, facing)
 					allowed[other] = math.max(TOUCH_TOLERANCE, current - OVERLAP_RELAX_SPEED * dt)
 
 					if overlap > 0 then
-						if overlap > deepest then
-							deepest = overlap
-						end
 						if current > 0 then
 							nx, nz = cnx, cnz
 						end
@@ -642,19 +688,11 @@ function Crowd.Resolve(model, desired, dt, facing)
 
 						-- Упёрся в того, кто впереди, — берёт вбок, а не встаёт в хвост.
 						if nx * fx + nz * fz < AHEAD_DOT then
-							blockedAhead = true
 							local sideX, sideZ = -fz, fx
 							local offset = (desired.X - other.x) * sideX + (desired.Z - other.z) * sideZ
 							local side = offset > 0.05 and 1 or offset < -0.05 and -1 or (me.id % 2 == 0 and 1 or -1)
 							pushX += sideX * side * overlap * SIDESTEP_SHARE
 							pushZ += sideZ * side * overlap * SIDESTEP_SHARE
-						end
-
-						-- Лезем на того, кто впереди и прижимает сильнее прочих. Не на того, кто сам
-						-- стоит на нас: иначе двое залезли бы друг другу на спины по кругу.
-						if nx * fx + nz * fz < AHEAD_DOT and other.level + 1 < MAX_TIERS
-							and overlap > supportOverlap and not standsOn(other, me) then
-							supportCandidate, supportOverlap = other, overlap
 						end
 					end
 				end
@@ -668,50 +706,10 @@ function Crowd.Resolve(model, desired, dt, facing)
 		pushX, pushZ = pushX / pushLength * limit, pushZ / pushLength * limit
 	end
 
-	-- Прошлым кадром лапы держали только с одного края — сползаем с него.
+	-- Прошлым кадром лапы не стояли вокруг центра — тело сползает с края.
 	if me.slideX then
 		pushX += me.slideX * SLIDE_SPEED * dt
 		pushZ += me.slideZ * SLIDE_SPEED * dt
-	end
-
-	-- Влезая, жук перебирается к хребту соседа; сидя без давки — сходит с него вбок.
-	local support = me.support
-	if climbOn then
-		local tx, tz = climbOn.x - desired.X, climbOn.z - desired.Z
-		local length = math.sqrt(tx * tx + tz * tz)
-		if length > 1e-3 then
-			local step = math.min(length, MOUNT_SPEED * dt)
-			pushX += tx / length * step
-			pushZ += tz / length * step
-		end
-	elseif support and support.model.Parent and not carrying and (me.calm or 0) >= STEP_OFF_DELAY then
-		-- Туда, где рядом на земле есть место: сначала вбок (к краю, к которому мы и так
-		-- ближе), потом вперёд по ходу опоры, потом назад — в узком коридоре боков нет.
-		-- Места нет нигде — толпа ещё плотная, остаёмся на спине.
-		local sideX, sideZ = -support.fz, support.fx
-		local side = (desired.X - support.x) * sideX + (desired.Z - support.z) * sideZ
-		local first = side > 0.02 and 1 or side < -0.02 and -1 or (me.id % 2 == 0 and 1 or -1)
-		local ground = {
-			id = me.id, radius = me.radius, front = me.front, back = me.back,
-			halfHeight = me.halfHeight, bodyHeight = me.bodyHeight, lift = me.lift,
-			y = me.groundY, groundY = me.groundY, fx = me.fx, fz = me.fz,
-		}
-		local clear = support.radius + me.radius
-		local reach = clear + math.max(math.abs(support.front), math.abs(support.back))
-			+ math.max(math.abs(me.front), math.abs(me.back))
-		for _, way in {
-			{ sideX * first, sideZ * first, clear },
-			{ -sideX * first, -sideZ * first, clear },
-			{ support.fx, support.fz, reach },
-			{ -support.fx, -support.fz, reach },
-		} do
-			local gx, gz = support.x + way[1] * way[3], support.z + way[2] * way[3]
-			if fitsProbe(ground, gx, gz) then
-				pushX += way[1] * STEP_OFF_SPEED * dt
-				pushZ += way[2] * STEP_OFF_SPEED * dt
-				break
-			end
-		end
 	end
 
 	-- Жёсткое выталкивание: сколько бы ни пересилил шаг, тело встаёт вплотную к соседу,
@@ -763,144 +761,120 @@ function Crowd.Resolve(model, desired, dt, facing)
 		end
 	end
 
-	-- Давление копится, пока перекрытие остаётся глубоким: значит, вбок расходиться некуда.
-	-- Отпустило — убывает с PRESSURE_RELIEF, а не обнуляется: дергание на один кадр не должно
-	-- стирать память о том, что жука жмут уже полсекунды.
-	local wantX, wantZ = desired.X - me.x, desired.Z - me.z
-	local want = math.sqrt(wantX * wantX + wantZ * wantZ)
-	local progress = want > 1e-3 and ((x - me.x) * wantX + (z - me.z) * wantZ) / want or want
-	if blockedAhead and deepest > 0 and progress < want * STACK_PROGRESS then
-		me.pressed += dt
+	-- Лапы. Каждая стоит в своей точке мира, пока может: опора под ней на месте, и тело
+	-- не утащило её дальше OVERREACH шагов.
+	local rightX, rightZ = fz, -fx -- ось X модели в мире (вперёд — ось Z, голова)
+	local moveX, moveZ = x - me.x, z - me.z
+	local moved = math.sqrt(moveX * moveX + moveZ * moveZ)
+	if moved > 1e-4 then
+		moveX, moveZ = moveX / moved, moveZ / moved
 	else
-		me.pressed = math.max(0, me.pressed - dt * PRESSURE_RELIEF)
+		moveX, moveZ = 0, 0
+	end
+	me.stepClock += dt
+	local stepGroup = nil
+	if me.stepClock >= STEP_INTERVAL then
+		me.stepClock = 0
+		me.stepGroup = me.stepGroup == 1 and 2 or 1
+		stepGroup = me.stepGroup
 	end
 
-	-- Давки нет — копится спокойствие (по нему верхний слезает); прижали — сбрасывается.
-	if me.support and me.pressed < 0.05 and not blockedAhead then
-		me.calm = (me.calm or 0) + dt
-	else
-		me.calm = 0
-	end
-	if me.mount and me.mount > 0 then
-		me.mount = math.max(0, me.mount - dt)
-		if me.mount == 0 then
-			me.climbOn = nil
-		end
-	end
+	local under = me.under
+	table.clear(under)
+	for _, foot in me.feet do
+		local homeX = x + rightX * foot.ox + fx * foot.oz
+		local homeZ = z + rightZ * foot.ox + fz * foot.oz
+		local away = 0
 
-	-- Наверх лезут только на того, кто сам стоит (упёрся), и только от давки.
-	if supportCandidate and (supportCandidate.speed or 0) > STUCK_SPEED then
-		supportCandidate = nil
-	end
-	if not me.support and not climbOn and not carrying and me.pressed >= STACK_DELAY and supportCandidate then
-		climbOn = supportCandidate
-		me.climbOn = supportCandidate
-		me.mount = MOUNT_TIME
-		me.pressed = 0
-		me.calm = 0
-	end
-
-	-- Опора. Земля под жуком — бетон, а он двигается, и обломки турелей (TowerDebris) поверх
-	-- него. Считается по ТОЙ точке, куда жук реально встал после расталкивания, а не по
-	-- заявке маршрута: иначе выдавленный из ямы соседями жук ехал бы на её глубине.
-	me.groundY = ConcreteFloor.HeightAt(x, z) + TowerDebris.HeightAt(x, z) + me.lift
-	-- Брюхо, когда жук стоит на полу на лапах, и где оно сейчас.
-	local groundBelly = me.groundY - me.halfHeight
-	local belly = me.y - me.halfHeight
-	-- Залезая, тянемся на свой рост — но только на того, на кого лезем.
-	local climbReach = me.lift + me.halfHeight * 2
-
-	-- Под каждой точкой брюха — самое высокое, до чего она достаёт: пол или чужая спина.
-	-- Все, над чьей спиной брюхо (а не чья спина в нашем теле), — под нами: с ними
-	-- не толкаемся.
-	local heights = table.create(#CONTACTS)
-	local under = {}
-	local best, bestHeight = nil, groundBelly
-	local sideX, sideZ = -fz, fx
-	local spread = (me.radius - BODY_CLEARANCE) * CONTACT_SPREAD
-	local middle = (me.front + me.back) / 2
-	for i, point in CONTACTS do
-		local along = point[2] == 1 and me.front or point[2] == -1 and me.back or middle
-		local px = x + fx * along + sideX * spread * point[1]
-		local pz = z + fz * along + sideZ * spread * point[1]
-		local height, by = groundBelly, nil
-		for _, other in nearby do
-			-- На того, кто (через кого угодно) стоит на нас, не встаём.
-			if other.model.Parent and not restsOn(other, me) and not standsOn(other, me) then
-				local top = shellTop(other, px, pz)
-				if top and top <= belly + (other == climbOn and climbReach or STEP_UP) then
-					under[other] = true
-					if top > height then
-						height, by = top, other
-					end
+		if foot.planted then
+			if foot.by then
+				-- Лапа на соседе: держит, пока он под ней. Ушёл, умер или сам встал на нас —
+				-- лапа срывается.
+				local shell = foot.by.model.Parent and not restsOn(foot.by, me)
+					and shellTop(foot.by, foot.x, foot.z, me.footRadius)
+				if shell then
+					foot.y = shell
+				else
+					foot.planted, foot.by = false, nil
 				end
 			end
+			away = math.sqrt((foot.x - homeX) ^ 2 + (foot.z - homeZ) ^ 2)
+			if away > me.stride * OVERREACH then
+				foot.planted, foot.by = false, nil
+			end
 		end
-		heights[i] = height
-		if height > bestHeight then
-			best, bestHeight = by, height
+
+		-- Шагает сорванная лапа — сразу, а отставшая — в черёд своей группы.
+		if not foot.planted or (away > me.stride and foot.group == stepGroup) then
+			local tx = homeX + moveX * me.stride * LEAD
+			local tz = homeZ + moveZ * me.stride * LEAD
+			local height, by = footing(me, tx, tz, me.y, nearby)
+			if not height then
+				tx, tz = homeX, homeZ
+				height, by = footing(me, tx, tz, me.y, nearby)
+			end
+			if height then
+				foot.planted, foot.x, foot.y, foot.z, foot.by = true, tx, height, tz, by
+			else
+				foot.planted, foot.by = false, nil
+			end
+		end
+
+		if foot.planted and foot.by then
+			under[foot.by] = true
 		end
 	end
 
-	-- Тело держится на самой высокой опоре, если она под серединой брюха или по обе стороны
-	-- от неё (спереди и сзади, или слева и справа). На ровном полу держат все пять. На краю
-	-- чужой спины опора с одного бока: тело проседает к пустой стороне и сползает туда.
-	local highest = bestHeight
-	local count, all = 0, 0
-	local left, right, fore, aft = false, false, false, false
-	local hx, hz = 0, 0
-	for i, point in CONTACTS do
-		all += heights[i]
-		if heights[i] >= highest - CONTACT_SLACK then
+	-- Тело держится на самом высоком уровне, лапы которого (вместе с теми, что выше) стоят
+	-- вокруг центра или стоят на двух соседях по разные борта (onTwo). Лапы выше уровня
+	-- поджаты: лапы на одном соседе тело не поднимают, а на двух — поднимают, и жук лезет
+	-- им на спины. Таких лап нет — тело падает.
+	local planted = {}
+	for _, foot in me.feet do
+		if foot.planted then
+			table.insert(planted, foot)
+		end
+	end
+	table.sort(planted, function(a, b)
+		return a.y > b.y
+	end)
+	local level = nil
+	for i, foot in planted do
+		local count = i
+		while planted[count + 1] and planted[count + 1].y >= foot.y - FOOT_SLACK do
 			count += 1
-			left = left or point[1] < 0
-			right = right or point[1] > 0
-			fore = fore or point[2] > 0
-			aft = aft or point[2] < 0
-			hx += sideX * point[1] + fx * point[2]
-			hz += sideZ * point[1] + fz * point[2]
+		end
+		if surrounds(planted, count, x, z) or onTwo(planted, count, x, z, rightX, rightZ) then
+			level = foot.y
+			break
 		end
 	end
-	local centred = heights[1] >= highest - CONTACT_SLACK
 
-	local bellyTarget
 	me.slideX, me.slideZ = nil, nil
-	if climbOn or centred or (left and right) or (fore and aft) then
-		bellyTarget = highest
+	local y = me.y
+	if level then
+		local targetY = level + me.lift
+		if y < targetY then
+			y = math.min(targetY, y + CLIMB_SPEED * dt)
+		elseif y > targetY then
+			y = math.max(targetY, y - FALL_SPEED * dt)
+		end
 	else
-		bellyTarget = all / #CONTACTS
-		local length = math.sqrt(hx * hx + hz * hz)
+		-- Опоры вокруг центра нет: падает и сползает прочь от лап, которые ещё на чём-то стоят.
+		y -= FALL_SPEED * dt
+		local cx, cz = 0, 0
+		for _, foot in planted do
+			cx += foot.x - x
+			cz += foot.z - z
+		end
+		local length = math.sqrt(cx * cx + cz * cz)
 		if length > 1e-3 then
-			me.slideX, me.slideZ = -hx / length, -hz / length
+			me.slideX, me.slideZ = -cx / length, -cz / length
 		end
 	end
-
-	-- Подъём на опору — с CLIMB_SPEED, падение — с FALL_SPEED: опора ушла, и жук падает
-	-- заметно быстрее, чем лез. По пути вниз лапы ловят первую спину, до которой достали.
-	local targetY = bellyTarget + me.halfHeight
-	local y = me.y
-	if y < targetY then
-		y = math.min(targetY, y + CLIMB_SPEED * dt)
-	elseif y > targetY then
-		y = math.max(targetY, y - FALL_SPEED * dt)
-	end
-
-	me.under = under
-	me.support = best
-	me.level = best and best.level + 1 or 0
-
-	-- Скорость по полу — по ней соседи решают, стоит ли этот жук (см. STUCK_SPEED).
-	if dt > 1e-4 then
-		local moved = math.sqrt((x - me.x) ^ 2 + (z - me.z) ^ 2) / dt
-		me.speed = me.speed and me.speed + (moved - me.speed) * math.clamp(dt * 8, 0, 1) or moved
-	end
-	-- Клиенту: стоит ли жук на чужой спине. По нему походка ищет опору лапам на
-	-- соседе, а не на полу (EnemyGait.findSupport); на земле лапы соседей не касаются никогда.
-	local onBack = next(under) ~= nil
-	if me.onBack ~= onBack then
-		me.onBack = onBack
-		me.model:SetAttribute("OnBack", onBack)
-	end
+	-- Ниже пола тело не проваливается: брюхом лежит на земле.
+	me.groundY = groundAt(x, z) + me.lift
+	y = math.max(y, me.groundY - me.lift + me.halfHeight)
 
 	me.x, me.y, me.z = x, y, z
 	me.fx, me.fz = fx, fz

@@ -43,6 +43,18 @@ function EnemyModel.PickScale(enemyData)
 	return enemyData.scale or 1
 end
 
+-- Где стоят ступни в покое (в осях модели: X — вбок, Z — вдоль, голова по +Z) и группа шага
+-- каждой лапы. Толкучка (Crowd) ставит по ним лапы на сервере, где ног у модели уже нет
+-- (EnemyModel.Strip). Формат: "x,z,группа;...".
+local function storeFeet(model, legs)
+	local feet = {}
+	for _, leg in legs do
+		local group = leg.group or (((leg.foot.X > 0) == (leg.foot.Z > 0)) and 1 or 2)
+		table.insert(feet, string.format("%.2f,%.2f,%d", leg.foot.X, leg.foot.Z, group))
+	end
+	model:SetAttribute("FeetLayout", table.concat(feet, ";"))
+end
+
 -- Шаблонный жук: клон, масштаб, перекраска, лапы в походку. recolor — таблица врага
 -- (enemyData) или nil, если красить не надо (Аркада берёт шаблон как есть).
 -- Ноги — жёсткие рычаги вокруг CoxaJoint (см. EnemyGait): бедро и стойка снимаются с клона
@@ -117,6 +129,7 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 		})
 	end
 	EnemyGait.Attach(model, legs)
+	storeFeet(model, legs)
 	EnemyBody.Measure(model)
 	return model
 end
@@ -187,6 +200,7 @@ local function buildPrimitive(enemyData, scale)
 	model.PrimaryPart = body
 	model:SetAttribute("Scale", scale)
 	EnemyGait.Attach(model, legs)
+	storeFeet(model, legs)
 	return model
 end
 
