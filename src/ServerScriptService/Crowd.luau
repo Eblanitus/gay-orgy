@@ -28,6 +28,7 @@ local Grid = require(ServerScriptService:WaitForChild("Grid"))
 -- (он может стоять на спине соседа), поэтому и уровень земли читается здесь же.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
 local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
+local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
 -- Габариты тела: капсула по ширине корпуса вдоль хода (см. EnemyBody.Footprint).
 local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 -- Скорость разворота тела: капсула доворачивает ровно так же, как видимый корпус.
@@ -630,9 +631,10 @@ function Crowd.Resolve(model, desired, dt, facing)
 	-- из ямы соседями жук продолжал бы ехать на её глубине.
 	local oldElevation = elevation(me)
 	--
-	-- Обломки разрушенных турелей (TowerDebris) — тоже земля: жук идёт по ним, поднимаясь
-	-- на их высоту, а не проезжает сквозь куски.
-	me.groundY = ConcreteFloor.HeightAt(x, z) + TowerDebris.HeightAt(x, z) + (me.lift or 0)
+	-- Обломки разрушенных турелей (TowerDebris) и постройки жуков (EnemyStructures) — тоже
+	-- земля: жук идёт по ним, поднимаясь на их высоту, а не проезжает сквозь.
+	me.groundY = ConcreteFloor.HeightAt(x, z)
+		+ math.max(TowerDebris.HeightAt(x, z), EnemyStructures.HeightAt(x, z)) + (me.lift or 0)
 
 	local targetY = me.support and me.groundY + elevation(me.support) + tierGap(me, me.support) or me.groundY
 	local y = me.y

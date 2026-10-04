@@ -934,6 +934,7 @@ local function clingPoint(enemy, target)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
 	params.FilterDescendantsInstances = { target }
+	params.CollisionGroup = "Probe" -- мимо невидимого сердечника, на сам корпус
 	local from = Vector3.new(pivot.X, EnemyBehavior.AboveTower(enemy, target) + 5, pivot.Z)
 	local hit = Workspace:Raycast(from, Vector3.new(0, pivot.Y - from.Y, 0), params)
 	if not hit then

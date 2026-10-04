@@ -25,6 +25,7 @@ local Grid = require(ServerScriptService:WaitForChild("Grid"))
 local WaveState = require(ServerScriptService:WaitForChild("WaveState"))
 -- Только за Absorb: выросшая Гора забирает труп, из которого выросла.
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
+local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 -- Только за Ruin: разрушенная постройка оставляет руину, из которой строит
 -- Строитель (каста 1).
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
@@ -202,12 +203,42 @@ local function turnCFrame(turn)
 	return CFrame.Angles(0, math.rad(90 * ((turn or 0) % 4)), 0)
 end
 
+-- Невидимый сердечник на весь след и всю высоту постройки: игрок не проходит сквозь
+-- турель ни низом, ни верхом. Сами модели твёрдые только местами (подставка Колбы,
+-- станина Инжектора), остальное — меши без коллизии. Сердечник в группе PlayerBarrier:
+-- держит только игрока, трупы ложатся на настоящие детали, а лучи (линия огня, лапы
+-- жуков, обломки) идут группой Probe и его не видят. Прозрачность 1: камера сквозь
+-- него не упирается, обломки при разрушении его не берут (TowerDebris берёт видимое).
+local function addPlayerHull(tower, footprint)
+	local pivot = tower:GetPivot()
+	local cf, size = tower:GetBoundingBox()
+	local floorY = pivot.Position.Y - TOWER_Y
+	local height = cf.Position.Y + size.Y / 2 - floorY
+	if height <= 0 then
+		return
+	end
+	local side = footprint - 0.4
+	local hull = Instance.new("Part")
+	hull.Name = "PlayerHull"
+	hull.Size = Vector3.new(side, height, side)
+	hull.CFrame = CFrame.new(pivot.Position.X, floorY + height / 2, pivot.Position.Z)
+	hull.Anchored = true
+	hull.CanCollide = true
+	hull.CanTouch = false
+	hull.CanQuery = false
+	hull.CastShadow = false
+	hull.Transparency = 1
+	hull.CollisionGroup = Loose.Groups.Barrier
+	hull.Parent = tower
+end
+
 local function placeTower(cx, cz, towerType, turn)
 	local towerData = Towers[towerType]
 	local build = MODELS[towerType] or (towerData.fireRate and buildTowerModel or buildWallModel)
 	local tower = build(towerData)
 	tower.Name = ("%s (%d,%d)"):format(towerData.name, cx, cz)
 	tower:PivotTo(CFrame.new(Grid.ToWorld(cx, cz) + Vector3.new(0, TOWER_Y, 0)) * turnCFrame(turn))
+	addPlayerHull(tower, towerData.footprint or Grid.BuildSize)
 	tower:SetAttribute("Type", towerType)
 	tower:SetAttribute("CellX", cx)
 	tower:SetAttribute("CellZ", cz)

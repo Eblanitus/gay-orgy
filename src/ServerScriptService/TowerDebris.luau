@@ -169,6 +169,7 @@ end
 local towerParams = RaycastParams.new()
 towerParams.FilterType = Enum.RaycastFilterType.Include
 towerParams.FilterDescendantsInstances = {}
+towerParams.CollisionGroup = "Probe" -- мимо невидимого сердечника турели, на её детали
 local PROBE_FROM = 40
 
 local function aimTowers(except)

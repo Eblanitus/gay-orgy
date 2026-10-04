@@ -321,9 +321,32 @@ function EnemyStructures.OnChitin(position)
 	return false
 end
 
+-- На сколько верх построек жуков в этой точке выше пола. 0 — построек тут нет.
+-- Толкучка поднимает на это тело жука (Crowd), как на обломки турелей: жук перелезает
+-- руину, кокон или Стену, а не проходит сквозь. Повёрнутые (Стена, Пандус) считаются
+-- в осях самой детали: у Пандуса верх наклонный, высота берётся в точке под жуком.
+function EnemyStructures.HeightAt(x, z)
+	local best = nil
+	for _, record in live do
+		local part = record.part
+		local cf, size = part.CFrame, part.Size
+		local p = cf:PointToObjectSpace(Vector3.new(x, cf.Position.Y, z))
+		if math.abs(p.X) <= size.X / 2 and math.abs(p.Z) <= size.Z / 2 then
+			local top = (cf * CFrame.new(p.X, size.Y / 2, p.Z)).Position.Y
+			if not best or top > best then
+				best = top
+			end
+		end
+	end
+	if not best then
+		return 0
+	end
+	return math.max(0, best - ConcreteFloor.HeightAt(x, z))
+end
+
 -- Закрывает ли Стена жуков линию между двумя точками. Считается арифметикой, а не
--- лучом: Стены не сталкиваются (игрок должен проходить сквозь), а включать им коллизию
--- ради одного луча значило бы сломать всё остальное.
+-- лучом: папка построек жуков исключена из луча линии огня целиком (руина или кокон
+-- не должны глушить турель), а Стене нужна своя проверка.
 function EnemyStructures.BlocksLine(from, to)
 	-- Быстрый выход: без Стен проверять нечего. Эту функцию зовёт каждая турель на
 	-- каждую цель каждый выбор — то есть тысячи раз в секунду, а Строитель есть далеко
