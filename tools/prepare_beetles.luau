@@ -1,4 +1,5 @@
--- Шаблоны жуков из авторских .glb (Мини, Хмурый брон, Моль, Работяга, Строитель, Пеликан).
+-- Шаблоны жуков из .glb (Мини, Хмурый брон, Моль, Работяга, Строитель, Пеликан).
+-- Сами .glb собирает tools/beetles/build_all.py (python3, numpy) — правка формы там, не в Blender.
 --
 -- Порядок:
 --   1. Studio → Avatar/Home → Import 3D, по очереди все шесть файлов из папки «Модели/Жуки»:
@@ -36,13 +37,13 @@ local SPECS = {
 		source = "hmuryi_bron",
 		template = "ArmoredBeetleTemplate",
 		length = 3.45,
-		head = { "^head_casque$", "^brow_ridge$", "^part_66$", "^part_67$", "^jaw_[LR]$", "^bite_muscle$" },
+		head = { "^head_casque$", "^brow_ridge$", "^bite_muscle$" },
 	},
 	{
 		source = "moth",
 		template = "MothTemplate",
 		length = 3.38,
-		head = { "^labial_palp", "^part_44$", "^part_46$", "^part_48$" },
+		head = { "^labial_palp" },
 		flap = { freq = 2.2, angle = 40 },
 	},
 	{ source = "worker_beetle", template = "WorkerBeetleTemplate", length = 3.82 },
@@ -62,65 +63,62 @@ local SPECS = {
 }
 
 -- Цвета из .glb (baseColorFactor, линейные): Import 3D их не переносит, детали приходят серыми.
+-- Таблицу печатает tools/beetles/colors_lua.py — после правки жуков в species.py вставить её сюда.
 -- Группа — один цвет: { r, g, b, имена деталей..., alpha = непрозрачность, если не 1 }.
 -- Имя ищется целиком, затем без цифр в конце, без «_L/_R», затем по началу имени (cheek_L → cheek).
--- Крыльям Моли цвет даёт текстура (TextureID) — их Color не трогается.
 local COLORS = {
-	MiniBeetleTemplate = {
-		{ 0.254, 0.068, 0.014, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "MandibleBase", "MandibleJoint", "BeetleBodyInner", "BeetleNeckBottom", "BeetleNeckTop", "BeetlePlate", "BeetleSternite", "ROOT", "HeadBase", "AntNode", "AntSeg" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia", "MandibleTip", "Tooth1" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.01, 0.008, 0.008, "Eye" },
-	},
-	ArmoredBeetleTemplate = {
-		{ 0.023, 0.015, 0.009, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "HeadBase", "BeetleBodyInner", "BeetleNeckBottom", "BeetleNeckTop", "BeetlePlate", "BeetleSternite", "ROOT" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.107, 0.133, 0.162, "Armor_BeetlePlate", "head_casque", "bite_muscle" },
-		{ 0.042, 0.051, 0.065, "brow_ridge", "part_66", "part_67" },
-		{ 0.254, 0.275, 0.296, "jaw_L", "jaw_R" },
-	},
-	MothTemplate = {
-		{ 0.509, 0.456, 0.371, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "HeadBase", "thorax", "thorax_plate", "part_44", "labial_palp_1", "part_46", "labial_palp_-1" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.01, 0.008, 0.008, "Eye" },
-		{ 0.03, 0.036, 0.028, "neck_collar", "wing_costa" },
-		{ 0.042, 0.028, 0.018, "part_48" },
-		{ 1, 1, 1, "forewing", "hindwing", alpha = 0.7 },
-	},
 	WorkerBeetleTemplate = {
-		{ 0.147, 0.042, 0.012, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "BeetleBodyInner", "BeetleNeckBottom", "BeetleNeckTop", "BeetleSternite", "ROOT", "BeetlePlate", "HeadBase", "AntNode", "AntSeg" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.01, 0.008, 0.008, "Eye" },
-		{ 0.027, 0.01, 0.004, "MandibleBase", "MandibleJoint", "MandibleTip", "Tooth1" },
+		{ 0.14, 0.045, 0.016, "BeetleBodyInner" },
+		{ 0.1, 0.028, 0.01, "BeetleSternite", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.2, 0.055, 0.018, "BeetlePlate" },
+		{ 0.04, 0.016, 0.007, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.02, 0.008, 0.004, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
+	},
+	MiniBeetleTemplate = {
+		{ 0.055, 0.02, 0.008, "BeetleBodyInner", "BeetleSternite", "ThoraxCore", "ROOT", "HeadBase", "MandibleJoint", "MandibleBase", "MandibleTip", "AntSeg", "AntNode" },
+		{ 0.34, 0.085, 0.016, "BeetlePlate" },
+		{ 0.025, 0.01, 0.006, "elytra_spot" },
+		{ 0.035, 0.014, 0.006, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
 	},
 	BuilderBeetleTemplate = {
-		{ 0.195, 0.068, 0.019, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "BeetleNeckBottom", "BeetleNeckTop", "BeetleSternite", "ROOT", "BeetlePlate", "BeetleBodyInner", "HeadBase", "AntNode", "AntSeg", "cheek" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.01, 0.008, 0.008, "Eye" },
-		{ 0.027, 0.01, 0.004, "MandibleBase", "MandibleJoint", "MandibleTip", "Tooth1" },
+		{ 0.195, 0.068, 0.019, "BeetleBodyInner", "BeetlePlate", "ThoraxCore", "ROOT", "HeadBase", "cheek" },
 		{ 0.687, 0.546, 0.332, "belly_fill" },
 		{ 0.254, 0.144, 0.065, "belly_seam" },
-		{ 0.068, 0.023, 0.007, "shovel" },
+		{ 0.045, 0.018, 0.007, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.068, 0.023, 0.007, "shovel_plate", "MandibleJoint", "MandibleBase", "MandibleTip", "AntSeg", "AntNode" },
+	},
+	ArmoredBeetleTemplate = {
+		{ 0.03, 0.018, 0.01, "BeetleBodyInner", "BeetleSternite", "ThoraxCore", "ROOT", "HeadBase", "bite_muscle", "AntSeg", "AntNode" },
+		{ 0.107, 0.133, 0.162, "Armor_BeetlePlate", "Armor_pronotum", "head_casque" },
+		{ 0.2, 0.23, 0.26, "Armor_edge" },
+		{ 0.028, 0.02, 0.014, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.042, 0.051, 0.065, "brow_ridge", "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
 	},
 	PelicanBeetleTemplate = {
-		{ 0.056, 0.021, 0.01, "ThoraxCore", "AnkleJoint", "Femur", "KneeJoint", "BeetleSternite", "ROOT", "BeetlePlate", "BeetleBodyInner", "AntNode", "AntSeg", "HeadBase", "neck" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.687, 0.651, 0.539, "Eye" },
-		{ 0.023, 0.01, 0.005, "MandibleBase", "MandibleJoint", "MandibleTip", "Tooth1" },
-		{ 0.624, 0.552, 0.392, "beak_tooth" },
-		{ 0.013, 0.006, 0.003, "neck_ruff" },
-		{ 0.006, 0.002, 0.001, "abdomen_fold" },
+		{ 0.056, 0.021, 0.01, "BeetleBodyInner", "BeetlePlate", "ThoraxCore", "neck", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.13, 0.06, 0.03, "abdomen_fold" },
 		{ 0.61, 0.479, 0.296, "wing_membrane", alpha = 0.55 },
 		{ 0.048, 0.019, 0.008, "wing_vein" },
+		{ 0.013, 0.006, 0.003, "neck_ruff" },
+		{ 0.03, 0.014, 0.007, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.687, 0.651, 0.539, "EyeLeft", "EyeRight" },
+		{ 0.023, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip", "beak_tooth" },
+	},
+	MothTemplate = {
+		{ 0.509, 0.456, 0.371, "abdomen", "ThoraxCore", "thorax_plate", "ROOT", "HeadBase", "labial_palp", "AntSeg", "AntNode" },
+		{ 0.2, 0.16, 0.11, "abdomen_band" },
+		{ 0.03, 0.036, 0.028, "neck_collar", "wing_costa" },
+		{ 0.06, 0.05, 0.04, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.62, 0.55, 0.42, "forewing", "hindwing", alpha = 0.7 },
+		{ 0.16, 0.12, 0.08, "wing_vein_spot" },
 	},
 }
--- Детали, у которых цвет в вершинах меша: Color не трогать (у Моли брюшко полосатое).
-local VERTEX_COLORED = { MothTemplate = { AbdomenCore = true } }
+-- Детали, у которых цвет в вершинах меша: Color не трогать (сейчас таких нет).
+local VERTEX_COLORED = {}
 
 local function srgb(x)
 	x = math.clamp(x, 0, 1)
