@@ -237,34 +237,52 @@ return function(deps)
 			return
 		end
 		local frame, size = shell.cframe or shell.part.CFrame, shell.size or shell.part.Size
-		-- Две самые длинные стороны панциря — его «план», делится на пластины.
-		local dims = { size.X, size.Y, size.Z }
-		table.sort(dims)
-		local long, wide = dims[3], dims[2]
+		local look = { frame.RightVector, frame.UpVector, frame.LookVector }
+		-- Ось панциря, что смотрит вверх, — его толщина: по ней обломок тоньше.
+		local upAxis = 1
+		for i = 2, 3 do
+			if math.abs(look[i].Y) > math.abs(look[upAxis].Y) then
+				upAxis = i
+			end
+		end
 		local count = math.random(k.plates[1], k.plates[2])
-		local top = frame.Position.Y + dims[1] / 2
+		local top = frame.Position.Y + size[AXES[upAxis]] / 2
 		for index = 1, count do
-			local plate = Instance.new("Part")
+			-- Обломок — сам панцирь в уменьшенном виде: тот же изгиб, блеск и цвет. Не кирпич
+			-- (первая версия рожала коробки — плейтест «найс кирпичи»). Если панцирь не меш,
+			-- обломок — тонкий клин: острые края читаются как скол.
+			local plate
+			if shell.part:IsA("MeshPart") then
+				plate = shell.part:Clone()
+				plate:ClearAllChildren()
+			else
+				plate = Instance.new("WedgePart")
+				plate.Color = shell.part.Color
+				plate.Material = shell.part.Material
+			end
 			plate.Name = "ShellPlate"
-			local share = (0.75 + math.random() * 0.5) / math.sqrt(count)
+			local share = k.share[1] + math.random() * (k.share[2] - k.share[1])
+			local dims = { size.X * share, size.Y * share, size.Z * share }
+			dims[upAxis] = math.max(size[AXES[upAxis]] * share * k.thin, k.minThickness)
 			plate.Size = Vector3.new(
-				math.max(long * share, k.minPlate * scale),
-				math.max(math.max(dims[1], 0.1) * k.thickness, k.minThickness),
-				math.max(wide * share, k.minPlate * scale)
+				math.max(dims[1], k.minThickness),
+				math.max(dims[2], k.minThickness),
+				math.max(dims[3], k.minThickness)
 			)
-			plate.Color = shell.part.Color:Lerp(p.color, k.plateDarken)
-			plate.Material = shell.part.Material
+			plate.Color = plate.Color:Lerp(p.color, k.plateDarken)
+			plate.Transparency = shell.part.Transparency
 			plate.CastShadow = true
 			plate.CanQuery = false
 			plate.CanTouch = false
 			plate.CanCollide = true
+			plate.Massless = false
 			plate.CustomPhysicalProperties = PhysicalProperties.new(k.density, k.friction, 0, 1, 1)
 			local angle = (index / count + math.random() * 0.15) * math.pi * 2
 			local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
-			plate.CFrame = CFrame.new(
-				Vector3.new(contact.X, top + plate.Size.Y / 2, contact.Z) + out * (width * 0.15)
-			) * CFrame.Angles(0, math.random() * math.pi * 2, 0)
-				* CFrame.Angles((math.random() - 0.5) * k.tilt, 0, (math.random() - 0.5) * k.tilt)
+			local at = Vector3.new(contact.X, top + k.minThickness, contact.Z) + out * (width * 0.2)
+			-- Та же ориентация, что у панциря, с креном: обломок лежал на нём и съезжает.
+			plate.CFrame = (frame - frame.Position + at)
+				* CFrame.Angles((math.random() - 0.5) * k.tilt, math.random() * k.tilt, (math.random() - 0.5) * k.tilt)
 			Loose.Spawn(plate, {
 				group = "Corpses",
 				folder = "Debris", -- рядом с лапами: их толкают машина и взрывы
