@@ -45,19 +45,24 @@ Rojo-проект — `default.project.json`. Он управляет тольк
 ## Как читать код дёшево
 
 - Искать `grep -rn` по `src/`, читать только найденный кусок (`Read` с `offset`/`limit`).
-- Крупные файлы (>60 КБ) — не открывать целиком: `CraftingReference.luau` (справочник, ~75 КБ),
+- Крупные файлы (>60 КБ) — не открывать целиком:
   `Elements.luau`, `EnemySpawner.luau`, `TowerInteraction.client.luau`, `EnemyGait.luau`, `Effects.luau`,
   `ProfileStore.luau`.
 - Большие файлы разрезаны на модули (задача #240): `CraftingUI` → `CraftingBuyTab`, `CraftingProducer`,
   `CraftingCraftTab`, `CraftingReference`; `UITheme` → `UIThemePanel`, `UIThemeButtons`;
-  `TowerBuilder` → `TowerModels`, `TowerFiring`; `Effects` → `EffectsDebuffs`. Модуль —
+  `TowerBuilder` → `TowerModels`, `TowerFiring`; `Effects` → `EffectsDebuffs`; `CraftingReference` →
+  `ReferenceWire`, `ReferenceDraw`, `ReferenceList`, `ReferenceInput`, `ReferenceSections`. Модуль —
   `return function(deps) ... end`: в начале `local x = deps.x` — локальные основного файла,
-  в конце — что основной файл использует дальше.
+  в конце — что основной файл использует дальше. У модулей `CraftingReference` изменяемое общее
+  (раскладка `graph`, масштаб `zoom`, выбор `selected`, функции `repaint`, `selectNode`…) лежит
+  в таблице `ref`: местная копия в модуле не увидела бы новое значение.
 
 ## Справочник лаборатории
 
 - `CraftingReference` — вкладка справочника: разделы «Жуки», «Карта» (граф рецептов), «Элементы»,
-  поиск, карточка выбранного узла, метка «● можно скрафтить».
+  поиск, карточка выбранного узла, метка «● можно скрафтить». Кривые карты — `ReferenceWire`,
+  узлы, подсветка и поворот — `ReferenceDraw`, список под картой и выбор — `ReferenceList`,
+  протяжка и масштаб — `ReferenceInput`, разделы, поиск, «+N» и события сервера — `ReferenceSections`.
 - `ReferencePages` — разделы «Элементы» и «Жуки» (сетка + карточка), `ReferenceDetail` — сама
   карточка элемента/жука (общая для карты и разделов).
 - Тексты описаний — `ReplicatedStorage/ReferenceTexts.luau`: для игрока, по смыслу вики, но без
