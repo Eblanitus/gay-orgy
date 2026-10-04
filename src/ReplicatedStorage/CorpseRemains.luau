@@ -184,11 +184,13 @@ return function(deps)
 	-- там же, где была (чуть шире — раздавленное расползается), той своей осью, что ближе
 	-- всех к нормали плоскости, и сплющивается по ней. Силуэт с растопыренными лапами
 	-- остаётся узнаваемым: видно, кого раздавило.
-	-- Лепёшки на полу: где лежат и докуда поднимаются. Новая ложится ПОВЕРХ тех, что уже под ней,
-	-- а не на ту же высоту пола: на одной высоте лепёшки резали друг друга (плейтест).
-	local pancakes = {} -- { clone, at, radius, top }
-	local function pileUnder(at, radius)
-		local top = 0
+	-- Лепёшки на полу: где лежит каждая их деталь и докуда поднимается. Новая лепёшка ОБЛЕГАЕТ
+	-- то, что уже лежит: вверх уходит только та деталь, под которой есть другая лепёшка, и не выше
+	-- потолка кучи (crush.pileMax). Сначала лепёшки резали друг друга на одной высоте, потом
+	-- поднимались целиком и выглядели стопкой парящих листов (плейтест).
+	local pancakes = {} -- { clone, at, radius, spots = { { at, radius, top } } }
+	local function cakesNear(at, radius)
+		local near = {}
 		for index = #pancakes, 1, -1 do
 			local cake = pancakes[index]
 			if not cake.clone.Parent then
@@ -196,7 +198,19 @@ return function(deps)
 			else
 				local flat = Vector3.new(at.X - cake.at.X, 0, at.Z - cake.at.Z)
 				if flat.Magnitude < radius + cake.radius then
-					top = math.max(top, cake.top)
+					table.insert(near, cake)
+				end
+			end
+		end
+		return near
+	end
+	local function pileAt(near, at, radius)
+		local top = 0
+		for _, cake in near do
+			for _, spot in cake.spots do
+				local flat = Vector3.new(at.X - spot.at.X, 0, at.Z - spot.at.Z)
+				if spot.top > top and flat.Magnitude < spot.radius + radius * 0.5 then
+					top = spot.top
 				end
 			end
 		end
@@ -234,9 +248,8 @@ return function(deps)
 		local base = center + travel
 		local contact = base - normal * (base - planePoint):Dot(normal)
 		local radius = width / 2 * p.spread
-		local pile = onWall and 0 or pileUnder(contact, radius)
-		contact += normal * pile
-		local cakeTop = pile
+		local near = onWall and {} or cakesNear(contact, radius)
+		local spots = {}
 
 		-- Что дальше от плоскости, ложится поверх: без этого детали мерцают друг с другом.
 		local items, lowest = {}, math.huge
@@ -348,12 +361,17 @@ return function(deps)
 			item.size = Vector3.new(dims[1], dims[2], dims[3])
 			item.cframe = CFrame.fromMatrix(position, m[1], m[2], m[3])
 			part.CastShadow = false
-			if not folded then
-				cakeTop = math.max(cakeTop, pile + LIFT + thin + layer)
+			if not onWall and not folded and not item.hide then
+				-- Деталь ложится на ту лепёшку, что прямо под ней, а не на пол.
+				local spread = math.max(dims[1], dims[2], dims[3]) / 2
+				local pile = math.min(pileAt(near, position, spread), p.pileMax)
+				position += normal * pile
+				item.cframe = CFrame.fromMatrix(position, m[1], m[2], m[3])
+				table.insert(spots, { at = position, radius = spread, top = pile + LIFT + thin + layer })
 			end
 		end
 		if not onWall then
-			table.insert(pancakes, { clone = clone, at = contact, radius = radius, top = cakeTop })
+			table.insert(pancakes, { clone = clone, at = contact, radius = radius, spots = spots })
 		end
 
 		clone.Name = enemy.Name .. " (раздавлен)"
