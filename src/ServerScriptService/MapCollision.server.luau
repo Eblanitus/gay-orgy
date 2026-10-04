@@ -12,6 +12,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
+local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
+
+Loose.SetupGroups()
 
 -- parent — имя модели-владельца (или prefix — начало имени), names — какие её детали твёрдые.
 local RULES = {
@@ -93,7 +96,7 @@ local function apply()
 	local changed = 0
 	for _, d in location:GetDescendants() do
 		if d:IsA("BasePart") and not d.CanCollide and d.Parent and not skipped(d, location)
-			and (bodyHigh(d, floorY) or (inObsPost(d, location) and d.Transparency < 0.95)) then
+			and (bodyHigh(d, floorY) or inObsPost(d, location)) then
 			d.CanCollide = true
 			changed += 1
 		elseif d:IsA("BasePart") and not d.CanCollide and d.Parent then
@@ -111,5 +114,57 @@ local function apply()
 	end
 end
 
-apply()
-Arena.OnChanged(apply)
+-- Комната наблюдения закрыта целиком невидимым блоком по её габариту. Одних твёрдых деталей
+-- мало: снизу на твёрдую обшивку и подоконник запрыгивается, а дальше в комнату ведёт любой
+-- зазор между стеклом, рамой и крышей (скрин автора: стоял внутри кабины). Блок в группе
+-- PlayerBarrier — держит только игрока; луч линии огня (Probe) и трупы его не видят.
+local BLOCK_NAME = "PlayerBlock"
+
+local function blockObsPosts(location)
+	for _, node in location:GetDescendants() do
+		if (node:IsA("Model") or node:IsA("Folder")) and node.Name:sub(1, 8) == "ObsPost_" then
+			local old = node:FindFirstChild(BLOCK_NAME)
+			if old then
+				old:Destroy()
+			end
+			local lo, hi
+			for _, d in node:GetDescendants() do
+				if d:IsA("BasePart") then
+					local cf, size = d.CFrame, d.Size
+					local half = Vector3.new(
+						math.abs(cf.RightVector.X) * size.X + math.abs(cf.UpVector.X) * size.Y + math.abs(cf.LookVector.X) * size.Z,
+						math.abs(cf.RightVector.Y) * size.X + math.abs(cf.UpVector.Y) * size.Y + math.abs(cf.LookVector.Y) * size.Z,
+						math.abs(cf.RightVector.Z) * size.X + math.abs(cf.UpVector.Z) * size.Y + math.abs(cf.LookVector.Z) * size.Z
+					) / 2
+					lo = lo and lo:Min(d.Position - half) or d.Position - half
+					hi = hi and hi:Max(d.Position + half) or d.Position + half
+				end
+			end
+			if lo then
+				local block = Instance.new("Part")
+				block.Name = BLOCK_NAME
+				block.Anchored = true
+				block.CanCollide = true
+				block.CanTouch = false
+				block.CanQuery = false
+				block.CastShadow = false
+				block.Transparency = 1
+				block.Size = hi - lo
+				block.CFrame = CFrame.new((lo + hi) / 2)
+				block.CollisionGroup = Loose.Groups.Barrier
+				block.Parent = node
+			end
+		end
+	end
+end
+
+local function applyAll()
+	apply()
+	local location = Arena.Location()
+	if location then
+		blockObsPosts(location)
+	end
+end
+
+applyAll()
+Arena.OnChanged(applyAll)
