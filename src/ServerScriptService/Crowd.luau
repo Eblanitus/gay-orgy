@@ -27,6 +27,7 @@ local Grid = require(ServerScriptService:WaitForChild("Grid"))
 -- (ямка Строителя, ландшафт Литосферы). Высотой жука распоряжается толкучка
 -- (он может стоять на спине соседа), поэтому и уровень земли читается здесь же.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
+local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
 -- Габариты тела: капсула по ширине корпуса вдоль хода (см. EnemyBody.Footprint).
 local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 -- Скорость разворота тела: капсула доворачивает ровно так же, как видимый корпус.
@@ -134,9 +135,13 @@ Arena.OnChanged(bindBounds)
 -- и его центр у самой границы занятой клетки означал тело вплотную к постройке.
 -- На мелкой по одной клетке (0.8) жук въезжал бы в стену почти целиком, пока его центр
 -- не дойдёт до её клеток.
-local function occupied(x, z)
+--
+-- Постройка, под которой этот жук пролезает (подлаз, Grid.FitsUnder), ему не стена:
+-- иначе толкучка выпихивала бы мелкого из-под Колбы обратно, куда маршрут его не ведёт.
+local function occupied(x, z, me)
 	local cx, cz = Arena.ToCell(Vector3.new(x, 0, z))
-	return Grid.GetBlocker(cx, cz) ~= nil
+	local blocker = Grid.GetBlocker(cx, cz)
+	return blocker ~= nil and not (me and Grid.FitsUnder(blocker, me.bodyHeight))
 end
 
 -- А вот «жук ВНУТРИ постройки» — это уже занятость самой клетки, а не карта для тела.
@@ -233,6 +238,7 @@ function Crowd.Add(model)
 		front = front or 0,
 		back = back or 0,
 		halfHeight = EnemyBody.HalfHeight(model),
+		bodyHeight = EnemyBody.TopHeight(model), -- высота спины: пролезет ли под постройкой
 		groundY = position.Y,
 		-- На сколько пивот жука выше поверхности под ним. Запоминается один раз в
 		-- момент появления, а не берётся константой из спавнера: так толкучке не надо
@@ -373,6 +379,7 @@ local function probe(model, position)
 		front = front or 0,
 		back = back or 0,
 		halfHeight = EnemyBody.HalfHeight(model),
+		bodyHeight = EnemyBody.TopHeight(model), -- высота спины: пролезет ли под постройкой
 		y = position.Y,
 		groundY = position.Y, -- появляются на земле
 		fx = fx or 0,
@@ -381,7 +388,7 @@ local function probe(model, position)
 end
 
 local function fitsProbe(me, x, z)
-	if x < MIN_X or x > MAX_X or z < MIN_Z or z > MAX_Z or occupied(x, z) then
+	if x < MIN_X or x > MAX_X or z < MIN_Z or z > MAX_Z or occupied(x, z, me) then
 		return false
 	end
 	for _, other in records do
@@ -568,12 +575,12 @@ function Crowd.Resolve(model, desired, dt, facing)
 	local caged = insideBuilding(homeX, homeZ)
 
 	x = math.clamp(x, MIN_X, MAX_X)
-	if not caged and occupied(x, homeZ) then
+	if not caged and occupied(x, homeZ, me) then
 		x = homeX
 	end
 
 	z = math.clamp(z, MIN_Z, MAX_Z)
-	if not caged and occupied(x, z) then
+	if not caged and occupied(x, z, me) then
 		z = homeZ
 	end
 
@@ -622,7 +629,10 @@ function Crowd.Resolve(model, desired, dt, facing)
 	-- реально встал после расталкивания, а не по заявке маршрута: иначе выдавленный
 	-- из ямы соседями жук продолжал бы ехать на её глубине.
 	local oldElevation = elevation(me)
-	me.groundY = ConcreteFloor.HeightAt(x, z) + (me.lift or 0)
+	--
+	-- Обломки разрушенных турелей (TowerDebris) — тоже земля: жук идёт по ним, поднимаясь
+	-- на их высоту, а не проезжает сквозь куски.
+	me.groundY = ConcreteFloor.HeightAt(x, z) + TowerDebris.HeightAt(x, z) + (me.lift or 0)
 
 	local targetY = me.support and me.groundY + elevation(me.support) + tierGap(me, me.support) or me.groundY
 	local y = me.y

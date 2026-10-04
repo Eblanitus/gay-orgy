@@ -375,7 +375,8 @@ RunService.RenderStepped:Connect(function(dt)
 			end
 			local gait = model:GetAttribute("Gait") or (entry.arcade and "walk") or nil
 			if gait then
-				EnemyGait.Step(entry.visual, dt, gait, entry.smooth, model:GetAttribute("Look"))
+				EnemyGait.Step(entry.visual, dt, gait, entry.smooth, model:GetAttribute("Look"),
+					model:GetAttribute("Crawling"))
 			else
 				-- Летуны и жуки со своим циклом (Лицехват, Моль, Пеликан в воздухе): ног не
 				-- переставляют, тело просто идёт за якорем. Крылья в воздухе машут.

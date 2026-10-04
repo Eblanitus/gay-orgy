@@ -243,22 +243,28 @@ local states = setmetatable({}, { __mode = "k" })
 --
 -- Собирается заново не чаще раза в секунду: папки появляются на лету, а лучей
 -- тут тысячи в секунду, и пересобирать список на каждый — чистый мусор.
-local surfaceParams = nil
-local surfaceParamsClock = 0
+-- Два набора: обычный и для жука, ползущего под постройкой (подлаз, атрибут Crawling).
+-- Ползущему опора — только пол: луч сверху иначе ловил бы крышу постройки над ним,
+-- и лапы тянулись бы сквозь днище наверх.
+local surfaceParams = {}
+local surfaceParamsClock = {}
 
-local function groundFilter()
+local function groundFilter(underTower)
+	local slot = underTower and 2 or 1
 	local now = os.clock()
-	if surfaceParams and now - surfaceParamsClock < 1 then
-		return surfaceParams
+	if surfaceParams[slot] and now - surfaceParamsClock[slot] < 1 then
+		return surfaceParams[slot]
 	end
 
 	local include = {}
-	-- Пол и стены — из активной локации (Workspace.Location), постройки — общая папка.
+	-- Пол и стены — из активной локации (Workspace.Location), постройки — общая папка,
+	-- обломки разрушенных турелей (TowerDebris) — по ним жуки ходят, как по полу.
 	local location = Workspace:FindFirstChild("Location")
 	for _, node in {
 		location and location:FindFirstChild("ArenaFloor"),
-		Workspace:FindFirstChild("Towers"),
+		not underTower and Workspace:FindFirstChild("Towers") or nil,
 		location and location:FindFirstChild("Walls"),
+		Workspace:FindFirstChild("TowerDebris"),
 	} do
 		table.insert(include, node)
 	end
@@ -271,12 +277,13 @@ local function groundFilter()
 		table.insert(include, arcadeField)
 	end
 
-	surfaceParams = RaycastParams.new()
-	surfaceParams.FilterType = Enum.RaycastFilterType.Include
-	surfaceParams.FilterDescendantsInstances = include
-	surfaceParams.IgnoreWater = true
-	surfaceParamsClock = now
-	return surfaceParams
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = include
+	params.IgnoreWater = true
+	surfaceParams[slot] = params
+	surfaceParamsClock[slot] = now
+	return params
 end
 
 -- Ставит ногу-модель (сегментированная лапа процедурного жука) от бедра к ступне
@@ -739,9 +746,9 @@ end
 -- Где опора под номинальной стуйкой. Нет опоры (жук над краем, висит над проломом) —
 -- нога остаётся там, где ей полагается быть по строению тела: пусть висит, но не тянется
 -- к бесконечности.
-local function findSupport(nominal, up, gaitScale)
+local function findSupport(nominal, up, gaitScale, underTower)
 	local scale = gaitScale or 1
-	local result = Workspace:Raycast(nominal + up * (PROBE_UP * scale), -up * (PROBE_LENGTH * scale), groundFilter())
+	local result = Workspace:Raycast(nominal + up * (PROBE_UP * scale), -up * (PROBE_LENGTH * scale), groundFilter(underTower))
 	return result and result.Position or nominal
 end
 
@@ -927,7 +934,8 @@ end
 
 -- wantLook — куда смотрел бы жук без ограничения разворота (LookVector маршрутного кадра).
 -- Нужен, когда разворот уже ограничила толкучка: голова по-прежнему идёт раньше тела.
-function EnemyGait.Step(model, dt, mode, pathCF, wantLook)
+-- underTower — жук ползёт под постройкой (атрибут Crawling серверной модели): опора только на полу.
+function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 	local turnRate, headLead = 0, 0
 	if pathCF then
 		-- Доворот тела к направлению маршрута вокруг его «верха» (не Slerp целиком:
@@ -1080,7 +1088,7 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook)
 					-- тела от ступни и требует следующий перенос в тот же кадр, как только встала.
 					and plantAhead(hipWorld, nominal, velocity, leg.length * MODEL_STEP_PLANT, stride * 0.5)
 					or nominal
-				leg.stepTo = findSupport(aim, up, modelScale)
+				leg.stepTo = findSupport(aim, up, modelScale, underTower)
 				leg.stepUntil = now + stepTime
 				leg.planted = leg.stepTo
 				if stepping == nil then

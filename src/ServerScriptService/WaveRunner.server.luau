@@ -37,6 +37,7 @@ local LabStations = require(ServerScriptService:WaitForChild("LabStations"))
 -- волна идёт им, а не тем, что выписан в Waves.
 local WaveEditor = require(ServerScriptService:WaitForChild("WaveEditor"))
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
+local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
 -- Рельеф бетонного пола — такая же часть арены, как постройки и трупы: новый
 -- забег начинается с ровного пола, а не с ям прошлого.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
@@ -163,6 +164,9 @@ local function clearArena()
 	-- Архитектора, который «меняет карту навсегда»: навсегда — это до конца забега,
 	-- ремонту он не подлежит.
 	EnemyStructures.Clear()
+
+	-- Обломки разрушенных турелей.
+	TowerDebris.Clear()
 
 	-- Сначала забываются участки Литосферы, потом выравнивается пол: наоборот
 	-- живой сторож ямы успел бы заказать её обратно уже после выравнивания.

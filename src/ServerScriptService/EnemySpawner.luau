@@ -13,6 +13,7 @@ local EnemyDiedRemote = Remotes:WaitForChild("EnemyDied")
 local DamageDealtRemote = Remotes:WaitForChild("DamageDealt")
 
 local Grid = require(ServerScriptService:WaitForChild("Grid"))
+local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
 local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
 local EnemyProgress = require(ServerScriptService:WaitForChild("EnemyProgress"))
@@ -301,6 +302,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 		chewDps = chewDps,
 		climbSpeed = enemyData.climbSpeed or 0,
 		climbHeight = enemyData.climbHeight or 0,
+		-- Высота спины: пролезет ли жук под постройкой (подлаз, см. Grid.Crossing). Меряется
+		-- по ЭТОМУ экземпляру — у Мини масштаб случайный, и мелкий проползает там, где крупный грызёт.
+		bodyHeight = EnemyBody.TopHeight(enemy),
 	}
 
 	-- Идущее перелезание (см. planClimb). Пока оно не кончилось, жук не идёт по маршруту
@@ -483,6 +487,19 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			local position = state.pathPosition or enemy:GetPivot().Position
 			local blocker = Grid.GetBlocker(cells[index].x, cells[index].z)
 			local desired = position
+
+			-- Подлаз: постройка, под которой жук пролезает, ему не преграда — он не грызёт её
+			-- и не лезет, а ползёт дальше по маршруту, медленнее обычного (Arena.crawlSpeed).
+			-- Ползёт он, пока сам стоит под постройкой или упирается в такую впереди.
+			if blocker and Grid.FitsUnder(blocker, profile.bodyHeight) then
+				blocker = nil
+			end
+			local overhead = Grid.GetBlocker(Grid.ToCell(position))
+			local crawling = overhead ~= nil and Grid.FitsUnder(overhead, profile.bodyHeight)
+			if crawling ~= (enemy:GetAttribute("Crawling") or false) then
+				-- Клиенту: лапы ищут опору только на полу, а не на днище постройки (EnemyGait).
+				enemy:SetAttribute("Crawling", crawling)
+			end
 
 			-- Пол под ногами: хитин ускоряет, окоп прячет от турелей. Спрашивается четыре
 			-- раза в секунду, а не каждый кадр: конструкций на поле бывают десятки, и полный
@@ -742,6 +759,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			else
 				local slowPercent = enemy:GetAttribute("SlowPercent") or 0
 				local step = speed * (1 - slowPercent) * groundScale * dt
+				if crawling then
+					step *= Arena.crawlSpeed
+				end
 
 				local delta = flat(points[index] - position)
 				local distance = delta.Magnitude
@@ -774,7 +794,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				else
 					heading = delta.Unit
 					desired = position + heading * step
-					setVelocity(heading * speed * (1 - slowPercent) * groundScale)
+					setVelocity(heading * step / math.max(dt, 1e-3))
 				end
 			end
 

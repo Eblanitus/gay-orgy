@@ -28,6 +28,7 @@ local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 -- Только за Ruin: разрушенная постройка оставляет руину, из которой строит
 -- Строитель (каста 1).
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
+local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
 require(ServerScriptService:WaitForChild("Plants")) -- ростки Растения: назначает Effects.OnKillPlant
 
 local towersFolder = Workspace:WaitForChild("Towers")
@@ -225,9 +226,15 @@ local function placeTower(cx, cz, towerType, turn)
 	if towerData.climbHeight then
 		tower:SetAttribute("Height", towerData.climbHeight)
 	end
+	-- Просвет под платформой: мелкий жук под ней проползает, а не грызёт (см. Grid.Crossing).
+	if towerData.crawlGap then
+		tower:SetAttribute("CrawlGap", towerData.crawlGap)
+	end
 	tower.Parent = towersFolder
 
 	Grid.Occupy(cx, cz, tower, reachOf(towerType))
+	-- Новая постройка встаёт на чистый пол: обломки прежней под ней убираются.
+	TowerDebris.ClearUnder(tower:GetPivot().Position, (towerData.footprint or Grid.BuildSize) / 2)
 
 	-- Разрушенная постройка освобождает клетку. Grid.Free шлёт Changed, и все живые враги
 	-- пересчитывают маршрут: проход, который они грызли, только что открылся. Порядок важен:
@@ -240,6 +247,9 @@ local function placeTower(cx, cz, towerType, turn)
 			-- из них (каста 1). Размер кучи и запас материала
 			-- в ней считаются от прочности снесённого: Стена оставляет больше, чем Испаритель.
 			EnemyStructures.Ruin(tower:GetPivot().Position, tower:GetAttribute("MaxHP"))
+			-- Обломки самой постройки: по ним жуки ходят (TowerDebris). Детали берутся с модели,
+			-- поэтому — до Destroy.
+			TowerDebris.Leave(tower, towerData.footprint)
 			tower:Destroy()
 			Grid.Free(cx, cz)
 		end
