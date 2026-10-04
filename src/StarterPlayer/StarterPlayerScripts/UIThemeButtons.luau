@@ -22,11 +22,11 @@ return function(deps)
 		-- а не яркость заливки: тёмная заливка без канта терялась рядом с вкладкой.
 		action = { bg = Color3.fromRGB(14, 66, 60), text = Color3.fromRGB(196, 248, 240), edge = Color3.fromRGB(80, 220, 200), border = true },
 		-- Нейтральная: вкладки, переключатели, «Инвентарь (I)», кнопки построек.
-		ghost = { bg = Color3.fromRGB(16, 20, 25), text = Color3.fromRGB(188, 202, 216), edge = Color3.fromRGB(46, 55, 66) },
+		ghost = { bg = Color3.fromRGB(16, 20, 25), text = Color3.fromRGB(188, 202, 216), edge = Theme.color.hairline },
 		-- Выбранная вкладка и пункт меню: тёмная плашка, бирюзой горят кант по краю и надпись.
 		-- Две почти чёрные заливки без канта не различались вовсе — выбор держит кант.
 		-- Прежняя сплошная светлая бирюза (96,214,200) убрана вместе с яркой кнопкой действия (#210).
-		active = { bg = Color3.fromRGB(18, 38, 40), text = Color3.fromRGB(120, 226, 212), edge = Color3.fromRGB(96, 214, 200), border = true },
+		active = { bg = Color3.fromRGB(18, 38, 40), text = Color3.fromRGB(120, 226, 212), edge = Theme.color.accent, border = true },
 		-- Отмена и закрытие: видно, но взгляд не тянет.
 		-- Заливка и кант подняты против прежних (13,16,20)/(50,60,72): те стояли в одном шаге
 		-- от Theme.color.panel (10,12,15) и на нём не читались вовсе — «Назад» и «Свернуть»
@@ -50,7 +50,7 @@ return function(deps)
 		-- Вкладка отличается от действия светлой надписью.
 		e2 = {
 			action = { bg = Color3.fromRGB(14, 22, 24), text = Color3.fromRGB(96, 226, 208), edge = Color3.fromRGB(40, 196, 176), border = true },
-			active = { bg = Color3.fromRGB(24, 30, 36), text = Color3.fromRGB(236, 242, 248), edge = Color3.fromRGB(96, 214, 200), border = true },
+			active = { bg = Color3.fromRGB(24, 30, 36), text = Color3.fromRGB(236, 242, 248), edge = Theme.color.accent, border = true },
 		},
 	}
 

@@ -301,7 +301,7 @@ local entranceX, entranceZ = Arena.ToCell(Arena.entrance)
 local exitX, exitZ = Arena.ToCell(Arena.exit)
 -- Клетка стола — см. Grid.IsTableCell: стол больше не стоит на выходе и запрещён отдельно.
 local tableX, tableZ = Arena.ToCell(Arena.table)
-local FORBIDDEN_COLOR = Color3.fromRGB(220, 70, 70)
+local FORBIDDEN_COLOR = Theme.color.forbidden
 -- Прозрачность колец дальности/слепой зоны при стройке (rangeIndicator/minRangeIndicator ниже). Было 0.8 —
 -- при ForceField это почти невидимый налёт, особенно рядом с ярким полом арены.
 local RING_TRANSPARENCY = 0.5
@@ -309,7 +309,7 @@ local RING_TRANSPARENCY = 0.5
 -- Цвет текущего выбора (турель/стена), обновляется в refreshBuildChoice. Объявлен здесь явно,
 -- чтобы и refreshBuildChoice, и RenderStepped ниже ссылались на одну и ту же переменную,
 -- а не на неявную глобальную.
-local buildColor = Color3.fromRGB(90, 200, 90)
+local buildColor = Theme.color.build
 -- Радиус текущего выбора в студах, тоже обновляется в refreshBuildChoice. nil у Стены —
 -- по нему RenderStepped решает, показывать ли rangeIndicator.
 local buildRange = nil
@@ -388,7 +388,7 @@ local function rebuildHexWedges(model, diameter, thickness)
 			wedge.CanCollide = false
 			wedge.CanQuery = false
 			wedge.Material = Enum.Material.Neon
-			wedge.Color = Color3.fromRGB(90, 200, 90)
+			wedge.Color = Theme.color.build
 			wedge.Transparency = 1
 			wedge.Parent = model
 		end
@@ -424,7 +424,7 @@ local function rebuildTrapezoidSlices(model, shape, thickness)
 	slab.CanCollide = false
 	slab.CanQuery = false
 	slab.Material = Enum.Material.Neon
-	slab.Color = Color3.fromRGB(90, 200, 90)
+	slab.Color = Theme.color.build
 	slab.Transparency = 1
 	slab.Parent = model
 
@@ -446,7 +446,7 @@ local function rebuildTrapezoidSlices(model, shape, thickness)
 		wedge.CanCollide = false
 		wedge.CanQuery = false
 		wedge.Material = Enum.Material.Neon
-		wedge.Color = Color3.fromRGB(90, 200, 90)
+		wedge.Color = Theme.color.build
 		wedge.Transparency = 1
 		wedge.Parent = model
 	end
@@ -494,7 +494,7 @@ local function rebuildArcSlices(model, radius, arcRad, thickness)
 			-- ForceField, а не Neon: это зона дальности, и выглядеть она должна как круг,
 			-- который она заменяет, а не как вторая рамка постройки.
 			wedge.Material = Enum.Material.ForceField
-			wedge.Color = Color3.fromRGB(90, 200, 90)
+			wedge.Color = Theme.color.build
 			wedge.Transparency = 1
 			wedge.Parent = model
 		end
@@ -537,7 +537,7 @@ local function rebuildSquareSlice(model, size, thickness)
 	slab.CanCollide = false
 	slab.CanQuery = false
 	slab.Material = Enum.Material.Neon
-	slab.Color = Color3.fromRGB(90, 200, 90)
+	slab.Color = Theme.color.build
 	slab.Transparency = 1
 	slab.Parent = model
 end
@@ -561,7 +561,7 @@ cellHighlight.Name = "BuildCell"
 -- что встанет на поле, и подсветка по CellSize показывала бы не то место, которое займёт
 -- постройка. Двигается рамка при этом шагом клетки — в этом вся разница для игрока:
 -- тот же блок, но ставится впятеро точнее.
-local highlightColor = Color3.fromRGB(90, 200, 90)
+local highlightColor = Theme.color.build
 cellHighlight.Parent = Workspace
 
 -- Сектор обстрела — своя модель, а не куски в cellHighlight: у рамки свой размер
@@ -596,7 +596,7 @@ rangeIndicator.Anchored = true
 rangeIndicator.CanCollide = false
 rangeIndicator.CanQuery = false
 rangeIndicator.Material = Enum.Material.ForceField
-rangeIndicator.Color = Color3.fromRGB(90, 200, 90)
+rangeIndicator.Color = Theme.color.build
 rangeIndicator.Transparency = 1
 rangeIndicator.Parent = Workspace
 
@@ -612,7 +612,7 @@ minRangeIndicator.Anchored = true
 minRangeIndicator.CanCollide = false
 minRangeIndicator.CanQuery = false
 minRangeIndicator.Material = Enum.Material.ForceField
-minRangeIndicator.Color = Color3.fromRGB(220, 70, 70)
+minRangeIndicator.Color = Theme.color.forbidden
 minRangeIndicator.Transparency = 1
 minRangeIndicator.Parent = Workspace
 
