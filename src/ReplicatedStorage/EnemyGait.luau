@@ -773,7 +773,9 @@ local function neighbourBack(point, selfModel)
 			if across < radius then
 				local dome = math.sqrt(1 - (across / radius) ^ 2)
 				local top = pivot.Position.Y + (enemy:GetAttribute("BodyHalfHeight") or 0.6) * dome
-				if top < point.Y + PROBE_UP and (not best or top > best) then
+				-- Только тот, чья спина ниже нашего тела: на равного или выше лапы не ставятся.
+				local below = selfModel == nil or top < selfModel:GetPivot().Position.Y
+				if below and top < point.Y + PROBE_UP and (not best or top > best) then
 					best = top
 				end
 			end
@@ -786,8 +788,12 @@ local function findSupport(nominal, up, gaitScale, underTower, selfModel)
 	local scale = gaitScale or 1
 	local result = Workspace:Raycast(nominal + up * (PROBE_UP * scale), -up * (PROBE_LENGTH * scale), groundFilter(underTower))
 	local foot = result and result.Position or nominal
-	-- Под ступнёй пол намного ниже, чем ей положено стоять, — жук поднят (на чьей-то спине).
-	if nominal.Y - foot.Y > SUPPORT_DROP * scale then
+	-- Жук стоит на чужой спине (толкучка ставит атрибут OnBack серверной модели), и пол под
+	-- ступнёй намного ниже, чем ей положено стоять, — опора лапам на спине соседа. Без
+	-- атрибута соседей не ищем вовсе: на земле жук ставит лапы только на землю.
+	local server = selfModel and selfModel.Parent
+	local onBack = server and server:GetAttribute("OnBack")
+	if onBack and nominal.Y - foot.Y > SUPPORT_DROP * scale then
 		local back = neighbourBack(nominal, selfModel)
 		if back and back > foot.Y then
 			foot = Vector3.new(nominal.X, back, nominal.Z)
