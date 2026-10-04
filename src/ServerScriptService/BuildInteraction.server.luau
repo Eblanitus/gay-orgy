@@ -15,23 +15,14 @@ local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local TowerBuilder = require(ServerScriptService:WaitForChild("TowerBuilder"))
 local Inventory = require(ServerScriptService:WaitForChild("Inventory"))
 local TowerUnlocks = require(ServerScriptService:WaitForChild("TowerUnlocks"))
+local PourPrompt = require(ServerScriptService:WaitForChild("PourPrompt"))
+local Tutorial = require(ServerScriptService:WaitForChild("Tutorial"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestBuildTower = Remotes:WaitForChild("RequestBuildTower")
 local RequestPourElement = Remotes:WaitForChild("RequestPourElement")
 local Notify = Remotes:WaitForChild("Notify")
 
-
-local function addPourPrompt(tower)
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "PourPrompt"
-	prompt.ActionText = "Залить элемент"
-	prompt.ObjectText = tower.Name
-	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = 10
-	prompt.Parent = tower
-	return prompt
-end
 
 -- Клетка и тип постройки приходят от клиента, поэтому проверяются как чужие данные: числа
 -- и целые, тип — существующий ключ таблицы Towers (иначе подделанный запрос уронил бы
@@ -58,13 +49,18 @@ RequestBuildTower.OnServerEvent:Connect(function(player, cx, cz, buildingType, t
 		Notify:FireClient(player, ("%s ещё не открыт — нужен промокод"):format(Towers[buildingType].name))
 		return
 	end
+	if not Tutorial.TowerAllowed(buildingType) then
+		Notify:FireClient(player, ("%s на обучении закрыт — пока только Колба"):format(Towers[buildingType].name))
+		return
+	end
 
 	local ok, result = TowerBuilder.Build(cx, cz, buildingType, turn)
 	if ok then
 		-- Подсказка заливки нужна только тому, кто элемент принимает.
 		if Towers[buildingType].fireRate then
-			addPourPrompt(result)
+			PourPrompt.Add(result)
 		end
+		Tutorial.Report("build")
 	else
 		Notify:FireClient(player, result)
 	end
@@ -96,6 +92,7 @@ RequestPourElement.OnServerEvent:Connect(function(player, tower, elementKey)
 	if ok then
 		Inventory.Remove(elementKey, 1)
 		prompt:Destroy()
+		Tutorial.Report("pour")
 	else
 		Notify:FireClient(player, result)
 	end

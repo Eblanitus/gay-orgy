@@ -43,6 +43,8 @@ local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
 local Lithosphere = require(ServerScriptService:WaitForChild("Lithosphere"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
+-- Обучение (задача #298): ограничения уровня и запрет волны, пока не пройдены шаги.
+local Tutorial = require(ServerScriptService:WaitForChild("Tutorial"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local WaveChangedRemote = Remotes:WaitForChild("WaveChanged")
@@ -180,6 +182,7 @@ local function clearArena()
 	Effects.ResetElementUsage()
 
 	Grid.Reset()
+	Tutorial.Stop()
 end
 
 -- Лобби и арена — одна комната в том же плейсе: переход
@@ -237,6 +240,7 @@ local function runWaves(myGeneration, levelNumber)
 		end
 		startRequested = false
 		pendingWave = nil
+		Tutorial.Report("wave")
 
 		-- Состав волны спрашивается один раз и дальше используется везде: спроси мы его
 		-- дважды, игрок мог бы поменять заказ между логом и спавном, и в логе было бы
@@ -319,6 +323,7 @@ local function startRun(levelNumber)
 	-- Элементы живут ровно один забег (дизайн-док: «знание сохраняется, имущество — нет»).
 	-- Открытые рецепты лежат в Crafting и здесь намеренно не трогаются.
 	Inventory.Reset()
+	Tutorial.Start(Levels[levelNumber])
 	TowerBootstrap.PlaceStartingTower()
 
 	for _, player in Players:GetPlayers() do
@@ -328,7 +333,15 @@ local function startRun(levelNumber)
 	task.spawn(runWaves, myGeneration, levelNumber)
 end
 
-RequestStartWaveRemote.OnServerEvent:Connect(function()
+RequestStartWaveRemote.OnServerEvent:Connect(function(player)
+	if not Tutorial.WaveAllowed() then
+		Remotes.Notify:FireClient(player, "сначала пройди шаги обучения — подсказка сверху")
+		-- Hud прячет кнопку сразу после удержания: без досылки она бы не вернулась.
+		if pendingWave then
+			WaveReadyRemote:FireClient(player, pendingWave, #activeLevelWaves)
+		end
+		return
+	end
 	startRequested = true
 end)
 

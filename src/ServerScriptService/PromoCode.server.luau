@@ -15,6 +15,7 @@ local TowerUnlocks = require(ServerScriptService:WaitForChild("TowerUnlocks"))
 local WaveEditor = require(ServerScriptService:WaitForChild("WaveEditor"))
 local WaveState = require(ServerScriptService:WaitForChild("WaveState"))
 local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
+local Tutorial = require(ServerScriptService:WaitForChild("Tutorial"))
 
 -- Регистр не важен: "a500" и "A500" — один и тот же код.
 -- Смените на свой, если этот где-то засветится.
@@ -44,6 +45,12 @@ local WAVE_EDITOR_CODE = "WAVE"
 local STOP_WAVE_CODE = "STOP"
 local enemiesFolder = game:GetService("Workspace"):WaitForChild("Enemies")
 
+-- Код для проверки (задача #298): разом всё, что открывают коды выше, плюс снимает
+-- ограничения обучения (Tutorial) и даёт материю. Материя — в текущий кошелёк: вход
+-- в уровень сбрасывает её к стартовой, поэтому вводить код надо уже на уровне.
+local TEST_CODE = "TEST"
+local TEST_REWARD = 4242
+
 RedeemCode.OnServerEvent:Connect(function(player, code)
 	if typeof(code) ~= "string" then
 		return
@@ -62,6 +69,17 @@ RedeemCode.OnServerEvent:Connect(function(player, code)
 		else
 			Notify:FireClient(player, ("Промокод принят: справочник открыт целиком, рецептов — %d"):format(#revealed))
 		end
+		return
+	end
+
+	if upperCode == TEST_CODE then
+		Tutorial.UnlockAll()
+		TowerUnlocks.UnlockAll()
+		WaveEditor.Unlock()
+		Crafting.RevealAll()
+		EnemiesRevealed:FireClient(player)
+		Matter.Add(TEST_REWARD)
+		Notify:FireClient(player, ("Промокод принят: всё открыто, +%d материи"):format(TEST_REWARD))
 		return
 	end
 

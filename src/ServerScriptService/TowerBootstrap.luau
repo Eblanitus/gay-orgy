@@ -15,6 +15,9 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local TowerBuilder = require(ServerScriptService:WaitForChild("TowerBuilder"))
+local Tutorial = require(ServerScriptService:WaitForChild("Tutorial"))
+local PourPrompt = require(ServerScriptService:WaitForChild("PourPrompt"))
+local Inventory = require(ServerScriptService:WaitForChild("Inventory"))
 
 local TowerBootstrap = {}
 
@@ -26,6 +29,15 @@ function TowerBootstrap.PlaceStartingTower()
 	if not ok then
 		warn(("[TowerBootstrap] не удалось построить стартовую башню: %s"):format(tostring(tower)))
 		return nil
+	end
+
+	-- Обучение (задача #298): Колба стоит пустая, а элемент лежит в сумке — первый шаг
+	-- обучения как раз залить его. Зовётся после Tutorial.Start и Inventory.Reset.
+	local starter = Tutorial.StarterElement()
+	if starter then
+		PourPrompt.Add(tower)
+		Inventory.Add(starter, 1)
+		return tower
 	end
 
 	TowerBuilder.PourElement(tower, "Fire")

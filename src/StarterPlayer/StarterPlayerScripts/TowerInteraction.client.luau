@@ -727,8 +727,11 @@ local BUILD_ORDER = {}
 local function rebuildOrder()
 	table.clear(BUILD_ORDER)
 	local turretsUnlocked = ReplicatedStorage:GetAttribute("TurretsUnlocked") == true
+	-- Обучение (задача #298): сервер пишет открытые постройки через запятую, "" — без ограничений.
+	local tutorialTowers = ReplicatedStorage:GetAttribute("TutorialTowers") or ""
 	for _, key in ALL_TOWERS_ORDER do
-		if not Towers[key].locked or turretsUnlocked then
+		local tutorialOk = tutorialTowers == "" or table.find(string.split(tutorialTowers, ","), key) ~= nil
+		if (not Towers[key].locked or turretsUnlocked) and tutorialOk then
 			table.insert(BUILD_ORDER, key)
 		end
 	end
@@ -1098,13 +1101,19 @@ end
 -- Промокод (задача #56) может разблокировать турели в любой момент партии, не только
 -- до её начала — атрибут меняется сразу для всех, кто уже в игре. rebuildMobilePanel
 -- равна nil на ПК (мобильной панели там нет), поэтому проверяется перед вызовом.
-ReplicatedStorage:GetAttributeChangedSignal("TurretsUnlocked"):Connect(function()
+local function onUnlocksChanged()
 	rebuildOrder()
+	-- Список мог стать короче выбранного номера (обучение оставляет одну Колбу).
+	if selected > #BUILD_ORDER then
+		selected = 1
+	end
 	if rebuildMobilePanel then
 		rebuildMobilePanel()
 	end
 	refreshBuildChoice()
-end)
+end
+ReplicatedStorage:GetAttributeChangedSignal("TurretsUnlocked"):Connect(onUnlocksChanged)
+ReplicatedStorage:GetAttributeChangedSignal("TutorialTowers"):Connect(onUnlocksChanged)
 
 RunService.RenderStepped:Connect(function()
 	if not buildMode then
