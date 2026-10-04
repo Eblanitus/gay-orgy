@@ -93,7 +93,29 @@ local SIDESTEP_SHARE = 0.6
 local AHEAD_DOT = -0.3 -- нормаль перекрытия против хода сильнее этого — сосед впереди
 
 -- Сосед всё ещё под ногами, пока следы тел перекрываются или почти касаются.
+-- (Только для поиска соседей рядом; держит ли спина — решает SUPPORT_CENTER.)
 local SUPPORT_MARGIN = 0.3
+
+-- Опора — только под центром тела. Жук стоит на чужой спине, пока его центр (а с ним и лапы
+-- вокруг) над хребтом соседа: ближе к оси его следа, чем эта доля радиуса. Раньше опора
+-- держала, пока следы хоть краем перекрывались, — и верхний висел в воздухе рядом с нижним,
+-- а целые стопки левитировали на свободном месте (плейтест: «их куб коллизии совпадал с
+-- кубом напарника снизу, и все дружно левитировали»).
+local SUPPORT_CENTER = 0.75
+
+-- Залезание: сколько секунд жук влезает на спину (его ведёт к хребту соседа, и опора держит,
+-- хотя центр ещё не над ней) и с какой скоростью по горизонтали.
+local MOUNT_TIME = 0.8
+local MOUNT_SPEED = 5
+
+-- Слезание: давки нет уже столько секунд — верхний сходит со спины в сторону. Наверх лезут
+-- только от тесноты, и, когда она кончилась, стопка разбирается сама.
+local STEP_OFF_DELAY = 0.6
+local STEP_OFF_SPEED = 5
+
+-- Спускаясь, жук упёрся в того, кто стоит внизу, — съезжает с него вбок с этой скоростью,
+-- а не висит над ним в воздухе.
+local SLIDE_SPEED = 6
 
 local Crowd = {}
 
@@ -381,6 +403,20 @@ local function sameTier(me, other)
 	return math.abs(elevation(me) - elevation(other)) < tierGap(me, other) * 0.5
 end
 
+-- Насколько точка (x, z) далеко от оси следа other (отрезок back..front вдоль хода):
+-- ноль — ровно над хребтом, other.radius — край спины.
+local function fromSpine(x, z, other)
+	local dx, dz = x - other.x, z - other.z
+	local along = math.clamp(dx * other.fx + dz * other.fz, other.back, other.front)
+	local px, pz = other.x + other.fx * along, other.z + other.fz * along
+	return math.sqrt((x - px) ^ 2 + (z - pz) ^ 2)
+end
+
+-- Держит ли спина other тело с центром в (x, z): центр над хребтом, а не над краем.
+local function overBack(x, z, other)
+	return fromSpine(x, z, other) < (other.radius - BODY_CLEARANCE) * SUPPORT_CENTER
+end
+
 -- Стоит ли record (напрямую или через других) на спине target.
 local function standsOn(record, target)
 	local below = record.support
@@ -491,8 +527,10 @@ function Crowd.Resolve(model, desired, dt, facing)
 	local carrying = false
 	local supportCandidate, supportOverlap = nil, 0
 	local supportHolds = false
-	-- Кто ярусом ниже оказался под брюхом: на него встаём, если опора уйдёт.
-	local landing, landingOverlap = nil, -SUPPORT_MARGIN
+	-- Кто ярусом ниже оказался под брюхом (под центром тела): на него встаём, если опора уйдёт.
+	-- Из нескольких — самый высокий: на него упадём первым.
+	local landing, landingHeight = nil, -math.huge
+	local mounting = me.support ~= nil and (me.mount or 0) > 0
 
 	-- Соседи, с которыми тело обязано не пересекаться, и насколько они пересекаются уже.
 	local solid, allowed, standing = {}, {}, {}
@@ -514,8 +552,10 @@ function Crowd.Resolve(model, desired, dt, facing)
 
 				-- Опора держит, пока она всё ещё под нами. Ушла из-под ног (или мы с неё сошли,
 				-- шагая по маршруту) — падаем.
+				-- Пока влезаем, держит касание; дальше — только центр над хребтом.
 				if other == me.support then
-					supportHolds = overlap > -SUPPORT_MARGIN
+					supportHolds = overBack(desired.X, desired.Z, other)
+						or (mounting and overlap > -SUPPORT_MARGIN)
 				end
 
 				local stacked = other == me.support or other.support == me
@@ -524,9 +564,10 @@ function Crowd.Resolve(model, desired, dt, facing)
 				end
 
 				if not stacked and not sameTier(me, other) then
-					if elevation(other) < elevation(me) and overlap > landingOverlap
+					if elevation(other) < elevation(me) and elevation(other) > landingHeight
+						and overBack(desired.X, desired.Z, other)
 						and other.level + 1 < MAX_TIERS and not standsOn(other, me) then
-						landing, landingOverlap = other, overlap
+						landing, landingHeight = other, elevation(other)
 					end
 				elseif not stacked then
 					table.insert(solid, other)
@@ -574,6 +615,40 @@ function Crowd.Resolve(model, desired, dt, facing)
 	local limit = PUSH_SPEED * dt
 	if pushLength > limit then
 		pushX, pushZ = pushX / pushLength * limit, pushZ / pushLength * limit
+	end
+
+	-- Влезая, жук перебирается к хребту соседа; сидя без давки — сходит с него вбок.
+	local support = me.support
+	if support and support.model.Parent then
+		local tx, tz = support.x - desired.X, support.z - desired.Z
+		local length = math.sqrt(tx * tx + tz * tz)
+		if mounting then
+			if length > 1e-3 and not overBack(desired.X, desired.Z, support) then
+				local step = math.min(length, MOUNT_SPEED * dt)
+				pushX += tx / length * step
+				pushZ += tz / length * step
+			end
+		elseif not carrying and (me.calm or 0) >= STEP_OFF_DELAY then
+			-- Вбок от хода опоры — туда, где рядом на земле есть место (сначала та сторона,
+			-- к краю которой мы и так ближе). Места нет ни с одной стороны — толпа ещё плотная,
+			-- остаёмся на спине.
+			local sideX, sideZ = -support.fz, support.fx
+			local side = (desired.X - support.x) * sideX + (desired.Z - support.z) * sideZ
+			local first = side > 0.02 and 1 or side < -0.02 and -1 or (me.id % 2 == 0 and 1 or -1)
+			local ground = {
+				id = me.id, radius = me.radius, front = me.front, back = me.back,
+				halfHeight = me.halfHeight, y = me.groundY, groundY = me.groundY, fx = me.fx, fz = me.fz,
+			}
+			local clear = support.radius + me.radius
+			for _, sign in { first, -first } do
+				local gx, gz = support.x + sideX * sign * clear, support.z + sideZ * sign * clear
+				if fitsProbe(ground, gx, gz) then
+					pushX += sideX * sign * STEP_OFF_SPEED * dt
+					pushZ += sideZ * sign * STEP_OFF_SPEED * dt
+					break
+				end
+			end
+		end
 	end
 
 	-- Жёсткое выталкивание: сколько бы ни пересилил шаг, тело встаёт вплотную к соседу,
@@ -639,6 +714,16 @@ function Crowd.Resolve(model, desired, dt, facing)
 		me.support = nil
 	end
 
+	-- Давки нет — копится спокойствие (по нему верхний слезает); прижали — сбрасывается.
+	if me.support and me.pressed < 0.05 and not blockedAhead then
+		me.calm = (me.calm or 0) + dt
+	else
+		me.calm = 0
+	end
+	if me.mount and me.mount > 0 then
+		me.mount = math.max(0, me.mount - dt)
+	end
+
 	-- Опора ушла (убили, уползла), а под брюхом другой жук — встаём на него. Раньше верхний
 	-- падал на землю сквозь нижних: разные ярусы друг для друга прозрачны, и приземлялся он
 	-- внутри тех, над кем висел. На землю он спускается, только сойдя с чужих спин.
@@ -650,6 +735,8 @@ function Crowd.Resolve(model, desired, dt, facing)
 	if not me.support and not carrying and me.pressed >= STACK_DELAY and supportCandidate then
 		me.support = supportCandidate
 		me.pressed = 0
+		me.mount = MOUNT_TIME
+		me.calm = 0
 	end
 
 	me.level = me.support and me.support.level + 1 or 0
@@ -688,6 +775,19 @@ function Crowd.Resolve(model, desired, dt, facing)
 					local will = math.abs(newElevation - elevation(other)) < half
 					if will and not was and penetration(me, x, z, fx, fz, other) > TOUCH_TOLERANCE then
 						y = me.y
+						-- Спуск упёрся в стоящего внизу: съезжаем с него вбок, а не висим над ним.
+						if newElevation < oldElevation then
+							local ax, az = x - other.x, z - other.z
+							local length = math.sqrt(ax * ax + az * az)
+							if length < 1e-3 then
+								ax, az, length = math.cos(me.id), math.sin(me.id), 1
+							end
+							local nx = math.clamp(x + ax / length * SLIDE_SPEED * dt, MIN_X, MAX_X)
+							local nz = math.clamp(z + az / length * SLIDE_SPEED * dt, MIN_Z, MAX_Z)
+							if not occupied(nx, nz, me) then
+								x, z = nx, nz
+							end
+						end
 						break
 					end
 				end
