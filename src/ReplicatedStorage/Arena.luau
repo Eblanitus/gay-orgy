@@ -190,6 +190,15 @@ end
 -- он стоял на выходе и запрет стройки «на выходе» заодно берёг и его.
 Arena.entrance = Vector3.zero
 Arena.exit = Vector3.zero
+-- Где появляются жуки: дальний конец коридора за входом, а не сам вход. От входа до
+-- двери зала идёт прямой коридор, и жуки, рождённые у самой двери, сразу оказывались
+-- среди турелей. Теперь они проходят коридор целиком (см. Arena.lane и Crowd).
+-- Задаётся маркером Markers.Spawn, если он есть на карте; иначе — по лучу от входа
+-- наружу до задней стены коридора (findSpawn). Нет коридора — вход, как раньше.
+Arena.spawn = Vector3.zero
+-- Полоса коридора от точки спавна до края пола: прямоугольник XZ, по которому жуку можно
+-- ходить вне сетки. nil — коридора нет. Поля minX/maxX/minZ/maxZ.
+Arena.lane = nil
 Arena.table = Vector3.zero
 -- Половина габарита стола по мировым X/Z. Запрет стройки на столе (Arena.IsTableCell) раньше
 -- смотрел только на его центральную клетку, и турель вставала в край столешницы.
@@ -211,6 +220,69 @@ local function worldHalf(model)
 		axis(Vector3.new(r.Z, u.Z, b.Z)))
 end
 
+-- Отступ точки спавна от задней стены коридора и полосы — от его боков: в студах, по центру
+-- жука. Бока — это проём двери (размер маркера Entrance поперёк хода), а не стены коридора:
+-- проём уже, и в нём ещё стоит открытая гермодверь.
+local SPAWN_BACK_GAP = 4
+local LANE_SIDE_GAP = 1.5
+
+-- Точка спавна и полоса коридора по маркеру входа: луч от входа наружу (от центра пола) по
+-- стенам локации до задней стены коридора.
+local function findSpawn(markers, floor, entranceMarker)
+	local entrance = entranceMarker.Position
+	local marker = markers:FindFirstChild("Spawn")
+	local outward = entrance - floor.Position
+	outward = Vector3.new(outward.X, 0, outward.Z)
+	-- Коридор идёт вдоль оси: берём ту ось, по которой вход дальше от центра.
+	if math.abs(outward.X) >= math.abs(outward.Z) then
+		outward = Vector3.new(math.sign(outward.X), 0, 0)
+	else
+		outward = Vector3.new(0, 0, math.sign(outward.Z))
+	end
+	if outward.Magnitude < 0.5 then
+		return entrance, nil
+	end
+
+	local spawn
+	if marker then
+		spawn = marker.Position
+	else
+		local walls = location:FindFirstChild("Walls")
+		if not walls then
+			return entrance, nil
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = { walls }
+		local origin = entrance + Vector3.new(0, 2, 0)
+		local hit = Workspace:Raycast(origin, outward * 400, params)
+		if not hit then
+			return entrance, nil
+		end
+		local depth = (hit.Position - origin):Dot(outward) - SPAWN_BACK_GAP
+		if depth <= 0 then
+			return entrance, nil
+		end
+		spawn = entrance + outward * depth
+	end
+
+	-- Ширина полосы — проём двери: полразмера маркера входа поперёк хода, в мировых осях.
+	local cf, size = entranceMarker.CFrame, entranceMarker.Size / 2
+	local function across(axis)
+		return math.abs(cf.RightVector:Dot(axis)) * size.X + math.abs(cf.UpVector:Dot(axis)) * size.Y
+			+ math.abs(cf.LookVector:Dot(axis)) * size.Z
+	end
+	local side = Vector3.new(math.abs(outward.Z), 0, math.abs(outward.X))
+	local half = math.max(0.5, across(side) - LANE_SIDE_GAP)
+	local a = spawn - side * half
+	local b = entrance + side * half
+	local lane = {
+		minX = math.min(a.X, b.X), maxX = math.max(a.X, b.X),
+		minZ = math.min(a.Z, b.Z), maxZ = math.max(a.Z, b.Z),
+	}
+	return spawn, lane
+end
+
 local function bind()
 	if IS_SERVER then
 		local floor = location:WaitForChild("ArenaFloor")
@@ -219,6 +291,10 @@ local function bind()
 		location:SetAttribute("FloorSize", floor.Size)
 		location:SetAttribute("Entrance", markers:WaitForChild("Entrance").Position)
 		location:SetAttribute("Exit", markers:WaitForChild("Exit").Position)
+		local spawn, lane = findSpawn(markers, floor, markers.Entrance)
+		location:SetAttribute("Spawn", spawn)
+		location:SetAttribute("LaneMin", lane and Vector3.new(lane.minX, 0, lane.minZ) or nil)
+		location:SetAttribute("LaneMax", lane and Vector3.new(lane.maxX, 0, lane.maxZ) or nil)
 		local craftTable = location:WaitForChild("CraftTable")
 		-- Авторская модель стола ставится до замера: TableHalf должен считаться по ней.
 		require(game:GetService("ServerScriptService"):WaitForChild("CraftTableModel")).Apply(craftTable)
@@ -247,6 +323,11 @@ local function bind()
 	Arena.floorY = topY
 	Arena.entrance = location:GetAttribute("Entrance")
 	Arena.exit = location:GetAttribute("Exit")
+	Arena.spawn = location:GetAttribute("Spawn") or Arena.entrance
+	local laneMin, laneMax = location:GetAttribute("LaneMin"), location:GetAttribute("LaneMax")
+	Arena.lane = laneMin and laneMax and {
+		minX = laneMin.X, maxX = laneMax.X, minZ = laneMin.Z, maxZ = laneMax.Z,
+	} or nil
 	Arena.table = location:GetAttribute("Table")
 	Arena.tableHalf = location:GetAttribute("TableHalf")
 
@@ -272,6 +353,12 @@ else
 	location:GetAttributeChangedSignal("Version"):Connect(function()
 		task.defer(Arena.Rebind)
 	end)
+end
+
+-- Стоит ли точка в коридоре за входом — вне пола, но там, где жуку можно идти.
+function Arena.InLane(x, z)
+	local lane = Arena.lane
+	return lane ~= nil and x >= lane.minX and x <= lane.maxX and z >= lane.minZ and z <= lane.maxZ
 end
 
 function Arena.InBounds(cx, cz)
