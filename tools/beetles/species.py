@@ -78,6 +78,11 @@ def worker():
                   "worker_mandible", tooth=True)
     add_antennae(m, [(0.44, 0.8, 1.06), (0.62, 0.9, 1.18), (0.72, 0.92, 1.3), (0.78, 0.88, 1.4)], 0.045,
                  "worker_chitin", clubbed=0.09)
+    # По замечанию автора: чуть худее (уже на 14%) и длиннее (брюшко и надкрылья +18% назад).
+    for n in m.nodes:
+        if n["mesh"] is not None:
+            n["mesh"] = n["mesh"].transformed(
+                lambda p: np.array([p[0] * 0.86, p[1], p[2] * 1.18 if p[2] < 0 else p[2]]))
     return m
 
 
