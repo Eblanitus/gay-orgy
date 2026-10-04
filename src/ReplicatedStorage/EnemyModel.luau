@@ -54,6 +54,28 @@ local function sameColor(a, b)
 	return math.abs(a.R - b.R) < eps and math.abs(a.G - b.G) < eps and math.abs(a.B - b.B) < eps
 end
 
+-- Перекраска шаблона без атрибутов Color* (авторские модели из .glb, tools/prepare_beetles):
+-- роль детали — по началу имени. Чего нет в списке (глаза, бронепластины, крылья, клюв,
+-- светлое брюшко Строителя), остаётся авторским: это акценты модели, а не панцирь.
+local ROLE_BY_NAME = {
+	{ "^BeetlePlate", "elytra" },
+	{ "^BeetleSternite", "chitin" }, { "^BeetleBodyInner", "chitin" }, { "^AbdomenCore", "chitin" },
+	{ "^ThoraxCore", "chitin" }, { "^BeetleNeck", "chitin" }, { "^ROOT", "chitin" },
+	{ "^thorax", "chitin" }, { "^neck$", "chitin" },
+	{ "^HeadBase", "head" }, { "^AntNode", "head" }, { "^AntSeg", "head" }, { "^Mandible", "head" },
+	{ "^Tooth", "head" }, { "^cheek", "head" }, { "^shovel", "head" }, { "^labial_palp", "head" }, { "^part_4[46]$", "head" },
+	{ "^Femur", "head" }, { "^KneeJoint", "head" }, { "^AnkleJoint", "head" },
+	{ "^Tibia", "joints" }, { "^Tarsus", "joints" }, { "^CoxaJoint", "joints" },
+}
+local function roleByName(name)
+	for _, rule in ROLE_BY_NAME do
+		if name:match(rule[1]) then
+			return rule[2]
+		end
+	end
+	return nil
+end
+
 -- Шаблонный жук: клон, масштаб, перекраска, лапы в походку. recolor — таблица врага
 -- (enemyData) или nil, если красить не надо (Аркада берёт шаблон как есть).
 -- Ноги — жёсткие рычаги вокруг CoxaJoint (см. EnemyGait): бедро и стойка снимаются с клона
@@ -86,19 +108,23 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 			part.CanCollide = false
 			part.CanTouch = false
 			if recolor then
-				local own = part.Color
-				if sameColor(own, chitin) then
-					part.Color = color
-				elseif sameColor(own, joints) then
-					part.Color = legColor
-				elseif sameColor(own, elytra) then
-					part.Color = elytraColor
-				elseif sameColor(own, head) then
-					part.Color = headColor
+				local role
+				if chitin then
+					local own = part.Color
+					role = sameColor(own, chitin) and "chitin" or sameColor(own, joints) and "joints"
+						or sameColor(own, elytra) and "elytra" or sameColor(own, head) and "head" or nil
+				else
+					role = roleByName(part.Name)
 				end
-				-- Панцирь матовый (BugPalette): блеск остаётся статусам.
-				part.Material = Enum.Material.SmoothPlastic
-				part.Reflectance = 0
+				local paint = role == "chitin" and color or role == "joints" and legColor
+					or role == "elytra" and elytraColor or role == "head" and headColor or nil
+				if paint then
+					part.Color = paint
+					-- Панцирь матовый (BugPalette): блеск остаётся статусам. Акценты модели
+					-- (бронепластины, крылья) своего материала не теряют.
+					part.Material = Enum.Material.SmoothPlastic
+					part.Reflectance = 0
+				end
 			end
 		end
 	end

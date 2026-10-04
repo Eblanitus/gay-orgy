@@ -115,10 +115,10 @@ local Enemies = {
 		matter = 10, -- было 15
 		-- Авторская модель hmuryi_bron.glb (шлем, бронепластины поверх панциря). Длина тела
 		-- как у Стандарта: 2.7 × 3.45 (тело модели) ≈ 3.0 × 3.1 (тело NormalBeetleTemplate).
-		-- Цвета — из самой модели: у шаблона нет атрибутов Color*, перекраски нет.
+		-- Цвета — BugPalette: шаблон без атрибутов Color* перекрашивается по именам деталей.
 		model = "ArmoredBeetleTemplate",
 		scale = 2.7,
-		color = Color3.fromRGB(92, 102, 112), -- бронепластины модели: справочник и запасной примитив
+		tone = -0.6, -- раскраска BugPalette; бронепластины модели остаются своим цветом
 	},
 	-- Тир 0. Меньше HP и меньше физический размер
 	-- модели — читается на поле без взгляда на полоску HP. Своей механики роя нет —
@@ -143,7 +143,7 @@ local Enemies = {
 		-- от очень маленького до почти Стандарта.
 		scaleRange = {0.58, 1.88},
 		model = "MiniBeetleTemplate",
-		color = Color3.fromRGB(138, 74, 31), -- хитин модели: справочник и запасной примитив
+		tone = 0.45, -- мелкий — светлее Стандарта (BugPalette)
 		matter = 3,
 	},
 	-- Тир 0. Летающий: не участвует в поиске пути по сетке
@@ -193,7 +193,8 @@ local Enemies = {
 		-- пока она в воздухе (EnemyGait.Flap).
 		model = "MothTemplate",
 		scale = 1.2,
-		color = Color3.fromRGB(189, 180, 164),
+		family = "bone",
+		tone = 0,
 		matter = 2,
 	},
 
@@ -219,7 +220,7 @@ local Enemies = {
 		-- Авторская модель worker_beetle.glb, длина тела как у Стандарта (2.43 × 3.82 ≈ 9.3).
 		model = "WorkerBeetleTemplate",
 		scale = 2.43,
-		color = Color3.fromRGB(107, 58, 28),
+		tone = 0,
 		matter = 8,
 	},
 
@@ -249,7 +250,7 @@ local Enemies = {
 			needMaterial = 2, interval = 8, gather = 26,
 			pit = { time = 3, radius = 4, depth = 6, core = 1 },
 		},
-		color = Color3.fromRGB(122, 74, 38),
+		tone = -0.4, -- толстый — темнее
 		matter = 14,
 	},
 
@@ -276,7 +277,7 @@ local Enemies = {
 		-- (3.93 × 2.72 ≈ 1.15 × 9.3). Крылья машут в воздухе, наевшись — сложены.
 		model = "PelicanBeetleTemplate",
 		scale = 3.93,
-		color = Color3.fromRGB(67, 40, 26),
+		tone = 0.15,
 		matter = 12,
 	},
 
