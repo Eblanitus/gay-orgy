@@ -61,6 +61,14 @@ end
 attachPrompt(LabTable.Model())
 LabTable.OnChanged(attachPrompt)
 
+-- На обучении стол крафта закрыт (задача #298): подсказки у него нет вовсе, чтобы
+-- игрок не открывал окно, которое всё равно откажет.
+local function syncTablePrompt()
+	prompt.Enabled = not Tutorial.IsRestricted()
+end
+ReplicatedStorage:GetAttributeChangedSignal("TutorialRestricted"):Connect(syncTablePrompt)
+syncTablePrompt()
+
 -- Стол разгрызен — сказать об этом вслух один раз, а не ждать, пока игрок сам придёт
 -- к столу и получит отказ. Полоска HP над столом показывает ход грызни (BuildingVisuals),
 -- а это сообщение — её итог.

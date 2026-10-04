@@ -3,7 +3,9 @@
 -- идёт ли обучение и сколько раз игрок уже сделал каждое действие.
 --
 -- Клиенту состояние уходит атрибутами на ReplicatedStorage, как TurretsUnlocked у TowerUnlocks:
---   TutorialHint   — текст текущего шага ("" — плашку не показывать)
+--   TutorialStep   — номер текущего шага в TutorialConfig.steps (0 — плашку не показывать;
+--                    текст по номеру выбирает клиент: на телефоне он другой)
+--   TutorialWaveLocked — волну пока запускать нельзя (Hud прячет кнопку)
 --   TutorialTowers — открытые постройки через запятую ("" — ограничений нет)
 --   TutorialRestricted — идёт обучение с ограничениями (прячет рулетку и апгрейдер)
 --
@@ -24,17 +26,26 @@ local function restricted()
 end
 
 local function currentStep()
-	for _, step in Config.steps do
+	for i, step in Config.steps do
 		if (counts[step.action] or 0) < step.need then
-			return step
+			return step, i
 		end
 	end
-	return nil
+	return nil, 0
+end
+
+local function waveAllowed()
+	if not restricted() then
+		return true
+	end
+	local step = currentStep()
+	return step == nil or step.action == "wave"
 end
 
 local function publish()
-	local step = restricted() and currentStep()
-	ReplicatedStorage:SetAttribute("TutorialHint", step and step.text or "")
+	local _, index = currentStep()
+	ReplicatedStorage:SetAttribute("TutorialStep", restricted() and index or 0)
+	ReplicatedStorage:SetAttribute("TutorialWaveLocked", not waveAllowed())
 
 	local towers = {}
 	if restricted() then
@@ -89,11 +100,7 @@ end
 
 -- Можно ли запускать волну: все шаги до "wave" пройдены.
 function Tutorial.WaveAllowed()
-	if not restricted() then
-		return true
-	end
-	local step = currentStep()
-	return step == nil or step.action == "wave"
+	return waveAllowed()
 end
 
 -- Промокод test. Возвращает true, если этот вызов что-то снял.

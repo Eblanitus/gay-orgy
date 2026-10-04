@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 
 local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
 local Theme = require(script.Parent:WaitForChild("UITheme"))
+local Levels = require(ReplicatedStorage:WaitForChild("Levels"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
@@ -288,6 +289,10 @@ startWaveButton.TextColor3 = Theme.buttonKind.action.text
 startWaveButton.TextTruncate = Enum.TextTruncate.AtEnd
 startWaveButton.Text = MobileUI.isMobile and "ВОЛНА ▶" or "НАЧАТЬ ВОЛНУ"
 startWaveButton.Visible = false
+-- Волна ждёт кнопки (WaveReady пришёл, удержания, WaveChanged и RunEnded ещё не было).
+-- Нужно обучению (задача #298): пока шаги не пройдены, кнопки нет, и появляется она
+-- по атрибуту TutorialWaveLocked, а не по новому WaveReady.
+local waveReady = false
 startWaveButton.Parent = screenGui
 
 -- Пульсирующей обводки здесь больше нет: что игра ждёт именно этого нажатия, говорит
@@ -349,6 +354,7 @@ local function startWaveHold()
 		if progress >= 1 then
 			cancelWaveHold()
 			startWaveButton.Visible = false -- чтобы второе удержание не ушло в следующую волну
+			waveReady = false
 			Remotes.RequestStartWave:FireServer()
 		end
 	end)
@@ -382,6 +388,12 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
+ReplicatedStorage:GetAttributeChangedSignal("TutorialWaveLocked"):Connect(function()
+	if waveReady then
+		startWaveButton.Visible = not ReplicatedStorage:GetAttribute("TutorialWaveLocked")
+	end
+end)
+
 Remotes.WaveReady.OnClientEvent:Connect(function(waveNumber, totalWaves)
 	frame.Visible = true
 	-- Готовность отмечена цветом числа, а не словом «готова»: под текст в панели есть
@@ -392,7 +404,8 @@ Remotes.WaveReady.OnClientEvent:Connect(function(waveNumber, totalWaves)
 	-- На узкой мобильной кнопке полная надпись не помещается и обрезалась бы посередине слова.
 	startWaveButton.Text = MobileUI.isMobile and ("ВОЛНА %d ▶"):format(waveNumber)
 		or ("НАЧАТЬ ВОЛНУ %d"):format(waveNumber)
-	startWaveButton.Visible = true
+	waveReady = true
+	startWaveButton.Visible = not ReplicatedStorage:GetAttribute("TutorialWaveLocked")
 
 	-- Готовность волны 1 приходит и после входа в уровень из лобби. Без сброса здесь баннер
 	-- победы/поражения предыдущего забега висел бы поверх новой попытки до первого нажатия волны.
@@ -400,6 +413,7 @@ Remotes.WaveReady.OnClientEvent:Connect(function(waveNumber, totalWaves)
 end)
 
 Remotes.WaveChanged.OnClientEvent:Connect(function(waveNumber, totalWaves)
+	waveReady = false
 	frame.Visible = true
 	waveLabel.Text = ("%d/%d"):format(waveNumber, totalWaves)
 	waveLabel.TextColor3 = Theme.color.accent
@@ -448,7 +462,8 @@ Arena.OnChanged(function()
 	watchTable()
 end)
 
-Remotes.RunEnded.OnClientEvent:Connect(function(won)
+Remotes.RunEnded.OnClientEvent:Connect(function(won, levelNumber)
+	waveReady = false
 	local tone = won and Theme.color.action or Theme.color.danger
 	resultLabel.Text = won and "ПОБЕДА" or "ПОРАЖЕНИЕ"
 	-- Корпус и начинка — теми же сборщиками, что и ячейки элементов.
@@ -458,6 +473,14 @@ Remotes.RunEnded.OnClientEvent:Connect(function(won)
 	if resultCaption then
 		resultCaption.Text = won and "ЗАБЕГ ОКОНЧЕН  //  прочность стола сохранена"
 			or "ЗАБЕГ ОКОНЧЕН  //  лаборатория прорвана"
+		-- Обучение пройдено (задача #298): сказать, куда «Играть» поведёт дальше.
+		local level = won and typeof(levelNumber) == "number" and Levels[levelNumber]
+		if level and level.tutorial then
+			local nextLevel = Levels[levelNumber + 1]
+			resultCaption.Text = nextLevel
+				and ("ОБУЧЕНИЕ ПРОЙДЕНО  //  открыт уровень %d «%s»"):format(levelNumber + 1, nextLevel.name)
+				or "ОБУЧЕНИЕ ПРОЙДЕНО"
+		end
 	end
 	resultFrame.Visible = true
 	Theme.Open(resultFrame)
