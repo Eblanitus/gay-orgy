@@ -203,33 +203,22 @@ local function turnCFrame(turn)
 	return CFrame.Angles(0, math.rad(90 * ((turn or 0) % 4)), 0)
 end
 
--- Невидимый сердечник на весь след и всю высоту постройки: игрок не проходит сквозь
--- турель ни низом, ни верхом. Сами модели твёрдые только местами (подставка Колбы,
--- станина Инжектора), остальное — меши без коллизии. Сердечник в группе PlayerBarrier:
--- держит только игрока, трупы ложатся на настоящие детали, а лучи (линия огня, лапы
--- жуков, обломки) идут группой Probe и его не видят. Прозрачность 1: камера сквозь
--- него не упирается, обломки при разрушении его не берут (TowerDebris берёт видимое).
-local function addPlayerHull(tower, footprint)
-	local pivot = tower:GetPivot()
-	local cf, size = tower:GetBoundingBox()
-	local floorY = pivot.Position.Y - TOWER_Y
-	local height = cf.Position.Y + size.Y / 2 - floorY
-	if height <= 0 then
-		return
+-- Каждая видимая деталь турели твёрдая: ствол, головка, баки, лопасти — игрок упирается
+-- в саму форму, а не в коробку вокруг. Раньше коллизия была только у подставки (Колба)
+-- или станины (Инжектор), остальное — меши без неё.
+--
+-- Новые твёрдые детали — в группе TowerSolid: игрок и трупы о них стукаются, а луч
+-- линии огня (группа Probe, Targeting) их не видит, как не видел и раньше, когда они
+-- были без коллизии. Детали, которые и так были твёрдыми, остаются в Default: преградой
+-- для луча турели остаётся ровно то же, что было.
+local function solidify(tower)
+	for _, part in tower:GetDescendants() do
+		if part:IsA("BasePart") and part ~= tower.PrimaryPart and not part.CanCollide
+			and part.Transparency < 1 then
+			part.CanCollide = true
+			part.CollisionGroup = Loose.Groups.TowerSolid
+		end
 	end
-	local side = footprint - 0.4
-	local hull = Instance.new("Part")
-	hull.Name = "PlayerHull"
-	hull.Size = Vector3.new(side, height, side)
-	hull.CFrame = CFrame.new(pivot.Position.X, floorY + height / 2, pivot.Position.Z)
-	hull.Anchored = true
-	hull.CanCollide = true
-	hull.CanTouch = false
-	hull.CanQuery = false
-	hull.CastShadow = false
-	hull.Transparency = 1
-	hull.CollisionGroup = Loose.Groups.Barrier
-	hull.Parent = tower
 end
 
 local function placeTower(cx, cz, towerType, turn)
@@ -238,7 +227,7 @@ local function placeTower(cx, cz, towerType, turn)
 	local tower = build(towerData)
 	tower.Name = ("%s (%d,%d)"):format(towerData.name, cx, cz)
 	tower:PivotTo(CFrame.new(Grid.ToWorld(cx, cz) + Vector3.new(0, TOWER_Y, 0)) * turnCFrame(turn))
-	addPlayerHull(tower, towerData.footprint or Grid.BuildSize)
+	solidify(tower)
 	tower:SetAttribute("Type", towerType)
 	tower:SetAttribute("CellX", cx)
 	tower:SetAttribute("CellZ", cz)

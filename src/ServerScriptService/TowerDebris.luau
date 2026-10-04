@@ -169,7 +169,6 @@ end
 local towerParams = RaycastParams.new()
 towerParams.FilterType = Enum.RaycastFilterType.Include
 towerParams.FilterDescendantsInstances = {}
-towerParams.CollisionGroup = "Probe" -- мимо невидимого сердечника турели, на её детали
 local PROBE_FROM = 40
 
 local function aimTowers(except)
@@ -288,6 +287,7 @@ local function prepare(part)
 	part.CanCollide = false
 	part.CanTouch = false
 	part.CanQuery = true
+	part.CollisionGroup = "Default" -- у живой турели детали в TowerSolid (TowerBuilder.solidify)
 	part.Color = part.Color:Lerp(SCORCH, SCORCH_SHARE)
 	part.Parent = folder
 end

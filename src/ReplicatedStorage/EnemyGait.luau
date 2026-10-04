@@ -283,8 +283,6 @@ local function groundFilter(underTower)
 	params.FilterType = Enum.RaycastFilterType.Include
 	params.FilterDescendantsInstances = include
 	params.IgnoreWater = true
-	-- Невидимые сердечники турелей держат только игрока: лапа встаёт на сам меш турели.
-	params.CollisionGroup = "Probe"
 	surfaceParams[slot] = params
 	surfaceParamsClock[slot] = now
 	return params
