@@ -92,6 +92,19 @@ local BODY_CLEARANCE = 0.12 -- проходов выталкивания за к
 local SIDESTEP_SHARE = 0.6
 local AHEAD_DOT = -0.3 -- нормаль перекрытия против хода сильнее этого — сосед впереди
 
+-- Затор. Жук, который упёрся в того, кто впереди, и за кадр продвигается меньше
+-- STUCK_PROGRESS того, что хотел, копит «застревание». Через STUCK_TIME (у каждого своё,
+-- с разбросом — чтобы не отступали все разом) он сдаёт назад и вбок, прочь от тех, кто
+-- его жмёт, BACKOFF_TIME секунд со скоростью BACKOFF_SPEED. Пробка в проёме (арка из тел,
+-- развернувшийся поперёк жук) так рассыпается сама. Застрявший заодно протискивается:
+-- ему можно войти в соседа на глубину до SQUEEZE, и разворот в тесноте перестаёт его запирать.
+local STUCK_PROGRESS = 0.3
+local STUCK_TIME = 0.6
+local STUCK_SPREAD = 0.8
+local BACKOFF_TIME = 0.5
+local BACKOFF_SPEED = 4
+local SQUEEZE = 0.25
+
 -- Запас к поиску соседей рядом, studs.
 local SUPPORT_MARGIN = 0.3
 
@@ -651,6 +664,8 @@ function Crowd.Resolve(model, desired, dt, facing)
 	end
 
 	local pushX, pushZ = 0, 0
+	local blockedAhead = false -- упёрся в того, кто впереди (а не задет сбоку или сзади)
+	local pressX, pressZ = 0, 0 -- куда его выдавливают соседи
 
 	-- Соседи, с которыми тело обязано не пересекаться, и насколько они пересекаются уже.
 	-- nearby — все, кто рядом: лапа может встать на любого из них.
@@ -685,9 +700,12 @@ function Crowd.Resolve(model, desired, dt, facing)
 
 						pushX += nx * overlap * SEPARATION_SHARE
 						pushZ += nz * overlap * SEPARATION_SHARE
+						pressX += nx
+						pressZ += nz
 
 						-- Упёрся в того, кто впереди, — берёт вбок, а не встаёт в хвост.
 						if nx * fx + nz * fz < AHEAD_DOT then
+							blockedAhead = true
 							local sideX, sideZ = -fz, fx
 							local offset = (desired.X - other.x) * sideX + (desired.Z - other.z) * sideZ
 							local side = offset > 0.05 and 1 or offset < -0.05 and -1 or (me.id % 2 == 0 and 1 or -1)
@@ -712,9 +730,24 @@ function Crowd.Resolve(model, desired, dt, facing)
 		pushZ += me.slideZ * SLIDE_SPEED * dt
 	end
 
+	-- Застрявший протискивается: соседа можно продавить чуть глубже.
+	local backing = (me.backoff or 0) > 0
+	if backing or (me.stuck or 0) > STUCK_TIME then
+		for _, other in solid do
+			allowed[other] = math.max(allowed[other], SQUEEZE)
+			standing[other] = math.max(standing[other], SQUEEZE)
+		end
+	end
+
 	-- Жёсткое выталкивание: сколько бы ни пересилил шаг, тело встаёт вплотную к соседу,
 	-- а не в него.
 	local x, z = desired.X + pushX, desired.Z + pushZ
+	if backing then
+		-- Отступая, жук не идёт по маршруту, а сдаёт прочь от затора.
+		me.backoff -= dt
+		x = me.x + pushX + me.backoffX * BACKOFF_SPEED * dt
+		z = me.z + pushZ + me.backoffZ * BACKOFF_SPEED * dt
+	end
 	for _ = 1, HARD_ITERATIONS do
 		local moved = false
 		for _, other in solid do
@@ -751,13 +784,52 @@ function Crowd.Resolve(model, desired, dt, facing)
 		z = homeZ
 	end
 
-	-- Стена могла вернуть тело в соседа. Тогда шаг не делается вовсе: прошлая позиция
-	-- заведомо допустима (allowed считан из неё), и жук просто ждёт кадр.
-	for _, other in solid do
-		if penetration(me, x, z, fx, fz, other) > standing[other] + 1e-3 then
+	-- Стена могла вернуть тело в соседа. Тогда пробуем по отдельности: только развернуться
+	-- на месте, только шагнуть без разворота, — и только если не выходит ничего, жук ждёт
+	-- кадр на прошлой позиции (она заведомо допустима: allowed считан из неё). Раньше
+	-- отменялось всё сразу, и развернувшийся поперёк проёма жук так и стоял поперёк.
+	local function fits(px, pz, qx, qz)
+		for _, other in solid do
+			if penetration(me, px, pz, qx, qz, other) > standing[other] + 1e-3 then
+				return false
+			end
+		end
+		return true
+	end
+	if not fits(x, z, fx, fz) then
+		if fits(me.x, me.z, fx, fz) then
+			x, z = me.x, me.z
+		elseif fits(x, z, me.fx, me.fz) then
+			fx, fz = me.fx, me.fz
+		else
 			x, z = me.x, me.z
 			fx, fz = me.fx, me.fz
-			break
+		end
+	end
+
+	-- Застревание копится, пока жук упёрся в переднего и почти не двигается к цели.
+	local wantX, wantZ = desired.X - me.x, desired.Z - me.z
+	local want = math.sqrt(wantX * wantX + wantZ * wantZ)
+	if not backing and want > 1e-3 then
+		local progress = ((x - me.x) * wantX + (z - me.z) * wantZ) / want
+		if blockedAhead and progress < want * STUCK_PROGRESS then
+			me.stuck = (me.stuck or 0) + dt
+		else
+			me.stuck = math.max(0, (me.stuck or 0) - dt * 2)
+		end
+		me.stuckLimit = me.stuckLimit or STUCK_TIME + math.random() * STUCK_SPREAD
+		if me.stuck >= me.stuckLimit then
+			-- Назад от хода, прочь от тех, кто жмёт, и чуть вбок — на свою сторону.
+			local side = me.id % 2 == 0 and 1 or -1
+			local bx = -fx + pressX - fz * side * 0.5
+			local bz = -fz + pressZ + fx * side * 0.5
+			local length = math.sqrt(bx * bx + bz * bz)
+			if length > 1e-3 then
+				me.backoff = BACKOFF_TIME
+				me.backoffX, me.backoffZ = bx / length, bz / length
+			end
+			me.stuck = 0
+			me.stuckLimit = nil
 		end
 	end
 
