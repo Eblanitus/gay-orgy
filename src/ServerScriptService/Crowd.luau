@@ -131,6 +131,29 @@ end
 bindBounds()
 Arena.OnChanged(bindBounds)
 
+-- Пол арены — не всё, где жуку можно стоять: спавн теперь в дальнем конце коридора за
+-- входом (Arena.spawn), и полоса коридора (Arena.lane) — тоже допустимое место. Точка
+-- прижимается к ближайшему из двух прямоугольников: на полу всё как раньше, в коридоре
+-- жука держат его бока.
+local function clampXZ(x, z)
+	local ax, az = math.clamp(x, MIN_X, MAX_X), math.clamp(z, MIN_Z, MAX_Z)
+	local lane = Arena.lane
+	if not lane or (ax == x and az == z) then
+		return ax, az
+	end
+	local lx, lz = math.clamp(x, lane.minX, lane.maxX), math.clamp(z, lane.minZ, lane.maxZ)
+	if (lx - x) ^ 2 + (lz - z) ^ 2 < (ax - x) ^ 2 + (az - z) ^ 2 then
+		return lx, lz
+	end
+	return ax, az
+end
+
+-- Вне пола сетки нет: Arena.ToCell прижал бы точку коридора к крайней клетке, и постройка
+-- у края пола «стояла» бы и в коридоре.
+local function offFloor(x, z)
+	return x < MIN_X or x > MAX_X or z < MIN_Z or z > MAX_Z
+end
+
 -- Спрашивается карта проходимости для тела жука (Grid.GetBlocker), а не занятость
 -- самой клетки. На крупной сетке разницы не было: клетка была с жука размером,
 -- и его центр у самой границы занятой клетки означал тело вплотную к постройке.
@@ -140,6 +163,9 @@ Arena.OnChanged(bindBounds)
 -- Постройка, под которой этот жук пролезает (подлаз, Grid.FitsUnder), ему не стена:
 -- иначе толкучка выпихивала бы мелкого из-под Колбы обратно, куда маршрут его не ведёт.
 local function occupied(x, z, me)
+	if offFloor(x, z) then
+		return false
+	end
 	local cx, cz = Arena.ToCell(Vector3.new(x, 0, z))
 	local blocker = Grid.GetBlocker(cx, cz)
 	return blocker ~= nil and not (me and Grid.FitsUnder(blocker, me.bodyHeight))
@@ -150,6 +176,9 @@ end
 -- что идёт вплотную к стене (разброс SCATTER как раз сдвигает его туда в узком проходе), —
 -- и проверка построек снималась бы с него ровно там, где она нужна, и он бы въехал в стену.
 local function insideBuilding(x, z)
+	if offFloor(x, z) then
+		return false
+	end
 	local cx, cz = Arena.ToCell(Vector3.new(x, 0, z))
 	return Grid.GetOccupant(cx, cz) ~= nil
 end
@@ -389,7 +418,8 @@ local function probe(model, position)
 end
 
 local function fitsProbe(me, x, z)
-	if x < MIN_X or x > MAX_X or z < MIN_Z or z > MAX_Z or occupied(x, z, me) then
+	local cx, cz = clampXZ(x, z)
+	if cx ~= x or cz ~= z or occupied(x, z, me) then
 		return false
 	end
 	for _, other in records do
@@ -571,16 +601,14 @@ function Crowd.Resolve(model, desired, dt, facing)
 	-- Если жук уже стоит ВНУТРИ постройки (её возвели вокруг него), проверка
 	-- снимается совсем: иначе она бы его там и заперла, вместо того чтобы вытолкнуть.
 	-- Именно внутри, а не «вплотную»: второе в узком проходе происходит со всяким вторым.
-	local homeX = math.clamp(desired.X, MIN_X, MAX_X)
-	local homeZ = math.clamp(desired.Z, MIN_Z, MAX_Z)
+	local homeX, homeZ = clampXZ(desired.X, desired.Z)
 	local caged = insideBuilding(homeX, homeZ)
 
-	x = math.clamp(x, MIN_X, MAX_X)
+	x, z = clampXZ(x, z)
 	if not caged and occupied(x, homeZ, me) then
 		x = homeX
 	end
 
-	z = math.clamp(z, MIN_Z, MAX_Z)
 	if not caged and occupied(x, z, me) then
 		z = homeZ
 	end

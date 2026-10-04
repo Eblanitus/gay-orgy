@@ -405,7 +405,15 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 		end
 
 		-- Первая точка — центр клетки, в которой жук уже стоит: возвращаться к ней незачем.
-		index = math.min(2, #points)
+		-- Кроме коридора за входом: там жук вне пола, его клетка — крайняя клетка у двери
+		-- напротив него (Grid.ToCell прижимает к краю), и сначала надо дойти до неё по
+		-- коридору, а не срезать ко второй точке сквозь стену.
+		local here = enemy:GetPivot().Position
+		if #points >= 2 and Arena.InLane(here.X, here.Z) and flat(Grid.ToWorld(cx, cz) - here).Magnitude > Arena.cellSize * 2 then
+			index = 1
+		else
+			index = math.min(2, #points)
+		end
 	end
 
 	-- Затухание толчка (доля накопленного смещения в секунду). Не баланс, а ощущение:
@@ -1060,6 +1068,15 @@ local function flyToTurret(enemy, enemyData)
 	end
 end
 
+-- Кто идёт от дальнего конца коридора, а кто по-старому появляется у входа. Коридор
+-- проходится общим циклом moveThroughArena (первая точка маршрута — край пола напротив
+-- жука, см. rebuild). Летающие и жуки со своим циклом (Моль, Матка, Личинка, Пеликан)
+-- коридора не знают и летели бы к цели напрямик сквозь его стены.
+local function walksCorridor(enemyData)
+	return Arena.lane ~= nil and not enemyData.flying
+		and not (enemyData.glow or enemyData.lays or enemyData.hatches or enemyData.scavenges)
+end
+
 -- Создаёт и ведёт одного врага. hpOverride переопределяет HP из Enemies (для волн, где
 -- один и тот же тип встречается с разным HP).
 -- startPosition — мировая точка старта без учёта offset (по умолчанию вход арены). Используется
@@ -1084,8 +1101,16 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 		-- там, где их выпустили, а не у пролома.
 		spawnPosition = startPosition + offset
 	else
-		local entranceX, entranceZ = Grid.GetEntranceCell()
-		spawnPosition = Grid.ToWorld(entranceX, entranceZ) + Vector3.new(0, enemy:GetAttribute("RideHeight") or enemyData.rideHeight or ENEMY_Y, 0) + offset
+		local lift = Vector3.new(0, enemy:GetAttribute("RideHeight") or enemyData.rideHeight or ENEMY_Y, 0)
+		if walksCorridor(enemyData) then
+			-- Дальний конец коридора за входом (Arena.spawn): жук проходит коридор целиком и
+			-- входит в зал через дверь, а не рождается в ней среди турелей.
+			local spawn = Arena.spawn
+			spawnPosition = Vector3.new(spawn.X, Arena.floorY, spawn.Z) + lift + offset
+		else
+			local entranceX, entranceZ = Grid.GetEntranceCell()
+			spawnPosition = Grid.ToWorld(entranceX, entranceZ) + lift + offset
+		end
 	end
 
 	-- Тела непроницаемы (см. Crowd): у пролома новый ждёт, пока предыдущий отойдёт, а
