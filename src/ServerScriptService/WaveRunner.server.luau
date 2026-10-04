@@ -264,13 +264,18 @@ local function runWaves(myGeneration, levelNumber)
 		local function spawnCancelled()
 			return cancelled() or WaveState.IsStopped()
 		end
+		-- Волна зачищена, когда группы досланы, ни один жук не ждёт места у точки спавна
+		-- (EnemySpawner.Spawning) и папка пуста. По одной пустой папке волна засчитывалась
+		-- в первый же кадр: первый жук ещё ждал места, а группа досылает остальных с паузой.
+		local groupsLeft = #groups
 		for _, group in groups do
 			task.spawn(function()
 				EnemySpawner.SpawnGroup(group.enemyType, group.count, group.hp, spawnCancelled)
+				groupsLeft -= 1
 			end)
 		end
 
-		while #enemiesFolder:GetChildren() > 0 do
+		while groupsLeft > 0 or EnemySpawner.Spawning() > 0 or #enemiesFolder:GetChildren() > 0 do
 			if runEnded or cancelled() then
 				return
 			end

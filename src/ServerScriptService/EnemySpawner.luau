@@ -50,6 +50,10 @@ local SCATTER = 1.2 -- studs, разброс от точек маршрута (�
 -- SPAWN_WAIT_MAX — потом ищет ближайшее свободное рядом (Crowd.FindFree).
 local SPAWN_POLL = 0.1
 local SPAWN_WAIT_MAX = 4
+-- Сколько жуков уже создаётся, но ещё не попало в enemiesFolder (ждут места у точки спавна,
+-- собирается модель). WaveRunner считает волну зачищенной по пустой папке и без этого
+-- счётчика засчитывал её в первый же кадр, пока первый жук ещё ждал места (см. Spawning).
+local spawning = 0
 -- Точка маршрута засчитана, когда центр жука ближе этой доли радиуса его тела,
 -- а промежуточная — ещё и когда он уже за линией точки (поперёк следующего отрезка), но не дальше WAYPOINT_PASS_BODIES
 -- радиусов от неё. Точно встать в точку центром несжимаемое тело в толпе не может:
@@ -1089,7 +1093,13 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 	local hp = hpOverride or enemyData.hp
 	ProfileStats.Seen(enemyType)
 
-	local enemy = buildEnemyModel(enemyData)
+	-- С этой строки и до enemy.Parent жук числится в spawning: каждый выход ниже его снимает.
+	spawning += 1
+	local built, enemy = pcall(buildEnemyModel, enemyData)
+	if not built then
+		spawning -= 1
+		error(enemy, 0)
+	end
 
 	-- Высота спавна — из RideHeight КОНКРЕТНОГО клона (см. buildTemplateModel/buildEnemyModel),
 	-- а не общей enemyData.rideHeight: у Мини она разная от забега к забегу (scaleRange),
@@ -1125,6 +1135,7 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 				if Crowd.epoch ~= epoch then
 					-- Забег перезапустили, пока ждали: этот жук уже из прошлой волны.
 					enemy:Destroy()
+					spawning -= 1
 					return
 				end
 			end
@@ -1136,6 +1147,7 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 			task.wait(SPAWN_POLL)
 			if Crowd.epoch ~= epoch then
 				enemy:Destroy()
+				spawning -= 1
 				return
 			end
 			free = Crowd.FindFree(enemy, spawnPosition)
@@ -1174,6 +1186,7 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 		enemy:SetAttribute("Flying", true)
 	end
 	enemy.Parent = enemiesFolder
+	spawning -= 1
 
 	-- С этой минуты жук — тело в толкучке: его расталкивают соседи, и он расталкивает их.
 	-- Регистрируется после PivotTo (уровень земли толкучка берёт из его пивота) и сразу за
@@ -1423,6 +1436,12 @@ function EnemySpawner.SpawnGroup(enemyType, count, hpOverride, isCancelled)
 			task.wait(SPAWN_INTERVAL)
 		end
 	end
+end
+
+-- Сколько жуков создаётся прямо сейчас и ещё не появилось в Workspace.Enemies.
+-- Волна не зачищена, пока это не ноль, даже если папка пуста.
+function EnemySpawner.Spawning()
+	return spawning
 end
 
 -- Колбеки-мосты. Назначаются один раз при загрузке модуля — тот же приём, что и
