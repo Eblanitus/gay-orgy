@@ -63,6 +63,9 @@ local FOOT_RADIUS = 0.2
 -- Лапы ниже уровня тела не больше чем на это тоже его держат.
 local FOOT_SLACK = 0.25
 
+-- Место лапы под чужим телом — лапа подбирается к своему телу на эту долю.
+local TUCK = 0.6
+
 -- На чужих спинах лапы поджимаются до этой доли высоты пивота (брюхо ложится на спину).
 local CROUCH = 0.5
 
@@ -103,11 +106,17 @@ local AHEAD_DOT = -0.3 -- нормаль перекрытия против хо�
 -- развернувшийся поперёк жук) так рассыпается сама. Застрявший заодно протискивается:
 -- ему можно войти в соседа на глубину до SQUEEZE, и разворот в тесноте перестаёт его запирать.
 local STUCK_PROGRESS = 0.3
+local STOPPED_SPEED = 1 -- studs/сек: передний медленнее этого — стоит, а не идёт
 local STUCK_TIME = 0.4
 local STUCK_SPREAD = 0.8
-local BACKOFF_TIME = 0.9
-local BACKOFF_SPEED = 4
+local BACKOFF_TIME = 0.6
+local BACKOFF_SPEED = 2.5
 local SQUEEZE = 0.4
+-- Доли направления отступа: назад от хода и вбок (к своей стороне).
+local BACKOFF_BACK = 0.3
+local BACKOFF_SIDE = 1
+-- За идущим (а не стоящим) передним застревание засчитывается во столько раз дольше.
+local STUCK_FOLLOW = 3
 -- Поворачиваясь вокруг своей оси, жук может войти в соседа на столько (см. Resolve).
 local TURN_SQUEEZE = 0.6
 
@@ -698,6 +707,7 @@ function Crowd.Resolve(model, desired, dt, facing)
 
 	local pushX, pushZ = 0, 0
 	local blockedAhead = false -- упёрся в того, кто впереди (а не задет сбоку или сзади)
+	local blockedByStopped = false -- ...и тот впереди сам стоит
 	local pressX, pressZ = 0, 0 -- куда его выдавливают соседи
 
 	-- Соседи, с которыми тело обязано не пересекаться, и насколько они пересекаются уже.
@@ -738,7 +748,13 @@ function Crowd.Resolve(model, desired, dt, facing)
 
 						-- Упёрся в того, кто впереди, — берёт вбок, а не встаёт в хвост.
 						if nx * fx + nz * fz < AHEAD_DOT then
+							-- Затор — когда впереди стоят. За идущим впереди жук идёт следом и
+							-- отступает, только если не продвинулся втрое дольше: иначе группа
+							-- толкалась бы на месте (плейтест: «стоят и что-то обсуждают»).
 							blockedAhead = true
+							if (other.advance or 0) < STOPPED_SPEED then
+								blockedByStopped = true
+							end
 							local sideX, sideZ = -fz, fx
 							local offset = (desired.X - other.x) * sideX + (desired.Z - other.z) * sideZ
 							local side = offset > 0.05 and 1 or offset < -0.05 and -1 or (me.id % 2 == 0 and 1 or -1)
@@ -821,9 +837,11 @@ function Crowd.Resolve(model, desired, dt, facing)
 	-- навсегда): поворачиваясь, жук может войти в соседа до TURN_SQUEEZE, а перекрытие
 	-- потом снимает расталкивание. Глубже — довернётся на следующих кадрах, когда соседи
 	-- расступятся.
+	local pinned = false -- шаг отменён: жук зажат со всех сторон
 	for _, other in solid do
 		if penetration(me, x, z, fx, fz, other) > standing[other] + 1e-3 then
 			x, z = me.x, me.z
+			pinned = true
 			break
 		end
 	end
@@ -842,17 +860,19 @@ function Crowd.Resolve(model, desired, dt, facing)
 	local want = math.sqrt(wantX * wantX + wantZ * wantZ)
 	if not backing and want > 1e-3 then
 		local progress = ((x - me.x) * wantX + (z - me.z) * wantZ) / want
-		if blockedAhead and progress < want * STUCK_PROGRESS then
+		-- Зажатый с боков (шаг отменён) — тоже застрял: раньше жук, стиснутый в проёме
+		-- теми, кто стоит по бокам, стоял там навсегда — впереди у него никого не было.
+		if (blockedAhead or pinned) and progress < want * STUCK_PROGRESS then
 			me.stuck = (me.stuck or 0) + dt
 		else
 			me.stuck = math.max(0, (me.stuck or 0) - dt * 2)
 		end
 		me.stuckLimit = me.stuckLimit or STUCK_TIME + math.random() * STUCK_SPREAD
-		if me.stuck >= me.stuckLimit then
+		if me.stuck >= me.stuckLimit * ((blockedByStopped or pinned) and 1 or STUCK_FOLLOW) then
 			-- Назад от хода, прочь от тех, кто жмёт, и чуть вбок — на свою сторону.
 			local side = me.id % 2 == 0 and 1 or -1
-			local bx = -fx + pressX - fz * side * 0.5
-			local bz = -fz + pressZ + fx * side * 0.5
+			local bx = -fx * BACKOFF_BACK + pressX - fz * side * BACKOFF_SIDE
+			local bz = -fz * BACKOFF_BACK + pressZ + fx * side * BACKOFF_SIDE
 			local length = math.sqrt(bx * bx + bz * bz)
 			if length > 1e-3 then
 				me.backoff = BACKOFF_TIME
@@ -913,6 +933,13 @@ function Crowd.Resolve(model, desired, dt, facing)
 			local height, by = footing(me, tx, tz, me.y, nearby)
 			if not height then
 				tx, tz = homeX, homeZ
+				height, by = footing(me, tx, tz, me.y, nearby)
+			end
+			if not height then
+				-- Место лапы занято чужим телом, до которого не дотянуться, — лапа
+				-- подбирается ближе к своему телу.
+				tx = x + (homeX - x) * TUCK
+				tz = z + (homeZ - z) * TUCK
 				height, by = footing(me, tx, tz, me.y, nearby)
 			end
 			if height then
@@ -983,7 +1010,8 @@ function Crowd.Resolve(model, desired, dt, facing)
 	local y = me.y
 	if level then
 		local targetY = level + me.lift
-		if onBacks then
+		-- Садится, только если и правда на спинах, а не на полу с лапой на соседе.
+		if onBacks and level > groundAt(x, z) + FOOT_SLACK then
 			-- На чужих спинах жук не стоит на вытянутых лапах, а садится: лапы поджимаются,
 			-- пока брюхо не ляжет на спину под ним (или пока не поджаты до CROUCH).
 			local rest = level + me.lift * CROUCH
@@ -1022,6 +1050,16 @@ function Crowd.Resolve(model, desired, dt, facing)
 	-- Ниже пола тело не проваливается: брюхом лежит на земле.
 	me.groundY = groundAt(x, z) + me.lift
 	y = math.max(y, me.groundY - me.lift + me.bottom)
+
+	-- С какой скоростью жук продвигается туда, куда хочет (а не дёргается толчками вбок), —
+	-- по ней задние решают, идёт он или стоит (см. STOPPED_SPEED).
+	if dt > 1e-4 then
+		local advance = 0
+		if want > 1e-3 then
+			advance = math.max(0, ((x - me.x) * wantX + (z - me.z) * wantZ) / want) / dt
+		end
+		me.advance = me.advance and me.advance + (advance - me.advance) * math.clamp(dt * 4, 0, 1) or advance
+	end
 
 	me.x, me.y, me.z = x, y, z
 	me.fx, me.fz = fx, fz
