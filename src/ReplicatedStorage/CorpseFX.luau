@@ -320,20 +320,50 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 	-- оформление на сварке. У мешей лап и усиков масса практически ноль (0.000–0.08),
 	-- и сборка из них самих на первом же касании разгонялась до бесконечности — замерено стендом.
 	-- Габарит — по measureHalf, а не GetBoundingBox: тот берёт раздутые коробки мешей.
-	local low, high
+	-- Коробка — ПОВЁРНУТАЯ вдоль самой лапы, а не по осям мира. Мировая коробка вокруг
+	-- лапы, отлетевшей наискось, выходила толстым кубом: лапа ложилась на его грань и так и
+	-- стояла торчком (плейтест: поле после пороха — частокол из лап). Ось коробки — от одного
+	-- конца лапы к другому (самая дальняя пара деталей), вторая — куда лапа согнута, третья —
+	-- толщина палки. Такая коробка ложится плашмя сама: на торце или ребре ей не устоять.
+	local points, thickness = {}, 0
 	for _, part in parts do
-		local half = measureHalf(part, true, scale * 3)
-		for _, sx in { -1, 1 } do
-			for _, sy in { -1, 1 } do
-				for _, sz in { -1, 1 } do
-					local corner = part.CFrame * Vector3.new(half.X * sx, half.Y * sy, half.Z * sz)
-					low = low and low:Min(corner) or corner
-					high = high and high:Max(corner) or corner
-				end
+		table.insert(points, part.Position)
+		thickness = math.max(thickness, measureHalf(part, true, scale * 3).X)
+	end
+	local a, b, longest = points[1], points[1], 0
+	for i = 1, #points do
+		for j = i + 1, #points do
+			local d = (points[i] - points[j]).Magnitude
+			if d > longest then
+				a, b, longest = points[i], points[j], d
 			end
 		end
 	end
-	local boxFrame, boxSize = CFrame.new((low + high) / 2), high - low
+	local along = longest > 1e-3 and (b - a).Unit or Vector3.xAxis
+	local bend, bendSize = nil, 1e-3
+	for _, point in points do
+		local off = point - a
+		local across = off - along * off:Dot(along)
+		if across.Magnitude > bendSize then
+			bend, bendSize = across.Unit, across.Magnitude
+		end
+	end
+	if not bend then
+		bend = along:Cross(math.abs(along.Y) < 0.9 and Vector3.yAxis or Vector3.xAxis).Unit
+	end
+	local side = along:Cross(bend).Unit
+	bend = side:Cross(along).Unit
+	local axes = CFrame.fromMatrix(Vector3.zero, along, bend, side)
+	local low, high
+	for _, point in points do
+		local localPoint = axes:PointToObjectSpace(point)
+		low = low and low:Min(localPoint) or localPoint
+		high = high and high:Max(localPoint) or localPoint
+	end
+	low -= Vector3.one * thickness
+	high += Vector3.one * thickness
+	local boxFrame = CFrame.fromMatrix(axes * ((low + high) / 2), along, bend, side)
+	local boxSize = high - low
 	local root = collider(piece, "Hull", Enum.PartType.Block, boxSize:Max(Vector3.one * 0.3), boxFrame)
 	piece.PrimaryPart = root
 	table.insert(parts, root)
@@ -354,6 +384,7 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 		end
 	end
 	Loose.Spawn(piece, { folder = "Debris" })
+	Loose.LayFlat(root) -- если всё же встала торчком — уронить
 
 	-- Летит от удара и от тела сразу: только «от удара» сбило бы все куски в одну кучу,
 	-- только «от тела» — потеряло бы направление выстрела.

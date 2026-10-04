@@ -274,6 +274,59 @@ function Loose.FloorAt(x, z, fallback)
 	return hit and hit.Position.Y or fallback
 end
 
+-- Укладка плашмя: деталь, которая замерла стоймя (длинная сторона смотрит вверх), получает
+-- мягкий толчок вращения поперёк и валится набок. Одна проверка на всех, а не своя у каждой
+-- системы. Числа — PhysicsFX.layFlat. Сборки, ушедшие из мира, выпадают из списка сами.
+local flatWatch = {} -- [корень] = проверок подряд стоймя
+local flatLoop = false
+
+local function longestAxis(part)
+	local size = part.Size
+	local axis = size.X >= size.Y and size.X >= size.Z and Vector3.xAxis
+		or (size.Y >= size.Z and Vector3.yAxis or Vector3.zAxis)
+	return part.CFrame:VectorToWorldSpace(axis)
+end
+
+function Loose.LayFlat(root)
+	if not root then
+		return
+	end
+	flatWatch[root] = 0
+	if flatLoop then
+		return
+	end
+	flatLoop = true
+	task.spawn(function()
+		local plan = PhysicsFX.layFlat
+		while true do
+			task.wait(plan.check)
+			for watched, count in flatWatch do
+				if not watched.Parent then
+					flatWatch[watched] = nil
+				elseif not watched.Anchored
+					and watched.AssemblyLinearVelocity.Magnitude < plan.still
+					and watched.AssemblyAngularVelocity.Magnitude < plan.still then
+					local axis = longestAxis(watched)
+					if math.abs(axis.Y) > plan.standing then
+						count += 1
+						if count >= plan.after then
+							local across = axis:Cross(Vector3.yAxis)
+							if across.Magnitude < 1e-3 then
+								across = Vector3.xAxis
+							end
+							watched.AssemblyAngularVelocity = across.Unit * plan.spin * (math.random() < 0.5 and -1 or 1)
+							count = 0
+						end
+					else
+						count = 0
+					end
+					flatWatch[watched] = count
+				end
+			end
+		end
+	end)
+end
+
 -- Выпускает деталь или сборку в физику: снимает якорь, ставит группу столкновений,
 -- метку «толкать» и кладёт в папку. opts (всё необязательно):
 --   group    — ключ Loose.Groups (по умолчанию Corpses);
