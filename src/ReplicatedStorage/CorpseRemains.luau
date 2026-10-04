@@ -184,11 +184,13 @@ return function(deps)
 	-- там же, где была (чуть шире — раздавленное расползается), той своей осью, что ближе
 	-- всех к нормали плоскости, и сплющивается по ней. Силуэт с растопыренными лапами
 	-- остаётся узнаваемым: видно, кого раздавило.
-	-- Лепёшки на полу: где лежат и докуда поднимаются. Новая ложится ПОВЕРХ тех, что уже под ней,
-	-- а не на ту же высоту пола: на одной высоте лепёшки резали друг друга (плейтест).
-	local pancakes = {} -- { clone, at, radius, top }
-	local function pileUnder(at, radius)
-		local top = 0
+	-- Лепёшки на полу: где лежит каждая их деталь и докуда поднимается. Новая лепёшка ОБЛЕГАЕТ
+	-- то, что уже лежит: вверх уходит только та деталь, под которой есть другая лепёшка, и не выше
+	-- потолка кучи (crush.pileMax). Сначала лепёшки резали друг друга на одной высоте, потом
+	-- поднимались целиком и выглядели стопкой парящих листов (плейтест).
+	local pancakes = {} -- { clone, at, radius, spots = { { at, radius, top } } }
+	local function cakesNear(at, radius)
+		local near = {}
 		for index = #pancakes, 1, -1 do
 			local cake = pancakes[index]
 			if not cake.clone.Parent then
@@ -196,11 +198,103 @@ return function(deps)
 			else
 				local flat = Vector3.new(at.X - cake.at.X, 0, at.Z - cake.at.Z)
 				if flat.Magnitude < radius + cake.radius then
-					top = math.max(top, cake.top)
+					table.insert(near, cake)
+				end
+			end
+		end
+		return near
+	end
+	local function pileAt(near, at, radius)
+		local top = 0
+		for _, cake in near do
+			for _, spot in cake.spots do
+				local flat = Vector3.new(at.X - spot.at.X, 0, at.Z - spot.at.Z)
+				if spot.top > top and flat.Magnitude < spot.radius + radius * 0.5 then
+					top = spot.top
 				end
 			end
 		end
 		return top
+	end
+
+	-- Раскол панциря: самая крупная видимая деталь туши — панцирь. Поверх неё рождаются
+	-- пластины его же цвета и материала, тяжёлые, с коллизией (всё на карте твёрдое), и через
+	-- общий слой Loose съезжают в стороны и валятся рядом. Под ними — слизь из трещин.
+	local function crackShell(clone, items, contact, scale, width, floorY)
+		local k = plan.crack
+		local p = plan.crush
+		local shell, volume = nil, 0
+		for _, item in items do
+			if not item.hide then
+				local size = item.size or item.part.Size
+				local v = size.X * size.Y * size.Z
+				if v > volume then
+					shell, volume = item, v
+				end
+			end
+		end
+		if not shell then
+			return
+		end
+		local frame, size = shell.cframe or shell.part.CFrame, shell.size or shell.part.Size
+		local look = { frame.RightVector, frame.UpVector, frame.LookVector }
+		-- Ось панциря, что смотрит вверх, — его толщина: по ней обломок тоньше.
+		local upAxis = 1
+		for i = 2, 3 do
+			if math.abs(look[i].Y) > math.abs(look[upAxis].Y) then
+				upAxis = i
+			end
+		end
+		local count = math.random(k.plates[1], k.plates[2])
+		local top = frame.Position.Y + size[AXES[upAxis]] / 2
+		for index = 1, count do
+			-- Обломок — сам панцирь в уменьшенном виде: тот же изгиб, блеск и цвет. Не кирпич
+			-- (первая версия рожала коробки — плейтест «найс кирпичи»). Если панцирь не меш,
+			-- обломок — тонкий клин: острые края читаются как скол.
+			local plate
+			if shell.part:IsA("MeshPart") then
+				plate = shell.part:Clone()
+				plate:ClearAllChildren()
+			else
+				plate = Instance.new("WedgePart")
+				plate.Color = shell.part.Color
+				plate.Material = shell.part.Material
+			end
+			plate.Name = "ShellPlate"
+			local share = k.share[1] + math.random() * (k.share[2] - k.share[1])
+			local dims = { size.X * share, size.Y * share, size.Z * share }
+			dims[upAxis] = math.max(size[AXES[upAxis]] * share * k.thin, k.minThickness)
+			plate.Size = Vector3.new(
+				math.max(dims[1], k.minThickness),
+				math.max(dims[2], k.minThickness),
+				math.max(dims[3], k.minThickness)
+			)
+			plate.Color = plate.Color:Lerp(p.color, k.plateDarken)
+			plate.Transparency = shell.part.Transparency
+			plate.CastShadow = true
+			plate.CanQuery = false
+			plate.CanTouch = false
+			plate.CanCollide = true
+			plate.Massless = false
+			plate.CustomPhysicalProperties = PhysicalProperties.new(k.density, k.friction, 0, 1, 1)
+			local angle = (index / count + math.random() * 0.15) * math.pi * 2
+			local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+			local at = Vector3.new(contact.X, top + k.minThickness, contact.Z) + out * (width * 0.2)
+			-- Та же ориентация, что у панциря, с креном: обломок лежал на нём и съезжает.
+			plate.CFrame = (frame - frame.Position + at)
+				* CFrame.Angles((math.random() - 0.5) * k.tilt, math.random() * k.tilt, (math.random() - 0.5) * k.tilt)
+			Loose.Spawn(plate, {
+				group = "Corpses",
+				folder = "Debris", -- рядом с лапами: их толкают машина и взрывы
+				velocity = out * k.slide * (0.6 + math.random() * 0.8) + Vector3.yAxis * k.pop,
+				spin = Loose.RandomSpin(k.spin),
+			})
+			Loose.Track(plate, "plate")
+		end
+		-- Слизь растекается из-под туши медленно, не брызгами.
+		local at = Vector3.new(contact.X, 0, contact.Z)
+		puddle(clone, at, Loose.FloorAt(at.X, at.Z, floorY), width * k.slimeSize, k.slime,
+			Enum.Material.SmoothPlastic, k.slimeGrow)
 	end
 
 	local function crush(enemy, hit, scale, floorY)
@@ -231,12 +325,22 @@ return function(deps)
 			end
 		end
 		local onWall = normal.Y < 0.5
+		-- Лепёшка — только о стену. На полу сильный удар не плющит жука в картинку, а колет
+		-- панцирь (решение автора по плейтесту: гора лепёшек читалась стопкой листов): туша
+		-- проседает, лапы подгибаются, панцирь лопается на несколько тяжёлых пластин, они
+		-- съезжают и валятся рядом, из трещин вытекает слизь. Числа — PhysicsFX.remains.crack.
+		local cracked = not onWall
+		local k = plan.crack
+		local squash = cracked and k.squash or p.squash
+		local spreadOut = cracked and k.spread or p.spread
+		if cracked then
+			EnemyGait.DeathPose(clone, enemy, k.curlSplay, k.curlDrop)
+		end
 		local base = center + travel
 		local contact = base - normal * (base - planePoint):Dot(normal)
-		local radius = width / 2 * p.spread
-		local pile = onWall and 0 or pileUnder(contact, radius)
-		contact += normal * pile
-		local cakeTop = pile
+		local radius = width / 2 * spreadOut
+		local near = onWall and {} or cakesNear(contact, radius)
+		local spots = {}
 
 		-- Что дальше от плоскости, ложится поверх: без этого детали мерцают друг с другом.
 		local items, lowest = {}, math.huge
@@ -271,7 +375,7 @@ return function(deps)
 			m[c] = m[b]:Cross(m[a])
 
 			local size = part.Size
-			local thin = math.max(size[AXES[b]] * p.squash, p.minThickness)
+			local thin = math.max(size[AXES[b]] * squash, p.minThickness)
 			local dims = { size.X, size.Y, size.Z }
 			dims[b] = thin
 			return m, dims, thin
@@ -331,7 +435,7 @@ return function(deps)
 			local layer = math.clamp(item.height - lowest, 0, 20) * p.layer
 			local rel = part.Position + travel - contact
 			rel -= normal * rel:Dot(normal)
-			local offset = rel * p.spread
+			local offset = rel * spreadOut
 			local position = contact + offset + normal * (LIFT + thin / 2 + layer)
 
 			local folded, foldNormal = fold(offset, normal)
@@ -348,12 +452,17 @@ return function(deps)
 			item.size = Vector3.new(dims[1], dims[2], dims[3])
 			item.cframe = CFrame.fromMatrix(position, m[1], m[2], m[3])
 			part.CastShadow = false
-			if not folded then
-				cakeTop = math.max(cakeTop, pile + LIFT + thin + layer)
+			if not onWall and not folded and not item.hide then
+				-- Деталь ложится на ту лепёшку, что прямо под ней, а не на пол.
+				local spread = math.max(dims[1], dims[2], dims[3]) / 2
+				local pile = math.min(pileAt(near, position, spread), p.pileMax)
+				position += normal * pile
+				item.cframe = CFrame.fromMatrix(position, m[1], m[2], m[3])
+				table.insert(spots, { at = position, radius = spread, top = pile + LIFT + thin + layer })
 			end
 		end
 		if not onWall then
-			table.insert(pancakes, { clone = clone, at = contact, radius = radius, top = cakeTop })
+			table.insert(pancakes, { clone = clone, at = contact, radius = radius, spots = spots })
 		end
 
 		clone.Name = enemy.Name .. " (раздавлен)"
@@ -373,7 +482,7 @@ return function(deps)
 					TweenService:Create(part, splat, {
 						Size = item.size,
 						CFrame = item.cframe,
-						Color = part.Color:Lerp(p.color, p.darken),
+						Color = part.Color:Lerp(p.color, cracked and k.darken or p.darken),
 						Transparency = item.hide and 1 or part.Transparency,
 					}):Play()
 					-- Лепёшка — твёрдая: лапы, трупы, машина ложатся на неё сверху, а не проходят
@@ -405,6 +514,14 @@ return function(deps)
 				streak.Size = Vector3.new(width * p.streak, THICKNESS, skid)
 				local from = Vector3.new(center.X, floorY + LIFT, center.Z)
 				streak.CFrame = CFrame.lookAt(from + travel / 2, from + travel)
+			end)
+		end
+
+		if cracked then
+			task.delay(flight + p.splatTime, function()
+				if clone.Parent then
+					crackShell(clone, items, contact, scale, width, floorY)
+				end
 			end)
 		end
 	end
