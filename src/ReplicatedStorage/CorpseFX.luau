@@ -40,6 +40,7 @@ local CollectionService = game:GetService("CollectionService")
 local EnemyGait = require(ReplicatedStorage:WaitForChild("EnemyGait"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
+local BugPalette = require(ReplicatedStorage:WaitForChild("BugPalette"))
 
 -- Группы столкновений (заводит общий слой Loose на сервере, клиенту они реплицируются). Труп обязан ловить толчок от жука, но только его: тело жука
 -- анкорнуто и физикой не двигается вовсе, поэтому столкновение здесь одностороннее —
@@ -83,12 +84,13 @@ local MAX_STAINS = 220
 -- Насколько труп выцветает к серому: дешёвый и ясный сигнал «мёртв», который не
 -- конфликтует ни с одной меткой индикации (индикация с трупа снята вместе с моделью).
 local DEATH_FADE = 0.5
-local DEATH_COLOR = Color3.fromRGB(96, 92, 84)
+local DEATH_COLOR = BugPalette.Dead
 
--- Кровь зелёная: гемолимфа, а не кровь млекопитающего. Оттенок каждого пятна
--- чуть свой (BLOOD_SPREAD): один цвет на всё поле читается как краска, а не как следы.
-local BLOOD_COLOR = Color3.fromRGB(62, 116, 38)
-local BLOOD_SPREAD = 26 -- единиц RGB в обе стороны
+-- Кровь — гемолимфа из палитры жуков (BugPalette.Blood): тёмная олива. Прежняя сочная
+-- зелень на светлом полу горела салатовым и спорила со всем остальным. Оттенок каждого
+-- пятна чуть свой (BLOOD_SPREAD): один цвет на всё поле читается как краска, а не как следы.
+local BLOOD_COLOR = BugPalette.Blood
+local BLOOD_SPREAD = 14 -- единиц RGB в обе стороны
 local BLOOD_THICKNESS = 0.06 -- studs: пятно плоское, но не нулевое — иначе мерцает с полом
 local BLOOD_LIFT = 0.03 -- studs над полом: тот же зазор против z-fighting
 
@@ -762,7 +764,7 @@ function Corpses.Splat(position, size, drops, floorY)
 		stain.Material = Enum.Material.SmoothPlastic
 		-- Не вплотную: глухое пятно на светлом полу читается как зелёная наклейка,
 		-- а не как след — замечено на плейтесте.
-		stain.Transparency = 0.22
+		stain.Transparency = 0.3
 		local shade = (math.random() - 0.5) * 2 * BLOOD_SPREAD / 255
 		stain.Color = Color3.new(
 			math.clamp(BLOOD_COLOR.R + shade, 0, 1),

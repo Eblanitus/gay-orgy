@@ -43,6 +43,17 @@ function EnemyModel.PickScale(enemyData)
 	return enemyData.scale or 1
 end
 
+-- Цвет детали шаблона против цвета-метки в его атрибутах. Не через ==: атрибут хранится
+-- float, цвет детали — байтами, и после переимпорта модели они расходятся на волосок —
+-- тогда перекраска молча не срабатывала и жук оставался в рыже-серых цветах шаблона.
+local function sameColor(a, b)
+	if not b then
+		return false
+	end
+	local eps = 2.5 / 255
+	return math.abs(a.R - b.R) < eps and math.abs(a.G - b.G) < eps and math.abs(a.B - b.B) < eps
+end
+
 -- Шаблонный жук: клон, масштаб, перекраска, лапы в походку. recolor — таблица врага
 -- (enemyData) или nil, если красить не надо (Аркада берёт шаблон как есть).
 -- Ноги — жёсткие рычаги вокруг CoxaJoint (см. EnemyGait): бедро и стойка снимаются с клона
@@ -75,15 +86,19 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 			part.CanCollide = false
 			part.CanTouch = false
 			if recolor then
-				if chitin and part.Color == chitin then
+				local own = part.Color
+				if sameColor(own, chitin) then
 					part.Color = color
-				elseif joints and part.Color == joints then
+				elseif sameColor(own, joints) then
 					part.Color = legColor
-				elseif elytra and part.Color == elytra then
+				elseif sameColor(own, elytra) then
 					part.Color = elytraColor
-				elseif head and part.Color == head then
+				elseif sameColor(own, head) then
 					part.Color = headColor
 				end
+				-- Панцирь матовый (BugPalette): блеск остаётся статусам.
+				part.Material = Enum.Material.SmoothPlastic
+				part.Reflectance = 0
 			end
 		end
 	end
