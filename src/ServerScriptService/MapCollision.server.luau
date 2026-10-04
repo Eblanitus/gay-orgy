@@ -28,6 +28,39 @@ local RULES = {
 	},
 }
 
+-- Общее правило поверх имён: любая заметная непрозрачная деталь локации на высоте тела
+-- игрока твёрдая. Имена мебели в месте меняются (тумба у южной стены зала в одной версии
+-- места — LabBench, в другой — иначе), и правило по именам её теряло: игрок заходил в тумбу
+-- по пояс. Мелочь (колбы, слоты, решётки) отсекает объём, плитку пола — высота верха.
+local BODY_BOTTOM = 0.7 -- верх детали выше этого над полом — в неё можно войти телом
+local BODY_TOP = 6 -- низ детали ниже этого — она на высоте тела (рост персонажа ~5.5)
+local MIN_VOLUME = 3 -- studs³: меньше — мелочь на столах, её не трогаем
+local SKIP = { Ceiling = true, Markers = true } -- потолок прячет камера, маркеры — разметка
+
+local function bodyHigh(part, floorY)
+	local size = part.Size
+	if size.X * size.Y * size.Z < MIN_VOLUME or part.Transparency >= 0.95 then
+		return false
+	end
+	-- Полувысота ящика детали по вертикали с учётом поворота.
+	local cf = part.CFrame
+	local halfY = (math.abs(cf.RightVector.Y) * size.X + math.abs(cf.UpVector.Y) * size.Y
+		+ math.abs(cf.LookVector.Y) * size.Z) / 2
+	local y = part.Position.Y - floorY
+	return y - halfY < BODY_TOP and y + halfY > BODY_BOTTOM
+end
+
+local function skipped(part, location)
+	local p = part.Parent
+	while p and p ~= location do
+		if SKIP[p.Name] then
+			return true
+		end
+		p = p.Parent
+	end
+	return false
+end
+
 local function parentMatches(rule, name)
 	if rule.prefix then
 		return name:sub(1, #rule.prefix) == rule.prefix
@@ -40,9 +73,13 @@ local function apply()
 	if not location then
 		return
 	end
+	local floorY = Arena.floorY or 0 -- верх пола активной локации
 	local changed = 0
 	for _, d in location:GetDescendants() do
-		if d:IsA("BasePart") and not d.CanCollide and d.Parent then
+		if d:IsA("BasePart") and not d.CanCollide and d.Parent and not skipped(d, location) and bodyHigh(d, floorY) then
+			d.CanCollide = true
+			changed += 1
+		elseif d:IsA("BasePart") and not d.CanCollide and d.Parent then
 			for _, rule in RULES do
 				if parentMatches(rule, d.Parent.Name) and rule.names[d.Name] then
 					d.CanCollide = true
