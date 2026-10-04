@@ -292,6 +292,10 @@ local function bind()
 		location:SetAttribute("Entrance", markers:WaitForChild("Entrance").Position)
 		location:SetAttribute("Exit", markers:WaitForChild("Exit").Position)
 		local spawn, lane = findSpawn(markers, floor, markers.Entrance)
+		-- Зелёная плашка маркера входа в игре не нужна: жуки теперь идут из конца коридора,
+		-- а она светилась у двери, будто спавн там. Маркер остаётся точкой входа и шириной
+		-- проёма (findSpawn), просто невидимый, как Exit. В Studio в Edit-режиме виден.
+		markers.Entrance.Transparency = 1
 		location:SetAttribute("Spawn", spawn)
 		location:SetAttribute("LaneMin", lane and Vector3.new(lane.minX, 0, lane.minZ) or nil)
 		location:SetAttribute("LaneMax", lane and Vector3.new(lane.maxX, 0, lane.maxZ) or nil)
