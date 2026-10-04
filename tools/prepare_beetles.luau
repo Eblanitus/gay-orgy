@@ -19,8 +19,7 @@
 --   * BeetleBodyInner / abdomen → AbdomenCore (вместе с ThoraxCore — коллайдер и хитбокс);
 --   * Root — копия Root у NormalBeetleTemplate: на 1 стад выше ступней, смотрит на голову;
 --   * шаблон кладётся в ReplicatedStorage под именем из Enemies.luau, сам импорт удаляется.
--- Атрибутов Color* у новых шаблонов нет: игра перекрашивает их по BugPalette по именам деталей
--- (EnemyModel.ROLE_BY_NAME); COLORS — авторские цвета для Аркады и запасной вид.
+-- Цвета остаются авторскими: атрибутов Color* у новых шаблонов нет, игра их не перекрашивает.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
