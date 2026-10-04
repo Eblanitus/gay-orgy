@@ -74,6 +74,7 @@ function EnemyBody.Footprint(model)
 
 	local pivot = model:GetPivot()
 	local maxAbsX, minZ, maxZ = 0, math.huge, -math.huge
+	local minY, maxY = math.huge, -math.huge
 	for _, part in model:GetDescendants() do
 		if part:IsA("BasePart") and part.Transparency < 1 then
 			local limb = false
@@ -95,6 +96,8 @@ function EnemyBody.Footprint(model)
 							maxAbsX = math.max(maxAbsX, math.abs(corner.X))
 							minZ = math.min(minZ, corner.Z)
 							maxZ = math.max(maxZ, corner.Z)
+							minY = math.min(minY, corner.Y)
+							maxY = math.max(maxY, corner.Y)
 						end
 					end
 				end
@@ -113,7 +116,34 @@ function EnemyBody.Footprint(model)
 	model:SetAttribute("FootRadius", radius)
 	model:SetAttribute("FootFront", front)
 	model:SetAttribute("FootBack", back)
+	-- Верх панциря и низ брюха от пивота — по тем же видимым деталям: на спину соседа лапы
+	-- встают по ним (BackHeight), а не по полувысоте ядер, которая ниже видимого панциря.
+	if maxY > minY then
+		model:SetAttribute("ShellTop", maxY)
+		model:SetAttribute("ShellBottom", -minY)
+	end
 	return radius, front, back
+end
+
+-- Верх панциря и низ брюха относительно пивота (оба — положительные расстояния).
+function EnemyBody.Shell(model)
+	local halfHeight = EnemyBody.HalfHeight(model)
+	return model:GetAttribute("ShellTop") or halfHeight, model:GetAttribute("ShellBottom") or halfHeight
+end
+
+-- Высота спины над пивотом жука в точке (dx, dz от его пивота) или nil, если точка не над
+-- ним. Спина — купол над следом-капсулой (fx, fz — ход, front/back — торцы, radius — ширина),
+-- верх купола на top. margin — толщина ступни: задевшая борт ступня ложится на край спины,
+-- а не проваливается мимо. Общая формула для толкучки (Crowd, где лапы держат тело) и для
+-- лап на клиенте (EnemyGait), чтобы ступни стояли ровно там, где их держит сервер.
+function EnemyBody.BackHeight(dx, dz, fx, fz, radius, front, back, top, margin)
+	local along = math.clamp(dx * fx + dz * fz, back, front)
+	local px, pz = dx - fx * along, dz - fz * along
+	local across = math.sqrt(px * px + pz * pz)
+	if across >= radius + (margin or 0) then
+		return nil
+	end
+	return top * math.sqrt(math.max(0, 1 - (across / radius) ^ 2))
 end
 
 -- Радиус хитбокса — шар по горизонтальным габаритам тела: жук 2.6 x 1.2 x 3.4 даёт 1.5.
@@ -146,6 +176,12 @@ function EnemyBody.HalfHeight(enemy)
 		return DEFAULT_HALF_HEIGHT
 	end
 	return part.Size.Y / 2
+end
+
+-- Высота спины над полом: пивот едет на RideHeight, тело торчит над ним на полувысоту.
+-- По ней решается, пролезет ли жук под постройкой (Grid.FitsUnder, Towers.crawlGap).
+function EnemyBody.TopHeight(enemy)
+	return (enemy:GetAttribute("RideHeight") or 0) + EnemyBody.HalfHeight(enemy)
 end
 
 -- Расстояние от точки до поверхности тела и до его центра — оба сразу, потому что нужны

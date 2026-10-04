@@ -20,7 +20,7 @@ local Aiming = require(ReplicatedStorage:WaitForChild("Aiming"))
 local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 -- Остаток пути до выхода — серверная таблица EnemyProgress (раньше атрибут DistanceToExit).
 local EnemyProgress = require(ServerScriptService:WaitForChild("EnemyProgress"))
--- Стены Строителя закрывают линию огня (design: alchemy_td_enemies.md, каста 1).
+-- Стены Строителя закрывают линию огня (каста 1).
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
 
 local Targeting = {}
@@ -34,15 +34,21 @@ local Targeting = {}
 --   — сама стреляющая постройка: луч начинается внутри неё и ткнулся бы в себя же;
 --   — сами жуки и трупы: иначе передний жук закрывал бы собой всю колонну, а это
 --     отдельная механика Щитоносца, а не свойство любого тела;
---   — снаряды и сам игрок: пробегающий мимо игрок не должен глушить свою же турель.
+--   — снаряды и сам игрок: пробегающий мимо игрок не должен глушить свою же турель;
+--   — невидимые крышки над стенами (MapBarriers) и детали турелей, твёрдые только ради
+--     игрока (группы PlayerBarrier и TowerSolid, луч идёт группой Probe).
 --
--- Стены Строителя лучом не ловятся вовсе: они без коллизии (сквозь них должен
--- проходить игрок), и их закрывание линии огня считается отдельно (EnemyStructures.BlocksLine).
+-- Постройки жуков (папка EnemyStructures) лучом не ловятся вовсе: руина или кокон
+-- не должны глушить турель, а закрывание линии огня Стеной Строителя считается
+-- отдельно (EnemyStructures.BlocksLine).
 local sightParams = RaycastParams.new()
 sightParams.FilterType = Enum.RaycastFilterType.Exclude
 -- Главное слово задачи: преграда — это то, у чего есть коллизия. Заодно это само
 -- выкидывает невидимый ArenaFloor: он без коллизии с задачи про бетонный пол.
 sightParams.RespectCanCollide = true
+-- Крышки над стенами и детали турелей, твёрдые ради игрока (группы PlayerBarrier, TowerSolid),
+-- луч не видит: он идёт группой Probe. Преграды для него — те же, что были до них.
+sightParams.CollisionGroup = "Probe"
 
 -- Список исключений собирается редко и переиспользуется: лучей тысячи в секунду,
 -- и новая таблица на каждый из них — мусор для сборщика на ровном месте.
@@ -51,7 +57,7 @@ local sightExclude = {}
 
 local function rebuildExclude()
 	table.clear(sightExclude)
-	for _, name in { "Enemies", "Corpses", "Projectiles", "EnemyStructures" } do
+	for _, name in { "Enemies", "Allies", "Corpses", "Projectiles", "EnemyStructures", "MapBarriers" } do
 		local folder = Workspace:FindFirstChild(name)
 		if folder then
 			table.insert(sightExclude, folder)
@@ -75,7 +81,8 @@ for _, player in Players:GetPlayers() do
 end
 -- Папки трупов и снарядов заводятся лениво, уже после загрузки этого модуля.
 Workspace.ChildAdded:Connect(function(child)
-	if child.Name == "Corpses" or child.Name == "Projectiles" or child.Name == "EnemyStructures" then
+	if child.Name == "Corpses" or child.Name == "Projectiles" or child.Name == "EnemyStructures"
+		or child.Name == "Allies" or child.Name == "MapBarriers" then
 		rebuildExclude()
 	end
 end)
@@ -97,7 +104,7 @@ function Targeting.HasLineOfSight(from, to, shooter)
 	return hit == nil
 end
 
--- Окоп Окопщика: «жук в окопе ниже линии огня турелей, радиус поражения резко
+-- Ямка Строителя: «жуки в ямке ниже линии огня турелей, радиус поражения резко
 -- падает». Резко — это втрое: достать его может только тот, кто стоит совсем рядом.
 -- Это НЕ иммунитет: ближняя турель по-прежнему бьёт его как всех.
 local TRENCH_RANGE_SCALE = 0.35
@@ -110,8 +117,7 @@ local function suitable(enemy, targets)
 	if (enemy:GetAttribute("HP") or 0) <= 0 then
 		return false
 	end
-	-- Мимик замаскирован, Роевик под полом: «турели не распознают как цель».
-	-- Один атрибут на обоих: с точки зрения турели разницы между ними нет.
+	-- Мимик замаскирован: «турели не распознают как цель».
 	if enemy:GetAttribute("Hidden") then
 		return false
 	end
@@ -136,7 +142,7 @@ local function enemiesInRange(towerPosition, range, enemiesFolder, filter)
 	for _, enemy in enemiesFolder:GetChildren() do
 		if suitable(enemy, targets) then
 			local position = enemy:GetPivot().Position
-			-- Габариты, а не точка (правило физики из дизайна, раздел 2.3): в радиус
+			-- Габариты, а не точка (правило физики из дизайна): в радиус
 			-- попадает тот, чьё ТЕЛО его задело. Толстого жука задеть легче, Мини — труднее;
 			-- это осознанная плата АОЕ против мелочи.
 			--

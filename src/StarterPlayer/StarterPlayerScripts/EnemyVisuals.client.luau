@@ -12,7 +12,13 @@
 -- (почему общий — см. EffectMark ниже); своих частиц по-прежнему ни для кого не собирается.
 -- Урон по времени любого рода (горение, кровотечение, кислота) рисуется одним и тем же
 -- огнём: атрибут Burning у них общий.
+--
+-- Метки при смерти (атрибут DeathMarks) — ряд квадратиков цвета элементов над полоской:
+-- их может висеть несколько разом, и игрок должен видеть, чем жук станет после смерти.
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+
+local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 
 local enemiesFolder = Workspace:WaitForChild("Enemies")
 
@@ -54,6 +60,23 @@ local function attachVisuals(enemy)
 	fill.Size = UDim2.new(1, 0, 1, 0)
 	fill.BackgroundColor3 = Color3.fromRGB(80, 220, 80)
 	fill.Parent = back
+
+	-- Метки при смерти — отдельная плашка чуть выше полоски HP, квадратик на метку.
+	local markRow = Instance.new("BillboardGui")
+	markRow.Name = "DeathMarks"
+	markRow.Size = UDim2.new(3, 0, 0.35, 0)
+	markRow.StudsOffset = Vector3.new(0, 2.2 * enemyScale + 0.5, 0)
+	markRow.AlwaysOnTop = true
+	markRow.Adornee = anchor
+	markRow.Enabled = false
+	markRow.Parent = anchor
+
+	local markLayout = Instance.new("UIListLayout")
+	markLayout.FillDirection = Enum.FillDirection.Horizontal
+	markLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	markLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	markLayout.Padding = UDim.new(0.03, 0)
+	markLayout.Parent = markRow
 
 	-- Встроенный объект Fire — готовая визуализация огня, без частиц вручную
 	local fire = Instance.new("Fire")
@@ -115,6 +138,14 @@ local function attachVisuals(enemy)
 			fillTransparency = 0.8,
 			outlineColor = Color3.fromRGB(180, 165, 140),
 		},
+		-- Очищенный Мылом: последний в списке — эффектов на нём не бывает, и обводка
+		-- у него постоянная. Зелёная, чтобы своего в общей свалке было видно сразу.
+		{
+			attribute = "Ally",
+			fillColor = Color3.fromRGB(120, 230, 140),
+			fillTransparency = 0.7,
+			outlineColor = Color3.fromRGB(150, 255, 170),
+		},
 	}
 
 	local function updateHealth()
@@ -156,21 +187,74 @@ local function attachVisuals(enemy)
 		effectMark.Enabled = false
 	end
 
+	-- Атрибут — ключи элементов через запятую (Effects.putDeathMark). Ряд пересобирается
+	-- целиком: меток единицы, и меняются они редко — только новой меткой.
+	local function updateDeathMarks()
+		for _, child in markRow:GetChildren() do
+			if child:IsA("Frame") then
+				child:Destroy()
+			end
+		end
+		local list = enemy:GetAttribute("DeathMarks")
+		local count = 0
+		for key in string.gmatch(typeof(list) == "string" and list or "", "[^,]+") do
+			local data = Elements[key]
+			if data then
+				count += 1
+				local pip = Instance.new("Frame")
+				pip.LayoutOrder = count
+				pip.Size = UDim2.fromScale(1, 1)
+				pip.BackgroundColor3 = data.color
+				pip.BorderSizePixel = 0
+				local square = Instance.new("UIAspectRatioConstraint")
+				square.AspectRatio = 1
+				square.DominantAxis = Enum.DominantAxis.Height
+				square.Parent = pip
+				local stroke = Instance.new("UIStroke")
+				stroke.Color = Color3.fromRGB(25, 25, 25)
+				stroke.Thickness = 1
+				stroke.Parent = pip
+				pip.Parent = markRow
+			end
+		end
+		markRow.Enabled = count > 0 and not enemy:GetAttribute("Disguise")
+	end
+
+	-- Замаскированный Мимик полоской выдал бы себя: мешок с HP — не мешок.
+	local function updateDisguise()
+		gui.Enabled = not enemy:GetAttribute("Disguise")
+		updateDeathMarks()
+	end
+
 	updateHealth()
+	updateDisguise()
 	updateBurning()
 	updateSlow()
 	updateConfusion()
 	updateMark()
 
 	enemy:GetAttributeChangedSignal("HP"):Connect(updateHealth)
+	enemy:GetAttributeChangedSignal("DeathMarks"):Connect(updateDeathMarks)
+	enemy:GetAttributeChangedSignal("Disguise"):Connect(updateDisguise)
 	enemy:GetAttributeChangedSignal("Burning"):Connect(updateBurning)
 	enemy:GetAttributeChangedSignal("SlowPercent"):Connect(updateSlow)
 	enemy:GetAttributeChangedSignal("Confused"):Connect(updateConfusion)
 	enemy:GetAttributeChangedSignal("Amplified"):Connect(updateMark)
 	enemy:GetAttributeChangedSignal("Stunned"):Connect(updateMark)
+	enemy:GetAttributeChangedSignal("Ally"):Connect(updateMark)
 end
 
 for _, enemy in enemiesFolder:GetChildren() do
 	attachVisuals(enemy)
 end
 enemiesFolder.ChildAdded:Connect(attachVisuals)
+
+-- Очищенные Мылом живут в своей папке (см. EnemySpawner). Переезд пересобирает тело
+-- (EnemyRender), поэтому полоска и метки вешаются заново — на новое.
+task.spawn(function()
+	local alliesFolder = Workspace:WaitForChild("Allies")
+	for _, ally in alliesFolder:GetChildren() do
+		task.spawn(attachVisuals, ally)
+	end
+	alliesFolder.ChildAdded:Connect(attachVisuals)
+end)

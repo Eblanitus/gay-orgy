@@ -1,5 +1,4 @@
--- Поведение жуков по кастам и особые механики отдельных видов
--- (design: alchemy_td_enemies.md).
+-- Поведение жуков по кастам и особые механики отдельных видов.
 --
 -- Движение по маршруту, грызня и перелезание остались в EnemySpawner — они общие
 -- для всех. Здесь то, что различает виды:
@@ -17,6 +16,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Workspace = game:GetService("Workspace")
 
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
+local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 local Towers = require(ReplicatedStorage:WaitForChild("Towers"))
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
@@ -25,9 +25,12 @@ local LabTable = require(ServerScriptService:WaitForChild("LabTable"))
 -- Справочник и производитель: целью не бывают, но взрывы их задевают.
 local LabStations = require(ServerScriptService:WaitForChild("LabStations"))
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
+local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
--- Рельеф бетонного пола: Окопщик копает в нём настоящую яму.
+-- Рельеф бетонного пола: Строитель роет в нём настоящую ямку.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
+-- Груз Медика на время выходит из толкучки и возвращается в неё, когда его кладут.
+local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local DamageDealtRemote = Remotes:WaitForChild("DamageDealt")
@@ -48,14 +51,20 @@ local EnemyBehavior = {}
 -- держаться в памяти ради своего прошлого фокуса.
 local focus = setmetatable({}, { __mode = "k" })
 
+-- Кого несёт Медик: груз -> медик. Пока жук здесь, его ставит медик, а свой цикл
+-- движения в EnemySpawner стоит (см. EnemyBehavior.CarriedBy).
+local carried = setmetatable({}, { __mode = "k" })
+
 -- Спавн жука из поведения (личинка вылупляется, Носитель высыпается, Матка кладёт).
 -- Назначает EnemySpawner — прямой require спавнера зациклил бы модули.
 EnemyBehavior.Spawn = nil
 
 -- ============================ Общее ============================
 
+-- Очищенный Мылом (атрибут Ally) для трейтов всё равно что мёртв: копать, строить,
+-- лечить и звать своих он больше не будет — он теперь на стороне игрока.
 local function alive(enemy)
-	return enemy.Parent ~= nil and (enemy:GetAttribute("HP") or 0) > 0
+	return enemy.Parent ~= nil and (enemy:GetAttribute("HP") or 0) > 0 and not enemy:GetAttribute("Ally")
 end
 
 local function flat(v)
@@ -124,6 +133,23 @@ end
 function EnemyBehavior.Goal(enemy, enemyData, state)
 	local goal = enemyData.goal
 
+	-- Очищенный (Мыло) идёт к ближайшему наземному врагу — драться. Врагов нет —
+	-- стоит, где стоял, и ждёт следующей волны.
+	if state.ally then
+		local position = enemy:GetPivot().Position
+		local best, bestDistance = enemy, math.huge
+		for _, other in enemiesFolder:GetChildren() do
+			if alive(other) and not other:GetAttribute("Flying") then
+				local distance = flat(other:GetPivot().Position - position).Magnitude
+				if distance < bestDistance then
+					best, bestDistance = other, distance
+				end
+			end
+		end
+		local cx, cz = Grid.ToCell(best:GetPivot().Position)
+		return cx, cz, "ally"
+	end
+
 	-- Группа работяг вышла и встретила турель, или солдатам её указал Координатор —
 	-- турель перебивает любую свою цель. Сносят её той же общей грызнёй: подошли
 	-- вплотную — постройка встала переградой на пути, и механика грызни сама её ломает.
@@ -186,6 +212,10 @@ function EnemyBehavior.Arrived(enemy, enemyData, state, mode)
 		return nil -- турель стоит переградой, её грызёт обычная механика
 	end
 
+	if mode == "ally" then
+		return nil -- очищенный дошёл до врага: дальше кусает его, см. EnemySpawner
+	end
+
 	return "breach"
 end
 
@@ -227,7 +257,7 @@ local GROUP_RADIUS = 18
 -- и есть. Турелей нет вовсе — паниковать не от чего.
 function EnemyBehavior.Damaged(enemy, enemyData, state)
 	local panic = enemyData.panic
-	if not panic then
+	if not panic or state.ally then
 		return -- Хмурый брон слеп: не видит турели и не пугается
 	end
 
@@ -255,9 +285,19 @@ end
 function EnemyBehavior.State(enemy, enemyData, state)
 	local now = os.clock()
 
+	-- Очищенный (Мыло) живёт без касты: ни паники, ни трейтов — только идёт и дерётся.
+	if state.ally then
+		return nil
+	end
+
 	-- Трейт держит жука на месте (копает, маскируется, нацеливается, строит).
 	if state.holdUntil and now < state.holdUntil then
 		return "hold"
+	end
+
+	-- Медик с грузом уносит его прочь от турели (см. TRAITS.heals).
+	if state.carrying then
+		return "flee"
 	end
 
 	if state.panicUntil and now < state.panicUntil then
@@ -319,7 +359,7 @@ function EnemyBehavior.Ground(enemy, state)
 	local at = enemy:GetPivot().Position
 	local onChitin = EnemyStructures.OnChitin(at)
 	-- Укрытие теперь спрашивается у самого пола, а не у списка конструкций: в яме можно
-	-- оказаться не только из-за Окопщика, но и из-за Литосферы — а прячет одинаково.
+	-- оказаться не только из-за Строителя, но и из-за Литосферы — а прячет одинаково.
 	local inTrench = ConcreteFloor.IsCover(at.X, at.Z)
 
 	if inTrench ~= (state.inTrench or false) then
@@ -332,8 +372,86 @@ end
 
 -- ============================ Летающие ============================
 
+-- Постройки — преграда для Моли и Лицехвата (задача #331): сквозь корпус они не пролетают,
+-- а перелетают поверх. Корпус — коробка модели (GetBoundingBox), раздутая на габарит
+-- летуна. Коробку пересчитываем не чаще раза в полсекунды: обход всех деталей турели
+-- каждый кадр на каждого летуна обходился бы дорого, а турель за это время не сдвинется.
+local BOX_REFRESH = 0.5
+local AVOID_LOOKAHEAD = 6 -- за сколько студов летун «видит» корпус впереди и начинает набирать высоту
+local AVOID_CLEARANCE = 1 -- зазор между летуном и корпусом
+local towerBoxes = setmetatable({}, { __mode = "k" })
+local flyerSizes = setmetatable({}, { __mode = "k" })
+
+local function towerBox(tower)
+	local box = towerBoxes[tower]
+	local now = os.clock()
+	if not box or now - box.at > BOX_REFRESH then
+		local cf, size = tower:GetBoundingBox()
+		box = { cf = cf, half = size / 2, at = now }
+		towerBoxes[tower] = box
+	end
+	return box
+end
+
+-- Габарит летуна: radius — полуразмах по горизонтали (у Моли это крылья), half — полувысота.
+local function flyerSize(enemy)
+	local size = flyerSizes[enemy]
+	if not size then
+		local extents = enemy:GetExtentsSize()
+		size = { radius = math.max(extents.X, extents.Z) / 2, half = extents.Y / 2 }
+		flyerSizes[enemy] = size
+	end
+	return size
+end
+
+-- Высота, выше которой летун над этой постройкой ничего не задевает (по его пивоту).
+local function clearTop(box, size)
+	return box.cf.Position.Y + box.half.Y + size.half + AVOID_CLEARANCE
+end
+
+-- Постройка, в чей раздутый корпус попадает точка. ignore — какую не считать.
+local function blockingTower(point, size, ignore)
+	for _, tower in towersFolder:GetChildren() do
+		if tower ~= ignore then
+			local box = towerBox(tower)
+			local p = box.cf:PointToObjectSpace(point)
+			local h = box.half
+			if math.abs(p.X) < h.X + size.radius + AVOID_CLEARANCE
+				and math.abs(p.Z) < h.Z + size.radius + AVOID_CLEARANCE
+				and math.abs(p.Y) < h.Y + size.half + AVOID_CLEARANCE then
+				return box
+			end
+		end
+	end
+	return nil
+end
+
+-- Куда сдвинуться за шаг, не влетая в постройки. Впереди корпус — летун набирает высоту
+-- на месте; уже выше него — летит ровно, не снижаясь, пока корпус не останется позади.
+-- Оказался внутри (турель поставили прямо под ним) — тоже просто всплывает.
+local function avoidStep(enemy, position, heading, step, reach, ignore)
+	local size = flyerSize(enemy)
+	local at = position + heading * step
+	local ahead = position + heading * math.min(math.max(step, AVOID_LOOKAHEAD), reach)
+	local box = blockingTower(at, size, ignore) or blockingTower(ahead, size, ignore)
+	if not box then
+		return at
+	end
+
+	local level = flat(heading)
+	if position.Y >= clearTop(box, size) and level.Magnitude > 1e-3 then
+		local over = position + level.Unit * step
+		if not blockingTower(over, size, ignore) then
+			return over
+		end
+	end
+	return position + Vector3.new(0, step, 0)
+end
+
 -- Общий шаг любого летуна к точке. Возвращает true, когда долетел.
-local function flyStep(enemy, target, speed, dt, arrive)
+-- avoid — облетать постройки (true; или сама постройка, которую облетать не надо —
+-- Лицехват на последнем отрезке садится на свою турель).
+local function flyStep(enemy, target, speed, dt, arrive, avoid)
 	local position = enemy:GetPivot().Position
 	local delta = target - position
 	local distance = delta.Magnitude
@@ -342,13 +460,30 @@ local function flyStep(enemy, target, speed, dt, arrive)
 	end
 
 	local heading = delta.Unit
-	local at = position + heading * math.min(speed * dt, distance)
-	enemy:PivotTo(CFrame.lookAt(at, at + heading) * CFrame.Angles(0, math.pi, 0))
-	enemy:SetAttribute("Velocity", heading * speed)
+	local step = math.min(speed * dt, distance)
+	local at = position + heading * step
+	if avoid then
+		at = avoidStep(enemy, position, heading, step, distance, typeof(avoid) == "Instance" and avoid or nil)
+	end
+
+	-- Смотрит туда, куда летит; набирая высоту строго вверх — туда, куда собирался.
+	local move = at - position
+	local look = flat(move).Magnitude > 1e-3 and move.Unit or flat(heading)
+	if look.Magnitude < 1e-3 then
+		look = heading
+	end
+	enemy:PivotTo(CFrame.lookAt(at, at + look) * CFrame.Angles(0, math.pi, 0))
+	enemy:SetAttribute("Velocity", move.Magnitude > 1e-3 and move.Unit * speed or Vector3.zero)
 	return false
 end
 
 EnemyBehavior.FlyStep = flyStep
+
+-- Точка над постройкой, где летун её уже не задевает: для Моли (вьётся над турелью)
+-- и Лицехвата (подлетает сверху, а не сквозь корпус).
+function EnemyBehavior.AboveTower(enemy, tower)
+	return clearTop(towerBox(tower), flyerSize(enemy))
+end
 
 -- Летуны со своим циклом движения не ходят по сетке и не толкаются. Каждый цикл кончается
 -- смертью жука — кроме Матки (улетает сама) и Пеликана (садится и дальше идёт пешком).
@@ -371,15 +506,18 @@ local function mothLoop(enemy, enemyData, state)
 		end)
 		local anchor = lit or nearestTurret(enemy:GetPivot().Position)
 		local center = anchor and anchor:GetPivot().Position or LabTable.Position()
+		-- Высота кругов — от верха корпуса турели, а не от её пивота: иначе круги
+		-- проходили сквозь Колбу (её верх ≈ 7.6 над пивотом).
+		local height = anchor and (EnemyBehavior.AboveTower(enemy, anchor) + plan.hover) or (center.Y + plan.hover)
 
 		-- Круги вокруг цели: именно они и есть всё её поведение — «просто летает
 		-- и мешает»: турель тратит на неё выстрелы, которые могла бы потратить на жуков.
 		angle += dt * math.pi * 2 / plan.period
-		local target = center + Vector3.new(
-			math.cos(angle) * plan.orbit,
-			plan.hover,
-			math.sin(angle) * plan.orbit)
-		flyStep(enemy, target, enemyData.speed, dt, 0.4)
+		local target = Vector3.new(
+			center.X + math.cos(angle) * plan.orbit,
+			height,
+			center.Z + math.sin(angle) * plan.orbit)
+		flyStep(enemy, target, enemyData.speed, dt, 0.4, true)
 	end
 end
 
@@ -426,37 +564,18 @@ local function queenLoop(enemy, enemyData, state)
 	end
 end
 
--- Летающий координатор: «смотрит на лабораторию сверху, передаёт роевику куда копать».
-local function swarmEyeLoop(enemy, enemyData, state)
-	local plan = enemyData.directs
-	local post = LabTable.Position() + Vector3.new(0, plan.hover, 0)
-
-	while alive(enemy) do
-		local dt = RunService.Heartbeat:Wait()
-		if not alive(enemy) then
-			break
-		end
-
-		flyStep(enemy, post, enemyData.speed, dt, 2)
-
-		-- Ведёт всех Роевиков в радиусе. Смерть координатора ничего не снимает руками:
-		-- метка ставится с окончанием срока, и без живого координатора она просто истекает.
-		local at = enemy:GetPivot().Position
-		for _, other in enemiesFolder:GetChildren() do
-			local otherData = Enemies[other:GetAttribute("Type")]
-			if otherData and otherData.burrows
-				and (other:GetPivot().Position - at).Magnitude <= plan.radius then
-				other:SetAttribute("GuidedUntil", os.clock() + 1)
-			end
-		end
-	end
-end
-
 -- Личинка: стоит на месте и вылупляется большой группой мелких.
 local function larvaLoop(enemy, enemyData, state)
 	local plan = enemyData.hatches
 	if not naps(enemy, plan.after) then
 		return -- успели расстрелять до вылупления — ровно то, чего требует документ
+	end
+	-- На спине Медика не вылупляется: мелочь высыпалась бы в воздухе.
+	while carried[enemy] and alive(enemy) do
+		RunService.Heartbeat:Wait()
+	end
+	if not alive(enemy) then
+		return
 	end
 
 	local at = enemy:GetPivot().Position
@@ -467,6 +586,7 @@ local function larvaLoop(enemy, enemyData, state)
 			EnemyBehavior.Spawn(plan.type, at + offset)
 		end
 	end
+	Effects.MarkHit(enemy, nil) -- не элемент убил: тело
 	enemy:SetAttribute("HP", 0)
 end
 
@@ -538,7 +658,7 @@ local TRAITS = {}
 
 -- Строитель: собирает обломки, строит одну из трёх конструкций. Какую именно —
 -- решает обстановка, а не жребий: есть рядом стена игрока — пандус; есть раненые
--- соседи — кормушка; иначе — стена против линии огня.
+-- соседи — кормушка; иначе — стена против линии огня. Рядом с постройкой роет ямку.
 TRAITS.builds = function(enemy, enemyData, state)
 	local plan = enemyData.builds
 	local carried = 0
@@ -552,7 +672,8 @@ TRAITS.builds = function(enemy, enemyData, state)
 
 		-- «Ест обломки стены или мебели.» Пока не набрал нужного — не строит.
 		if carried < plan.needMaterial then
-			if EnemyStructures.TakeMaterial(at, plan.gather) then
+			-- Детали разрушенных турелей — первыми, руины (от Горы, от Пеликана) — следом.
+			if TowerDebris.Consume(at, plan.gather) or EnemyStructures.TakeMaterial(at, plan.gather) then
 				carried += 1
 			end
 		else
@@ -594,37 +715,23 @@ TRAITS.builds = function(enemy, enemyData, state)
 				EnemyStructures.Wall(at + facing.Unit * 5, facing.Unit)
 			end
 
+			-- Ямка: роет там, где стоял при стройке, — у самой постройки, а у стены —
+			-- за ней, с той стороны, куда турель не видит. Убит за работой — ямки нет.
+			local pit = plan.pit
+			if pit then
+				state.holdUntil = os.clock() + pit.time
+				if not naps(enemy, pit.time) then
+					return
+				end
+				ConcreteFloor.Shape(enemy:GetPivot().Position, pit.radius, -pit.depth,
+					{ tag = "trench", core = pit.core })
+			end
+
 			carried -= plan.needMaterial
 			if not naps(enemy, plan.interval) then
 				return
 			end
 		end
-	end
-end
-
--- Окопщик: копает неподвижно (уязвим), оставляет окоп и обломки Строителю.
-TRAITS.digs = function(enemy, enemyData, state)
-	local plan = enemyData.digs
-
-	while alive(enemy) do
-		if not naps(enemy, plan.interval) then
-			return
-		end
-
-		state.holdUntil = os.clock() + plan.time
-		print("[Окопщик] копает — пока копает, стоит на месте")
-		if not naps(enemy, plan.time) then
-			return -- расстреляли за работой: окопа не будет
-		end
-
-		-- Окоп — это выемка в самом полу, а не плоская картонка поверх него: «жук в окопе
-		-- ниже линии огня турелей» — значит он действительно ниже. Прятать его будет тот же
-		-- атрибут InTrench, который теперь ставится по глубине пола (см. EnemyBehavior.Ground).
-		local at = enemy:GetPivot().Position
-		ConcreteFloor.Shape(at, plan.radius, -plan.depth, { tag = "trench", core = plan.core })
-		EnemyStructures.DropMaterial(at, plan.material)
-		print(("[Окопщик] выкопал окоп: радиус %.0f, глубина %.1f")
-			:format(plan.radius, plan.depth))
 	end
 end
 
@@ -656,7 +763,66 @@ TRAITS.spits = function(enemy, enemyData, state)
 	end
 end
 
--- Медик: лечит раненых вокруг. Сам не атакует вовсе (chewDamage = 0 в таблице).
+-- Кто несёт этого жука, или nil. EnemySpawner по нему не ведёт груз сам.
+function EnemyBehavior.CarriedBy(enemy)
+	return carried[enemy]
+end
+
+-- «Переносит личинок и раненых.» Носит только своих — разведчиков и работяг,
+-- и только тех, кто ходит по земле; солдаты «самостоятельны», им медик не нужен.
+-- Раненый — тот, кто ещё пугается (слепой Хмурый брон медика не ждёт).
+local function canCarry(other, plan)
+	if carried[other] then
+		return false
+	end
+	local data = Enemies[other:GetAttribute("Type")]
+	if not data or data.flying or data.heals or (data.caste or 0) > 1 then
+		return false
+	end
+	if data.hatches then
+		return true
+	end
+	if not data.panic then
+		return false
+	end
+	local hp, maxHp = other:GetAttribute("HP"), other:GetAttribute("MaxHP")
+	return hp ~= nil and maxHp ~= nil and maxHp > 0 and hp < maxHp * plan.carryBelow
+end
+
+-- Несёт груз на спине прочь от турели, пока не выйдет срок, потом кладёт на пол.
+-- Убили медика — груз падает, где был; убили груз — медик идёт дальше налегке.
+local function carry(enemy, cargo, plan, state, turret)
+	local pivot = cargo:GetPivot()
+	-- Насколько пивот груза выше пола — чтобы положить его обратно на ту же высоту.
+	local lift = pivot.Position.Y - ConcreteFloor.HeightAt(pivot.Position.X, pivot.Position.Z)
+
+	carried[cargo] = enemy
+	Crowd.Remove(cargo)
+	state.carrying = cargo
+	state.fleeFrom = turret:GetPivot().Position
+	print(("[Медик] уносит %s от %s"):format(cargo.Name, turret.Name))
+
+	local untilTime = os.clock() + plan.carryTime
+	while alive(enemy) and alive(cargo) and os.clock() < untilTime do
+		cargo:PivotTo(enemy:GetPivot() * CFrame.new(0, plan.carryLift, 0))
+		RunService.Heartbeat:Wait()
+	end
+
+	carried[cargo] = nil
+	state.carrying = nil
+	if cargo.Parent then
+		local at = cargo:GetPivot().Position
+		local drop = Vector3.new(at.X, ConcreteFloor.HeightAt(at.X, at.Z) + lift, at.Z)
+		drop = Crowd.FindFree(cargo, drop) or drop
+		cargo:PivotTo(CFrame.new(drop) * cargo:GetPivot().Rotation)
+		if alive(cargo) then
+			Crowd.Add(cargo)
+		end
+	end
+end
+
+-- Медик: лечит раненых вокруг и уносит из-под огня личинок и тяжело раненых.
+-- Сам не атакует вовсе (chewDamage = 0 в таблице).
 TRAITS.heals = function(enemy, enemyData, state)
 	local plan = enemyData.heals
 
@@ -666,6 +832,20 @@ TRAITS.heals = function(enemy, enemyData, state)
 		end
 
 		local at = enemy:GetPivot().Position
+
+		-- Подобрать груз, если руки свободны и есть от чего уносить. Несёт отдельной
+		-- задачей: груз ставится каждый кадр, а лечение идёт своим темпом.
+		if not state.carrying then
+			local turret = nearestTurret(at)
+			if turret then
+				for _, other in enemiesAround(at, plan.reach, enemy) do
+					if canCarry(other, plan) then
+						task.spawn(carry, enemy, other, plan, state, turret)
+						break
+					end
+				end
+			end
+		end
 		-- «Выбирает зоны для лечения» — лечит самого раненого, а не всех понемногу.
 		local best, bestRatio = nil, 1
 		for _, other in enemiesAround(at, plan.radius, enemy) do
@@ -743,6 +923,7 @@ function EnemyBehavior.Detonate(enemy, enemyData)
 		:format(plan.damage, hits, plan.radius))
 
 	if enemy.Parent then
+		Effects.MarkHit(enemy, nil) -- подорвал себя сам: тело
 		enemy:SetAttribute("HP", 0)
 	end
 end
@@ -905,42 +1086,6 @@ function EnemyBehavior.Burst(enemy, enemyData)
 		:format(#names > 0 and table.concat(names, ", ") or "ничего", amount, plan.radius))
 end
 
--- Роевик: уходит под пол и появляется в другом месте. Копает только пока его
--- ведёт летающий координатор; без него «идёт в атаку слепо», то есть просто идёт.
-TRAITS.burrows = function(enemy, enemyData, state)
-	local plan = enemyData.burrows
-
-	while alive(enemy) do
-		if not naps(enemy, 3) then
-			return
-		end
-
-		if os.clock() < (enemy:GetAttribute("GuidedUntil") or 0) then
-			-- Нырок: пока под землёй — не цель для турелей (Hidden) и не толкается.
-			state.holdUntil = os.clock() + plan.dive
-			if not naps(enemy, plan.dive) then
-				return
-			end
-
-			local at = enemy:GetPivot().Position
-			enemy:SetAttribute("Hidden", true)
-			enemy:PivotTo(CFrame.new(at - Vector3.new(0, plan.depth, 0)))
-			state.burrowed = true
-			print("[Роевик] ушёл под пол — координатор ведёт его к лаборатории")
-
-			if not naps(enemy, plan.under) then
-				return
-			end
-
-			-- Появляется из-под земли там, куда его вёл маршрут всё это время.
-			state.burrowed = false
-			enemy:SetAttribute("Hidden", nil)
-			local now = enemy:GetPivot().Position
-			enemy:PivotTo(CFrame.new(Vector3.new(now.X, 1.5, now.Z)))
-		end
-	end
-end
-
 -- Эволюционер: привыкает к тому элементу, которым игрок нанёс больше всего урона
 -- за забег. Счёт ведёт Effects (Effects.ElementUsage) — он единственный, кто видит
 -- все попадания сразу.
@@ -1058,6 +1203,19 @@ TRAITS.mimics = function(enemy, enemyData, state)
 	local plan = enemyData.mimics
 
 	enemy:SetAttribute("Hidden", true)
+	-- «Маскируется под мешок, обломок или даже турель». Облик рисует клиент
+	-- (EnemyRender) по атрибуту Disguise; под турель — только если на карте есть
+	-- турель, которую можно скопировать: её вид идёт в DisguiseTower.
+	local looks = { "sack", "debris" }
+	local turret = nearestTurret(enemy:GetPivot().Position)
+	if turret then
+		table.insert(looks, "turret")
+	end
+	local look = looks[math.random(#looks)]
+	if look == "turret" then
+		enemy:SetAttribute("DisguiseTower", turret:GetAttribute("Type"))
+	end
+	enemy:SetAttribute("Disguise", look)
 	state.holdUntil = os.clock() + plan.patience
 	local deadline = os.clock() + plan.patience
 
@@ -1070,6 +1228,8 @@ TRAITS.mimics = function(enemy, enemyData, state)
 		local close = turret ~= nil and distance <= plan.reveal
 		if close or os.clock() >= deadline then
 			enemy:SetAttribute("Hidden", nil)
+			enemy:SetAttribute("Disguise", nil)
+			enemy:SetAttribute("DisguiseTower", nil)
 			state.holdUntil = nil
 			print("[Мимик] раскрылся и атакует")
 			return
@@ -1083,7 +1243,7 @@ TRAITS.shadow = function(enemy, enemyData, state)
 end
 
 -- Работяга: «Могут таскать строй-материалы» — подбирает обломок и относит его
--- к ближайшему Строителю: так замыкается связка «окопщик — работяга — строитель».
+-- к ближайшему Строителю: так замыкается связка «работяга — строитель».
 TRAITS.carriesMaterial = function(enemy, enemyData, state)
 	while alive(enemy) do
 		if not naps(enemy, 4) then
@@ -1092,7 +1252,12 @@ TRAITS.carriesMaterial = function(enemy, enemyData, state)
 
 		local at = enemy:GetPivot().Position
 		if not state.hauling then
-			if EnemyStructures.TakeMaterial(at, 10) then
+			-- Деталь разрушенной турели несёт на спине — её видно, пока он идёт. Руину
+			-- (от Горы, от Пеликана) нести нечем, как и раньше: просто «взял единицу».
+			local part = TowerDebris.Carry(enemy, at, 10, EnemyBody.HalfHeight(enemy))
+			if part then
+				state.hauling = part
+			elseif EnemyStructures.TakeMaterial(at, 10) then
 				state.hauling = true
 			end
 		else
@@ -1100,7 +1265,11 @@ TRAITS.carriesMaterial = function(enemy, enemyData, state)
 			for _, other in enemiesAround(at, 20, enemy) do
 				local otherData = Enemies[other:GetAttribute("Type")]
 				if otherData and otherData.builds then
-					EnemyStructures.DropMaterial(other:GetPivot().Position, 1)
+					if typeof(state.hauling) == "Instance" then
+						TowerDebris.Drop(state.hauling, other:GetPivot().Position)
+					else
+						EnemyStructures.DropMaterial(other:GetPivot().Position, 1)
+					end
 					state.hauling = false
 					break
 				end
@@ -1120,10 +1289,6 @@ function EnemyBehavior.OwnLoop(enemy, enemyData, state)
 	end
 	if enemyData.lays then
 		queenLoop(enemy, enemyData, state)
-		return true
-	end
-	if enemyData.directs then
-		swarmEyeLoop(enemy, enemyData, state)
 		return true
 	end
 	if enemyData.hatches then

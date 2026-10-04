@@ -7,8 +7,7 @@
 -- видимого тела жука (EnemyRender). Правила ниже — те же, что были на сервере.
 --
 -- До этой задачи убитый жук просто исчезал (enemy:Destroy в EnemySpawner), и поле после
--- волны выглядело так же, как до неё. Правила системы (alchemy_td_enemies_buff_design_v2,
--- раздел 3):
+-- волны выглядело так же, как до неё. Правила системы:
 --
 --   * труп — НЕ преграда: путь, движение и плотность колонны он не меняет, жуки ходят
 --     по трупам. Отсюда CanCollide = false и CanQuery = false у всех его частей: он не ловит
@@ -30,26 +29,25 @@
 -- Модель трупа не собирается заново — это клон самого жука в позе смерти: тот же силуэт,
 -- тот же размер, тот же вид — игрок узнаёт, кто здесь лежит. Отличается труп двумя
 -- вещами: позой (перевёртыш с поджатыми лапами, см. EnemyGait.DeathPose) и выцветанием.
--- Оба признака обязаны читаться отдельно от любого дебафф-состояния (правило v2,
--- раздел 4): поле из трупов не должно читаться как толпа застывших живых.
+-- Оба признака обязаны читаться отдельно от любого дебафф-состояния —
+-- поле из трупов не должно читаться как толпа застывших живых.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
 local CollectionService = game:GetService("CollectionService")
 
-local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local EnemyGait = require(ReplicatedStorage:WaitForChild("EnemyGait"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
-local Impulse = require(ReplicatedStorage:WaitForChild("ImpulseFX"))
+local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
+local BugPalette = require(ReplicatedStorage:WaitForChild("BugPalette"))
 
--- Группы столкновений (заводит и связывает серверный Corpses, клиенту они реплицируются). Труп обязан ловить толчок от жука, но только его: тело жука
+-- Группы столкновений (заводит общий слой Loose на сервере, клиенту они реплицируются). Труп обязан ловить толчок от жука, но только его: тело жука
 -- анкорнуто и физикой не двигается вовсе, поэтому столкновение здесь одностороннее —
 -- сдвигается только труп. Оттого и правило дизайна остаётся в силе: труп не преграда,
 -- путь и плотность колонны он не меняет, потому что жука он не тормозит ни на кадр.
-local ENEMY_GROUP = "Enemies"
-local CORPSE_GROUP = "Corpses"
+local ENEMY_GROUP = Loose.Groups.Enemies
+local CORPSE_GROUP = Loose.Groups.Corpses
 
 -- Плотный, но не каменный, с высоким трением и без отскока: сдвинутый труп проезжает
 -- полстуда и встаёт, а не укатывается через всю арену от одного задевшего его жука.
@@ -74,9 +72,6 @@ local TUMBLE = 3
 
 local Corpses = {}
 
--- Физику останков считает этот же клиент: детали локальные, отдавать их некому.
-local function giveOwner(root) end
-
 -- Сколько трупов держим на поле одновременно. Цифра не из дизайна — он её нарочно
 -- не задаёт и отдаёт оптимизации. 60 трупов по 6 частей — 360 анкорнутых деталей,
 -- которые ничего не считают и не двигаются.
@@ -86,70 +81,35 @@ local MAX_CORPSES = 60
 -- но каждое — одна плоская деталь без тени и без запросов.
 local MAX_STAINS = 220
 
-local FADE_TIME = 1.2 -- секунд на растворение самого старого
-
 -- Насколько труп выцветает к серому: дешёвый и ясный сигнал «мёртв», который не
 -- конфликтует ни с одной меткой индикации (индикация с трупа снята вместе с моделью).
 local DEATH_FADE = 0.5
-local DEATH_COLOR = Color3.fromRGB(96, 92, 84)
+local DEATH_COLOR = BugPalette.Dead
 
--- Кровь зелёная: гемолимфа, а не кровь млекопитающего. Оттенок каждого пятна
--- чуть свой (BLOOD_SPREAD): один цвет на всё поле читается как краска, а не как следы.
-local BLOOD_COLOR = Color3.fromRGB(62, 116, 38)
-local BLOOD_SPREAD = 26 -- единиц RGB в обе стороны
+-- Кровь — гемолимфа из палитры жуков (BugPalette.Blood): тёмная олива. Прежняя сочная
+-- зелень на светлом полу горела салатовым и спорила со всем остальным. Оттенок каждого
+-- пятна чуть свой (BLOOD_SPREAD): один цвет на всё поле читается как краска, а не как следы.
+local BLOOD_COLOR = BugPalette.Blood
+local BLOOD_SPREAD = 14 -- единиц RGB в обе стороны
 local BLOOD_THICKNESS = 0.06 -- studs: пятно плоское, но не нулевое — иначе мерцает с полом
 local BLOOD_LIFT = 0.03 -- studs над полом: тот же зазор против z-fighting
 
 -- Живые останки в порядке появления: самый старый — первый в списке.
 local corpses = {}
 local stains = {}
-local pieces = {} -- оторванные конечности (см. detachPieces), свой потолок PhysicsFX.gore.fieldLimit
 -- Номер записи серверного Corpses -> туша: по нему Пеликан съедает именно тот труп, у которого стоит.
 -- Слабые значения: растворённая по лимиту туша уходит и отсюда сама.
 local byId = setmetatable({}, { __mode = "v" })
 
-local function container(name)
-	local folder = Workspace:FindFirstChild(name)
-	if not folder then
-		folder = Instance.new("Folder")
-		folder.Name = name
-		folder.Parent = Workspace
-	end
-	return folder
-end
+-- Папки, растворение и список с потолком — общие, из физического слоя Loose.
+local container = Loose.Folder
+local dissolve = Loose.Dissolve
+local remember = Loose.Remember
 
--- Растворяет и сносит. Не мгновенный Destroy нарочно: труп, пропавший на глазах
--- в один кадр, читается как поломка. На геймплей растворение не влияет никак: Гора
--- и зона Землетрясения сработали в момент смерти и от трупа больше не зависят.
-local function dissolve(instance)
-	if not instance or not instance.Parent then
-		return
-	end
-
-	local info = TweenInfo.new(FADE_TIME, Enum.EasingStyle.Linear)
-	for _, part in instance:GetDescendants() do
-		if part:IsA("BasePart") then
-			TweenService:Create(part, info, { Transparency = 1 }):Play()
-		end
-	end
-	if instance:IsA("BasePart") then
-		TweenService:Create(instance, info, { Transparency = 1 }):Play()
-	end
-
-	task.delay(FADE_TIME, function()
-		if instance.Parent then
-			instance:Destroy()
-		end
-	end)
-end
-
--- Общее для трупов и крови: список с потолком, самые старые уходят первыми.
-local function remember(list, instance, limit)
-	table.insert(list, instance)
-	while #list > limit do
-		local oldest = table.remove(list, 1)
-		dissolve(oldest)
-	end
+-- Высота опоры под моделью: плиты пола с ямами и обломки (Loose.FloorAt), а не плоский пол арены.
+local function floorUnder(model)
+	local at = model:GetPivot().Position
+	return Loose.FloorAt(at.X, at.Z)
 end
 
 -- Останки жука на месте смерти. Зовётся ДО enemy:Destroy() — модель ещё целая
@@ -362,20 +322,50 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 	-- оформление на сварке. У мешей лап и усиков масса практически ноль (0.000–0.08),
 	-- и сборка из них самих на первом же касании разгонялась до бесконечности — замерено стендом.
 	-- Габарит — по measureHalf, а не GetBoundingBox: тот берёт раздутые коробки мешей.
-	local low, high
+	-- Коробка — ПОВЁРНУТАЯ вдоль самой лапы, а не по осям мира. Мировая коробка вокруг
+	-- лапы, отлетевшей наискось, выходила толстым кубом: лапа ложилась на его грань и так и
+	-- стояла торчком (плейтест: поле после пороха — частокол из лап). Ось коробки — от одного
+	-- конца лапы к другому (самая дальняя пара деталей), вторая — куда лапа согнута, третья —
+	-- толщина палки. Такая коробка ложится плашмя сама: на торце или ребре ей не устоять.
+	local points, thickness = {}, 0
 	for _, part in parts do
-		local half = measureHalf(part, true, scale * 3)
-		for _, sx in { -1, 1 } do
-			for _, sy in { -1, 1 } do
-				for _, sz in { -1, 1 } do
-					local corner = part.CFrame * Vector3.new(half.X * sx, half.Y * sy, half.Z * sz)
-					low = low and low:Min(corner) or corner
-					high = high and high:Max(corner) or corner
-				end
+		table.insert(points, part.Position)
+		thickness = math.max(thickness, measureHalf(part, true, scale * 3).X)
+	end
+	local a, b, longest = points[1], points[1], 0
+	for i = 1, #points do
+		for j = i + 1, #points do
+			local d = (points[i] - points[j]).Magnitude
+			if d > longest then
+				a, b, longest = points[i], points[j], d
 			end
 		end
 	end
-	local boxFrame, boxSize = CFrame.new((low + high) / 2), high - low
+	local along = longest > 1e-3 and (b - a).Unit or Vector3.xAxis
+	local bend, bendSize = nil, 1e-3
+	for _, point in points do
+		local off = point - a
+		local across = off - along * off:Dot(along)
+		if across.Magnitude > bendSize then
+			bend, bendSize = across.Unit, across.Magnitude
+		end
+	end
+	if not bend then
+		bend = along:Cross(math.abs(along.Y) < 0.9 and Vector3.yAxis or Vector3.xAxis).Unit
+	end
+	local side = along:Cross(bend).Unit
+	bend = side:Cross(along).Unit
+	local axes = CFrame.fromMatrix(Vector3.zero, along, bend, side)
+	local low, high
+	for _, point in points do
+		local localPoint = axes:PointToObjectSpace(point)
+		low = low and low:Min(localPoint) or localPoint
+		high = high and high:Max(localPoint) or localPoint
+	end
+	low -= Vector3.one * thickness
+	high += Vector3.one * thickness
+	local boxFrame = CFrame.fromMatrix(axes * ((low + high) / 2), along, bend, side)
+	local boxSize = high - low
 	local root = collider(piece, "Hull", Enum.PartType.Block, boxSize:Max(Vector3.one * 0.3), boxFrame)
 	piece.PrimaryPart = root
 	table.insert(parts, root)
@@ -395,12 +385,8 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 			weld.Parent = root
 		end
 	end
-	for _, part in parts do
-		part.Anchored = false
-	end
-	piece.Parent = container("Debris")
-	CollectionService:AddTag(piece, Impulse.Tag)
-	giveOwner(root)
+	Loose.Spawn(piece, { folder = "Debris" })
+	Loose.LayFlat(root) -- если всё же встала торчком — уронить
 
 	-- Летит от удара и от тела сразу: только «от удара» сбило бы все куски в одну кучу,
 	-- только «от тела» — потеряло бы направление выстрела.
@@ -420,15 +406,47 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 	end
 	direction = (direction.Unit + Vector3.yAxis * plan.lift).Unit
 	local speed = plan.speedMin + (plan.speed - plan.speedMin) * math.clamp(fraction, 0, 1.5)
-	Impulse.Kick(root, direction * speed + (carry or Vector3.zero), Impulse.RandomSpin(plan.spin))
-	giveOwner(root) -- Kick забирает сборку серверу: вернуть тому, кто её считает
+	Loose.Kick(root, direction * speed + (carry or Vector3.zero), Loose.RandomSpin(plan.spin))
 
 	Corpses.Splat(root.Position, plan.splatSize * scale, 1, floorY)
-	remember(pieces, piece, plan.fieldLimit)
+	Loose.Track(piece, "gore")
 end
 
+-- Туша уходит не по лимиту (осыпалась, лопнула): из списка трупов и из номеров записей.
+local scaleOf = setmetatable({}, { __mode = "k" }) -- [туша] = масштаб жука / 3 (атрибуты с трупа сняты)
+
+local function forget(corpse)
+	local index = table.find(corpses, corpse)
+	if index then
+		table.remove(corpses, index)
+	end
+	for id, other in byId do
+		if other == corpse then
+			byId[id] = nil
+		end
+	end
+end
+
+-- Останки без тела (давит, плавит, растворяет, рвёт, уничтожает), осыпание обугленного
+-- и хрупкий труп — в своём модуле.
+local Remains = require(ReplicatedStorage:WaitForChild("CorpseRemains"))({
+	PhysicsFX = PhysicsFX,
+	container = container,
+	remember = remember,
+	stains = stains,
+	maxStains = MAX_STAINS,
+	chooseLimbs = chooseLimbs,
+	detachPiece = detachPiece,
+	bloodLift = BLOOD_LIFT,
+	bloodThickness = BLOOD_THICKNESS,
+	corpseGroup = CORPSE_GROUP,
+	forget = forget,
+	EnemyGait = EnemyGait,
+})
+
 -- enemy — ВИДИМОЕ тело жука (модель EnemyRender). hit — чем убили (присылает сервер):
--- { scorched = умер под Горением/Плавлением, fraction = доля макс. HP добивающего удара,
+-- { remains = вид останков (Effects.RemainsOf), scorched = обугливается (вид «char»),
+-- fraction = доля макс. HP добивающего удара,
 -- from = откуда прилетело или nil, floorY = высота пола под пятна, если не арена,
 -- carry = скорость того, кто задавил, или nil: туша и куски уезжают вместе с ударом, а не остаются под ним,
 -- scale = масштаб жука }. По нему отрываются конечности и отлетает сама туша.
@@ -438,8 +456,14 @@ function Corpses.Leave(enemy, hit, id)
 		return nil
 	end
 
-	-- Убитый под Горением или Плавлением обугливается (атрибут Scorched ставит Effects на
-	-- серверной модели; сервер кладёт его в hit, чтобы не зависеть от порядка репликации).
+	-- Тела нет — у вида своя картинка (CorpseRemains), туши в списке трупов не будет.
+	local special = hit and Remains[hit.remains]
+	if special then
+		special(enemy, hit, (hit.scale or 3) / 3, hit.floorY or floorUnder(enemy))
+		return nil
+	end
+
+	-- Обугленный труп — вид «char»: горел в момент смерти или добит огнём (решает сервер).
 	local charred = hit and hit.scorched == true
 	local fadeColor = charred and PhysicsFX.char.color or DEATH_COLOR
 	local fade = charred and PhysicsFX.char.fade or DEATH_FADE
@@ -481,6 +505,10 @@ function Corpses.Leave(enemy, hit, id)
 			part.CanCollide = false
 			part.Color = part.Color:Lerp(fadeColor, fade)
 		end
+	end
+	-- Холодная ветка: заиндевевший стеклянный труп (лопнет от касания — Corpses.Shatter).
+	if hit and hit.remains == "brittle" then
+		Remains.frost(corpse)
 	end
 
 	-- Жук не переворачивается — он падает (решение автора). Труп встаёт ровно там и так,
@@ -585,16 +613,32 @@ function Corpses.Leave(enemy, hit, id)
 		task.delay(plan.smokeTime, function()
 			smoke.Enabled = false
 		end)
+		-- Потом осыпается (по вики); запись на сервере снимется к тому же сроку.
+		Remains.crumble(corpse, scale, hit and hit.floorY or floorUnder(corpse))
+	end
+	if hit and hit.swampy then
+		Remains.swampy(corpse, scale, enemy:GetPivot().Position, hit.floorY or floorUnder(enemy))
 	end
 
 	-- Досадка на брюхо — общий цикл перед Corpses.Splat, для всех трупов сразу.
 
-	CollectionService:AddTag(corpse, Impulse.Tag)
+	CollectionService:AddTag(corpse, Loose.Tag)
 	remember(corpses, corpse, MAX_CORPSES)
+	scaleOf[corpse] = scale
 	if id then
 		byId[id] = corpse
 	end
 	return corpse
+end
+
+-- Хрупкий труп тронули (решает сервер): лопается на ледяные осколки, они тают.
+function Corpses.Shatter(id)
+	local corpse = byId[id]
+	if not corpse or not corpse.Parent then
+		return
+	end
+	forget(corpse)
+	Remains.shatter(corpse, scaleOf[corpse] or 1)
 end
 
 -- Пеликан съел труп (решает сервер): туша растворяется.
@@ -655,7 +699,6 @@ local function flipUpright(corpse, root)
 		root.Anchored = false
 		root.AssemblyLinearVelocity = Vector3.zero
 		root.AssemblyAngularVelocity = Vector3.zero
-		giveOwner(root)
 	end
 end
 
@@ -690,16 +733,15 @@ task.spawn(function()
 end)
 
 -- Пятно крови на полу. size — диаметр основного пятна в studs; drops — сколько вокруг
--- него брызг. Капля всегда ложится на пол арены, а не на ту высоту, где шла кровь:
+-- него брызг. Капля всегда ложится на опору под собой, а не на ту высоту, где шла кровь:
 -- следы боя нужны на карте, а не в воздухе над ней.
 --
 -- Плоский цилиндр, а не декаль с картинкой: текстура потребовала бы залитого
 -- ассета, а форма пятна собирается из нескольких кругов разного размера не хуже.
--- floorY переопределяет высоту пола для вызововшего (по умолчанию Arena.floorY) —
+-- floorY переопределяет высоту пола для вызвавшего (по умолчанию опора под каплей, Loose.FloorAt) —
 -- нужен тем, чьё поле живёт не на арене (например, Аркада).
 function Corpses.Splat(position, size, drops, floorY)
 	local folder = container("Blood")
-	local y = (floorY or Arena.floorY) + BLOOD_LIFT
 
 	local function drop(at, diameter)
 		local stain = Instance.new("Part")
@@ -709,6 +751,8 @@ function Corpses.Splat(position, size, drops, floorY)
 		-- на 90° по Z кладёт его плашмя. Овал вместо круга (Y и Z разные) — чтобы
 		-- пятна не читались одинаковыми штампами.
 		stain.Size = Vector3.new(BLOOD_THICKNESS, diameter, diameter * (0.75 + math.random() * 0.5))
+		-- Каждая капля — на свою опору: в яму, на обломок, на пол (Loose.FloorAt).
+		local y = (floorY or Loose.FloorAt(at.X, at.Z)) + BLOOD_LIFT
 		stain.CFrame = CFrame.new(at.X, y, at.Z)
 			* CFrame.Angles(0, math.random() * math.pi * 2, 0)
 			* CFrame.Angles(0, 0, math.rad(90))
@@ -720,7 +764,7 @@ function Corpses.Splat(position, size, drops, floorY)
 		stain.Material = Enum.Material.SmoothPlastic
 		-- Не вплотную: глухое пятно на светлом полу читается как зелёная наклейка,
 		-- а не как след — замечено на плейтесте.
-		stain.Transparency = 0.22
+		stain.Transparency = 0.3
 		local shade = (math.random() - 0.5) * 2 * BLOOD_SPREAD / 255
 		stain.Color = Color3.new(
 			math.clamp(BLOOD_COLOR.R + shade, 0, 1),
@@ -772,14 +816,9 @@ function Corpses.Clear()
 			stain:Destroy()
 		end
 	end
-	for _, piece in pieces do
-		if piece.Parent then
-			piece:Destroy()
-		end
-	end
+	Loose.ClearTracked() -- оторванные конечности и осколки
 	table.clear(corpses)
 	table.clear(stains)
-	table.clear(pieces)
 	table.clear(byId)
 end
 

@@ -1,6 +1,6 @@
 -- Походка жука: ноги переступают, корпус следует за ними.
 --
--- Правило из дизайна поз (alchemy_td_enemies_visual_design_v1, раздел 5): «перебирание ног —
+-- Правило поз: «перебирание ног —
 -- без инерции и скольжения: ноги шагают, корпус следует, никакого качения», плюс отдельным
 -- слоем — «наклон конечностей от поверхности». До этой задачи ноги были приварены к телу
 -- статичными CFrame (см. EnemySpawner.buildEnemyModel), и жук ехал по полу как санки.
@@ -20,6 +20,8 @@
 -- и так переписывается каждый кадр — на репликацию ноги не добавляют ничего сверх того,
 -- что уже шло.
 local Workspace = game:GetService("Workspace")
+-- Спина соседа под лапой — по общей с толкучкой формуле (EnemyBody.BackHeight).
+local EnemyBody = require(script.Parent:WaitForChild("EnemyBody"))
 
 local EnemyGait = {}
 
@@ -101,6 +103,14 @@ local MODEL_STEP_PLANT = 0.84
 -- в случайную сторону на каждом шаге.
 local VELOCITY_SMOOTH = 10
 local GAIT_TUNED_SCALE = 3.0
+
+-- Крылья летунов (Моль, Пеликан): группы wing_L / wing_R шаблона машут вокруг своего
+-- внутреннего края, пока жук в воздухе. Частота — взмахов в секунду, угол — в радианах
+-- от покоя вверх и вниз. Шаблон может задать свои атрибутами WingFlapFreq / WingFlapAngle.
+local WING_FLAP_FREQ = 3
+local WING_FLAP_ANGLE = math.rad(35)
+-- Как быстро крыло складывается в покой после посадки, 1/сек.
+local WING_FOLD = 6
 
 -- ======================= Тело несут ноги =======================
 --
@@ -198,6 +208,12 @@ local BODY_PITCH = 0.6
 -- самой ступни её бы не заметил.
 local PROBE_UP = 1.4
 local PROBE_LENGTH = 3.2
+-- Спины соседей для лап (см. neighbourBack) перечитываются не чаще, чем раз в столько
+-- секунд: шагов за кадр десятки, а жуков сотня.
+local BACKS_REFRESH = 0.05
+-- Толщина ступни, доля высоты пивота: задевшая борт соседа ступня ложится на него.
+-- То же число, что FOOT_RADIUS в Crowd.
+local FOOT_RADIUS = 0.2
 
 -- На сколько шире ставятся ноги, когда жук лезет: на вертикали он распластывается
 -- по поверхности, а не стоит на ней столбиком.
@@ -209,7 +225,7 @@ local CLIMB_SPREAD = 1.15
 local MAX_STRETCH = 1.25
 
 -- Грызня: насколько передние ноги поднимаются на преграду и как быстро они работают.
--- Поза обязана читаться как «занят делом» (визуальный документ, раздел 5), а не как
+-- Поза обязана читаться как «занят делом» , а не как
 -- «встал и ждёт».
 local CHEW_RAISE = 0.85 -- studs вверх по телу
 local CHEW_REACH = 0.7 -- studs вперёд, к преграде
@@ -217,8 +233,8 @@ local CHEW_RATE = 6 -- качков в секунду
 local CHEW_SWING = 0.16 -- studs амплитуды
 
 -- Поза смерти: насколько лапы разъезжаются наружу и насколько ниже бедра остаётся
--- ступня. Отличаться от любого дебафф-состояния поза обязана по требованию читаемости
--- (v2, раздел 4): поле из трупов не должно читаться как толпа застывших живых — здесь это
+-- ступня. Отличаться от любого дебафф-состояния поза обязана по требованию читаемости:
+-- поле из трупов не должно читаться как толпа застывших живых — здесь это
 -- держится на расползшихся лапах и выцветании (см. Corpses), а не на перевёртыше.
 local DEATH_SPLAY = 1.25
 local DEATH_DROP = 0.3
@@ -235,22 +251,30 @@ local states = setmetatable({}, { __mode = "k" })
 --
 -- Собирается заново не чаще раза в секунду: папки появляются на лету, а лучей
 -- тут тысячи в секунду, и пересобирать список на каждый — чистый мусор.
-local surfaceParams = nil
-local surfaceParamsClock = 0
+-- Два набора: обычный и для жука, ползущего под постройкой (подлаз, атрибут Crawling).
+-- Ползущему опора — только пол: луч сверху иначе ловил бы крышу постройки над ним,
+-- и лапы тянулись бы сквозь днище наверх.
+local surfaceParams = {}
+local surfaceParamsClock = {}
 
-local function groundFilter()
+local function groundFilter(underTower)
+	local slot = underTower and 2 or 1
 	local now = os.clock()
-	if surfaceParams and now - surfaceParamsClock < 1 then
-		return surfaceParams
+	if surfaceParams[slot] and now - surfaceParamsClock[slot] < 1 then
+		return surfaceParams[slot]
 	end
 
 	local include = {}
-	-- Пол и стены — из активной локации (Workspace.Location), постройки — общая папка.
+	-- Пол и стены — из активной локации (Workspace.Location), постройки — общая папка,
+	-- обломки разрушенных турелей (TowerDebris) — по ним жуки ходят, как по полу.
 	local location = Workspace:FindFirstChild("Location")
 	for _, node in {
 		location and location:FindFirstChild("ArenaFloor"),
-		Workspace:FindFirstChild("Towers"),
+		not underTower and Workspace:FindFirstChild("Towers") or nil,
 		location and location:FindFirstChild("Walls"),
+		Workspace:FindFirstChild("TowerDebris"),
+		-- Постройки жуков твёрдые, жук перелезает их (Crowd поднимает тело) — лапы встают сверху.
+		Workspace:FindFirstChild("EnemyStructures"),
 	} do
 		table.insert(include, node)
 	end
@@ -263,12 +287,13 @@ local function groundFilter()
 		table.insert(include, arcadeField)
 	end
 
-	surfaceParams = RaycastParams.new()
-	surfaceParams.FilterType = Enum.RaycastFilterType.Include
-	surfaceParams.FilterDescendantsInstances = include
-	surfaceParams.IgnoreWater = true
-	surfaceParamsClock = now
-	return surfaceParams
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = include
+	params.IgnoreWater = true
+	surfaceParams[slot] = params
+	surfaceParamsClock[slot] = now
+	return params
 end
 
 -- Ставит ногу-модель (сегментированная лапа процедурного жука) от бедра к ступне
@@ -543,6 +568,69 @@ local function poseHead(state, body, dt, mode, turnRate, headLead)
 	workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
 end
 
+-- Крылья: детали групп wing_L / wing_R в кадре тела и шарнир — точка у внутреннего края
+-- (ближе всего к оси тела). Нет крыльев — nil.
+local function captureWings(model)
+	local pivot = model:GetPivot()
+	local wings = {}
+	for _, name in { "wing_L", "wing_R" } do
+		local wing = model:FindFirstChild(name)
+		if wing then
+			local parts, inner, sumX, sumY, sumZ, count = {}, math.huge, 0, 0, 0, 0
+			for _, part in wing:GetDescendants() do
+				if part:IsA("BasePart") then
+					local rest = pivot:ToObjectSpace(part.CFrame)
+					table.insert(parts, { part = part, rest = rest })
+					local half = part.Size * 0.5
+					for _, sx in { -1, 1 } do
+						for _, sz in { -1, 1 } do
+							local corner = rest * Vector3.new(half.X * sx, 0, half.Z * sz)
+							inner = math.min(inner, math.abs(corner.X))
+						end
+					end
+					sumX += rest.X
+					sumY += rest.Y
+					sumZ += rest.Z
+					count += 1
+				end
+			end
+			if count > 0 then
+				local side = sumX >= 0 and 1 or -1
+				table.insert(wings, {
+					parts = parts,
+					hinge = Vector3.new(inner * side, sumY / count, sumZ / count),
+					side = side,
+				})
+			end
+		end
+	end
+	if #wings == 0 then
+		return nil
+	end
+	return {
+		wings = wings,
+		freq = model:GetAttribute("WingFlapFreq") or WING_FLAP_FREQ,
+		angle = model:GetAttribute("WingFlapAngle") or WING_FLAP_ANGLE,
+		phase = math.random() * math.pi * 2,
+		open = 0, -- текущий размах: 1 — машет в полную силу, 0 — сложены
+		clock = 0,
+	}
+end
+
+local function poseWings(rig, body)
+	local amount = rig.open * rig.angle * math.sin(rig.clock * rig.freq * math.pi * 2 + rig.phase)
+	local parts, frames = {}, {}
+	for _, wing in rig.wings do
+		-- Поворот вокруг оси нос–хвост: крыло слева и справа поднимаются вместе.
+		local joint = around(wing.hinge, CFrame.Angles(0, 0, amount * wing.side))
+		for _, entry in wing.parts do
+			table.insert(parts, entry.part)
+			table.insert(frames, body * joint * entry.rest)
+		end
+	end
+	workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
+end
+
 -- Крен в повороте и вздрагивание — поверх качки от ног (см. carryBody).
 local function react(state, body, dt, turnRate)
 	local up = body.UpVector
@@ -668,10 +756,85 @@ end
 -- Где опора под номинальной стуйкой. Нет опоры (жук над краем, висит над проломом) —
 -- нога остаётся там, где ей полагается быть по строению тела: пусть висит, но не тянется
 -- к бесконечности.
-local function findSupport(nominal, up, gaitScale)
+--
+-- Лапа встаёт на то, что под ней: на пол или на спину соседа, если тот закрывает пол под
+-- точкой. Так же ставит лапы толкучка (Crowd: лапы и опора тела), и ступни стоят там,
+-- где их держит сервер. Тела жуков лучом не ловятся (CanQuery = false), поэтому спина
+-- соседа — купол над его следом-капсулой (атрибуты FootRadius/FootFront/FootBack,
+-- BodyHalfHeight серверной модели): ступня ближе к хребту встаёт выше, у борта — ниже.
+local backs, backsTime = {}, -math.huge
+local function refreshBacks()
+	local now = os.clock()
+	if now - backsTime < BACKS_REFRESH then
+		return
+	end
+	backsTime = now
+	table.clear(backs)
+	local enemies = Workspace:FindFirstChild("Enemies")
+	if not enemies then
+		return
+	end
+	for _, enemy in enemies:GetChildren() do
+		local radius = enemy:GetAttribute("FootRadius")
+		if radius and enemy:IsA("Model") then
+			local front = enemy:GetAttribute("FootFront") or 0
+			local back = enemy:GetAttribute("FootBack") or 0
+			table.insert(backs, {
+				model = enemy,
+				pivot = enemy:GetPivot(),
+				radius = radius,
+				front = front,
+				back = back,
+				top = enemy:GetAttribute("ShellTop") or enemy:GetAttribute("BodyHalfHeight") or 0.6,
+				reach = radius + math.max(math.abs(front), math.abs(back)),
+			})
+		end
+	end
+end
+
+local function neighbourBack(point, selfModel)
+	refreshBacks()
+	local own = selfModel and selfModel.Parent
+	-- Выше своей спины лапа не тянется. Толщина ступни — как у толкучки (Crowd.FOOT_RADIUS).
+	local limit, margin = math.huge, 0
+	if own then
+		limit = selfModel:GetPivot().Position.Y
+			+ (selfModel:GetAttribute("ShellTop") or selfModel:GetAttribute("BodyHalfHeight") or 0.6)
+		margin = (selfModel:GetAttribute("RideHeight") or 1.5) * FOOT_RADIUS
+	end
+	local best
+	for _, entry in backs do
+		local position = entry.pivot.Position
+		local dx, dz = point.X - position.X, point.Z - position.Z
+		local reach = entry.reach + margin
+		if entry.model ~= own and dx * dx + dz * dz < reach * reach then
+			-- Голова модели по +Z, а пивот развёрнут на 180°: ход — минус LookVector.
+			local look = -entry.pivot.LookVector
+			local height = EnemyBody.BackHeight(dx, dz, look.X, look.Z, entry.radius,
+				entry.front, entry.back, entry.top, margin)
+			if height then
+				local top = position.Y + height
+				if top < limit and top < point.Y + PROBE_UP and (not best or top > best) then
+					best = top
+				end
+			end
+		end
+	end
+	return best
+end
+
+local function findSupport(nominal, up, gaitScale, underTower, selfModel)
 	local scale = gaitScale or 1
-	local result = Workspace:Raycast(nominal + up * (PROBE_UP * scale), -up * (PROBE_LENGTH * scale), groundFilter())
-	return result and result.Position or nominal
+	local result = Workspace:Raycast(nominal + up * (PROBE_UP * scale), -up * (PROBE_LENGTH * scale), groundFilter(underTower))
+	local foot = result and result.Position or nominal
+	-- Спина соседа над полом в этой точке закрывает пол: лапа встаёт на неё.
+	if selfModel then
+		local back = neighbourBack(nominal, selfModel)
+		if back and back > foot.Y then
+			foot = Vector3.new(nominal.X, back, nominal.Z)
+		end
+	end
+	return foot
 end
 
 -- Заводит походку для модели. legs — тот же список, по которому собрана модель
@@ -796,9 +959,23 @@ function EnemyGait.Attach(model, legs)
 	state.strut = #state.legs > 0 and strutSum / #state.legs or 1
 
 	state.head = captureHead(model)
+	state.wings = captureWings(model)
 
 	states[model] = state
 	return state
+end
+
+-- Летун в воздухе: ноги не переставляет (их ведёт EnemyRender простым PivotTo), а крылья
+-- машут. Зовётся каждый кадр после PivotTo. Без крыльев — ничего.
+function EnemyGait.Flap(model, dt)
+	local state = states[model]
+	local wings = state and state.wings
+	if not wings then
+		return
+	end
+	wings.open = math.min(1, wings.open + dt * WING_FOLD)
+	wings.clock += dt
+	poseWings(wings, model:GetPivot())
 end
 
 -- Отскок живого жука от попадания. from — откуда прилетело, strength — доля макс. HP
@@ -842,7 +1019,8 @@ end
 
 -- wantLook — куда смотрел бы жук без ограничения разворота (LookVector маршрутного кадра).
 -- Нужен, когда разворот уже ограничила толкучка: голова по-прежнему идёт раньше тела.
-function EnemyGait.Step(model, dt, mode, pathCF, wantLook)
+-- underTower — жук ползёт под постройкой (атрибут Crawling серверной модели): опора только на полу.
+function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 	local turnRate, headLead = 0, 0
 	if pathCF then
 		-- Доворот тела к направлению маршрута вокруг его «верха» (не Slerp целиком:
@@ -897,6 +1075,13 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook)
 	end
 	if state.head then
 		poseHead(state, body, dt, mode, turnRate, headLead)
+	end
+	-- На земле крылья складываются (Пеликан сел, наевшись).
+	local wings = state.wings
+	if wings and wings.open > 0 then
+		wings.open = math.max(0, wings.open - dt * WING_FOLD)
+		wings.clock += dt
+		poseWings(wings, body)
 	end
 	local up = body.UpVector
 	local nose = body:VectorToWorldSpace(Vector3.new(0, 0, 1)) -- голова модели смотрит по +Z
@@ -988,7 +1173,7 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook)
 					-- тела от ступни и требует следующий перенос в тот же кадр, как только встала.
 					and plantAhead(hipWorld, nominal, velocity, leg.length * MODEL_STEP_PLANT, stride * 0.5)
 					or nominal
-				leg.stepTo = findSupport(aim, up, modelScale)
+				leg.stepTo = findSupport(aim, up, modelScale, underTower, model)
 				leg.stepUntil = now + stepTime
 				leg.planted = leg.stepTo
 				if stepping == nil then
@@ -1011,7 +1196,10 @@ end
 -- Анатомия берётся у ЖИВОГО жука (original), а не восстанавливается обратным счётом
 -- по готовым частям клона: бёдра и стойки уже записаны в состоянии походки, и второй
 -- способ их узнать — лишний.
-function EnemyGait.DeathPose(corpse, original)
+-- splay, drop — насколько далеко и низко ступня (по умолчанию поза трупа); меньше — лапы поджаты.
+function EnemyGait.DeathPose(corpse, original, splay, drop)
+	splay = splay or DEATH_SPLAY
+	drop = drop or DEATH_DROP
 	local state = states[original]
 	local body = corpse.PrimaryPart
 	if not state or not body then
@@ -1029,9 +1217,9 @@ function EnemyGait.DeathPose(corpse, original)
 			-- Ступня уезжает наружу и поднимается почти до уровня брюха: лапы лежат
 			-- плашмя вокруг тела, и корпус садится на землю, а не стоит на ходулях.
 			local foot = body.CFrame * Vector3.new(
-				leg.rest.X * DEATH_SPLAY,
-				leg.hip.Y - DEATH_DROP * modelScale,
-				leg.rest.Z * DEATH_SPLAY
+				leg.rest.X * splay,
+				leg.hip.Y - drop * modelScale,
+				leg.rest.Z * splay
 			)
 			local length = (foot - hip).Magnitude
 			if length > 1e-3 then

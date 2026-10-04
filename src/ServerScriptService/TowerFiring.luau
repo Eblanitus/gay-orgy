@@ -380,6 +380,7 @@ return function(deps)
 			element = elementData,
 			color = color,
 			ownerName = tower.Name,
+			owner = tower,
 			-- Форма снаряда и пробитие — свойства турели, а не снаряда: лежат в таблице
 			-- (Towers[тип].projectileShape / .pierce) и просто передаются дальше. Нет полей —
 			-- шар без пробития, то есть ровно то, что было у всех до этого.
@@ -504,6 +505,7 @@ return function(deps)
 			element = elementData,
 			color = color,
 			ownerName = tower.Name,
+			owner = tower,
 		})
 
 		ShotFiredRemote:FireAllClients(muzzle, color, tower)
@@ -553,7 +555,7 @@ return function(deps)
 					-- Четвёртым — откуда ударили: притяжение (Воздух и вся его ветка) тянет
 					-- к стрелявшей турели, а у площадной это центр её зоны, а не сам пивот:
 					-- облако Испарителя висит над ней.
-					Effects.Apply(enemy, elementData, dealt, center)
+					Effects.Apply(enemy, elementData, dealt, center, tower)
 				end
 			end
 		end
@@ -570,6 +572,41 @@ return function(deps)
 	-- Запускает боевой цикл башни. Работает для любой построенной башни независимо —
 	-- каждая вызывает это отдельно при постройке.
 	--
+	-- Хилер (Жизнь, вики): вместо выстрела лечит самую побитую постройку в своём радиусе.
+	-- Приоритет — доля HP, а не число: стена на 60 из 400 в большей беде, чем колба на 40
+	-- из 60. Себя не лечит — иначе хилер под жуками был бы бессмертным в одиночку; два
+	-- хилера рядом чинят друг друга. Возвращает, состоялось ли лечение, как и fire.
+	local function healStructures(tower, towerData, healer)
+		local folder = tower.Parent
+		if not folder then
+			return false
+		end
+		local origin = tower:GetPivot().Position
+		local best, bestRatio
+		for _, building in folder:GetChildren() do
+			local hp = building:GetAttribute("HP")
+			local maxHp = building:GetAttribute("MaxHP")
+			if building ~= tower and hp and maxHp and hp > 0 and hp < maxHp
+				and (building:GetPivot().Position - origin).Magnitude <= towerData.range then
+				local ratio = hp / maxHp
+				if not bestRatio or ratio < bestRatio then
+					best, bestRatio = building, ratio
+				end
+			end
+		end
+		if not best then
+			return false
+		end
+
+		local hp = best:GetAttribute("HP")
+		local maxHp = best:GetAttribute("MaxHP")
+		local healed = math.min(maxHp - hp, math.max(1, math.floor(towerData.damage * (healer.scale or 1) + 0.5)))
+		best:SetAttribute("HP", hp + healed)
+		-- Отрицательная цифра — это лечение: клиент рисует её зелёным плюсом (CombatFX).
+		DamageDealtRemote:FireAllClients(best:GetPivot().Position, -healed, true)
+		return true
+	end
+
 	-- Здесь осталось только общее для всех турелей: залитый элемент, разгон Воздуха и темп.
 	-- Сам удар — за fireMode (FIRE_MODES выше): он возвращает, состоялся ли выстрел, и больше
 	-- цикл о нём ничего не знает.
@@ -632,7 +669,12 @@ return function(deps)
 				-- Площадных это касается так же: глушится любая турель, а не только стреляющая снарядом.
 				local fired = false
 				if not tower:GetAttribute("Suppressed") then
-					fired = fire(tower, towerData, elementData, aimState)
+					-- Жизнь превращает любую турель в хилер: ни цели, ни снаряда, ни площади.
+					if elementData and elementData.healer then
+						fired = healStructures(tower, towerData, elementData.healer)
+					else
+						fired = fire(tower, towerData, elementData, aimState)
+					end
 				elseif tower:GetAttribute("HatchOpen") then
 					-- Заглушённая Лицехватом станция никого не выпускает — значит и люк закрыт.
 					-- Формально это общий цикл, но атрибут есть только у неё: без этой ветки люк

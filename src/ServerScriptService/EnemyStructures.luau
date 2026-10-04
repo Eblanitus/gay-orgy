@@ -1,9 +1,9 @@
--- Всё, что жуки ставят на карте сами (design: alchemy_td_enemies.md, каста 1 и каста 3).
+-- Всё, что жуки ставят на карте сами (каста 1 и каста 3).
 --
 -- Семь видов объектов, все одной механикой жизни (HP, горение, снос):
 --
---   ruin   — руина. Остаётся от ЛЮБОЙ разрушенной постройки и от Окопщика
---            с Пеликаном. Строитель их ест и строит из них всё остальное.
+--   ruin   — руина. Остаётся от ЛЮБОЙ разрушенной постройки и от
+--            Пеликана. Строитель их ест и строит из них всё остальное.
 --   wall   — Стена Строителя: «блокирует линию огня турелей». Жукам она НЕ мешает
 --            и клетки сетки не занимает: займи она их — жуки стали бы обгрызать
 --            собственную постройку. За ней они «группируются безопасно» — именно
@@ -92,9 +92,11 @@ local function build(kind, position, lift, facing, size)
 	part.Color = spec.color
 	part.Material = kind == "chitin" and Enum.Material.Glass or Enum.Material.Slate
 	part.Anchored = true
-	-- Ни одна из них не толкается физически: жуки ходят по маршруту, а игрок должен
-	-- мочь пройти сквозь. Луч линии огня ищет их по белому списку, а не по коллизии.
-	part.CanCollide = false
+	-- Твёрдые: всё, что лежит на карте, игрок обходит или перелезает, а трупы и лапы ложатся
+	-- сверху. Жукам это не мешает (они анкорнуты, их группа с Default не сталкивается), линии
+	-- огня тоже: папка EnemyStructures исключена из луча Targeting, а закрывание линии огня
+	-- Стеной считается отдельно (BlocksLine).
+	part.CanCollide = true
 	part.CanTouch = false
 	lift = lift or (part.Size.Y / 2)
 	local at = Vector3.new(position.X,
@@ -165,7 +167,7 @@ local function rubble(model, centre, material)
 		local chunk = Instance.new("Part")
 		chunk.Name = "Chunk"
 		chunk.Anchored = true
-		chunk.CanCollide = false
+		chunk.CanCollide = true
 		chunk.CanTouch = false
 		chunk.CanQuery = false
 		chunk.Size = Vector3.new(0.8 + math.random() * 0.9, 0.5 + math.random() * 0.5,
@@ -181,12 +183,17 @@ end
 
 -- Руина на месте разрушенного. maxHp — прочность того, что снесли: от неё зависят
 -- и размер кучи, и сколько из неё можно вынести.
-function EnemyStructures.Ruin(position, maxHp)
-	local material = math.clamp(math.round((maxHp or 0) / HP_PER_MATERIAL), 1, MAX_MATERIAL)
-	return EnemyStructures.DropMaterial(position, material)
+-- Сколько единиц материала даёт разрушенное с такой прочностью. Отдельно — то же число
+-- нужно обломкам турелей (TowerDebris): там материал — сами отломанные детали.
+function EnemyStructures.MaterialFor(maxHp)
+	return math.clamp(math.round((maxHp or 0) / HP_PER_MATERIAL), 1, MAX_MATERIAL)
 end
 
--- Оставить кучу с заданным запасом материала — Окопщик выносит его из окопа,
+function EnemyStructures.Ruin(position, maxHp)
+	return EnemyStructures.DropMaterial(position, EnemyStructures.MaterialFor(maxHp))
+end
+
+-- Оставить кучу с заданным запасом материала —
 -- Пеликан оставляет наевшись, работяга приносит Строителю.
 function EnemyStructures.DropMaterial(position, material)
 	material = math.max(1, math.floor(material or 1))
@@ -314,9 +321,32 @@ function EnemyStructures.OnChitin(position)
 	return false
 end
 
+-- На сколько верх построек жуков в этой точке выше пола. 0 — построек тут нет.
+-- Толкучка поднимает на это тело жука (Crowd), как на обломки турелей: жук перелезает
+-- руину, кокон или Стену, а не проходит сквозь. Повёрнутые (Стена, Пандус) считаются
+-- в осях самой детали: у Пандуса верх наклонный, высота берётся в точке под жуком.
+function EnemyStructures.HeightAt(x, z)
+	local best = nil
+	for _, record in live do
+		local part = record.part
+		local cf, size = part.CFrame, part.Size
+		local p = cf:PointToObjectSpace(Vector3.new(x, cf.Position.Y, z))
+		if math.abs(p.X) <= size.X / 2 and math.abs(p.Z) <= size.Z / 2 then
+			local top = (cf * CFrame.new(p.X, size.Y / 2, p.Z)).Position.Y
+			if not best or top > best then
+				best = top
+			end
+		end
+	end
+	if not best then
+		return 0
+	end
+	return math.max(0, best - ConcreteFloor.HeightAt(x, z))
+end
+
 -- Закрывает ли Стена жуков линию между двумя точками. Считается арифметикой, а не
--- лучом: Стены не сталкиваются (игрок должен проходить сквозь), а включать им коллизию
--- ради одного луча значило бы сломать всё остальное.
+-- лучом: папка построек жуков исключена из луча линии огня целиком (руина или кокон
+-- не должны глушить турель), а Стене нужна своя проверка.
 function EnemyStructures.BlocksLine(from, to)
 	-- Быстрый выход: без Стен проверять нечего. Эту функцию зовёт каждая турель на
 	-- каждую цель каждый выбор — то есть тысячи раз в секунду, а Строитель есть далеко
@@ -455,7 +485,7 @@ RunService.Heartbeat:Connect(function(dt)
 				wallCount -= 1
 			end
 		else
-			-- Держимся пола: он ездит вверх и вниз под нами — Окопщик копает там, где стоит,
+			-- Держимся пола: он ездит вверх и вниз под нами — Строитель роет ямку там, где стоит,
 			-- а Литосфера меняет рельеф целыми участками. Без этого руина, под которой вырыли
 			-- окоп, оставалась висеть в воздухе, а под поднявшимся полом — уходила под землю целиком.
 			--

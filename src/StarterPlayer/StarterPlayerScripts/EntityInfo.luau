@@ -16,7 +16,7 @@ local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 
 local EntityInfo = {}
 
--- Названия каст — из вики (alchemy_td_enemies_v1.1.md, раздел «Касты»).
+-- Названия каст — из вики.
 -- Каста — не уровень силы, а роль в колонии; в таблице жуков у них только номера.
 EntityInfo.CASTE_NAME = {
 	[0] = "Разведчики",
@@ -33,8 +33,6 @@ EntityInfo.ENEMY_TRAITS = {
 	{ field = "regen", label = "регенерация" },
 	{ field = "heals", label = "лечит своих" },
 	{ field = "spits", label = "плюётся" },
-	{ field = "digs", label = "копает" },
-	{ field = "burrows", label = "уходит под землю" },
 	{ field = "builds", label = "строит" },
 	{ field = "carries", label = "носит других" },
 	{ field = "cocoons", label = "плетёт коконы" },
@@ -44,7 +42,6 @@ EntityInfo.ENEMY_TRAITS = {
 	{ field = "mimics", label = "маскируется" },
 	{ field = "shadow", label = "тень" },
 	{ field = "commands", label = "командует" },
-	{ field = "directs", label = "направляет" },
 	{ field = "absorbs", label = "поглощает урон" },
 	{ field = "scavenges", label = "подбирает" },
 	{ field = "rams", label = "таранит" },
@@ -425,6 +422,8 @@ EntityInfo.ELEMENT_EFFECTS = {
 	{ field = "slowGrowth", label = "накапливающееся замедление" },
 	{ field = "slowRamp", label = "застывание" },
 	{ field = "burnCatalyst", label = "улучшает горение" },
+	{ field = "burnBoost", label = "усиливает горение" },
+	{ field = "cleanse", label = "переманивает жука" },
 	{ field = "amplifier", label = "усиливает эффекты" },
 	{ field = "blind", label = "слепота" },
 	{ field = "confusion", label = "сбивает с пути" },
@@ -450,7 +449,7 @@ EntityInfo.ELEMENT_EFFECTS = {
 	end },
 	-- Жизнь не бьёт врагов, и плодов с убитых у неё не бывает.
 	{ field = "killHeal", label = function(_, element)
-		return not element.healer and "лечащие плоды" or nil
+		return not element.healer and "росток: лечащие плоды и шипы" or nil
 	end },
 	{ field = "killBarrier", label = "преграда при смерти" },
 }
@@ -496,6 +495,58 @@ end
 
 function EntityInfo.ElementEffects(key, element)
 	return collect(EntityInfo.ELEMENT_EFFECTS, key, element)
+end
+
+-- ============ Останки ============
+-- Что элемент делает с трупом добитого жука (по вики). Порядок — как у сервера
+-- (Effects.RemainsOf): метка при смерти, статуя, свой вид, мокрый, горение, тело.
+EntityInfo.REMAINS_WORDS = {
+	crush = "колет панцирь, а о стену — в лепёшку",
+	melt = "плавит жука в лужицу",
+	dissolve = "растворяет жука",
+	gib = "разрывает жука, остаются лапы",
+	destroy = "сжигает жука без следа",
+	brittle = "промораживает труп, он лопается",
+	char = "обугливает, труп осыпается",
+	statue = "превращает жука в статую",
+	wet = "оставляет целый труп, тушит горящих",
+	body = "оставляет целый труп",
+}
+
+-- Метки при смерти: труп становится эффектом.
+EntityInfo.TRANSFORM_WORDS = {
+	Hurricane = "труп превращается в зону урагана",
+	Coal = "труп превращается в зону пепла",
+	Rain = "труп взрывается дождевой тучей",
+	Snow = "труп взрывается снежной тучей",
+	AcidRain = "труп превращается в кислотную зону",
+	Drought = "труп превращается в зону засухи",
+	Blizzard = "труп превращается в зону метели",
+	Cloud = "труп взрывается облаком",
+	Mountain = "труп становится горой",
+	Earthquake = "труп превращается в зону землетрясения",
+	Plant = "из трупа вырастает растение",
+	Tree = "из трупа вырастает растение",
+}
+
+-- Строка «останки» карточки элемента; у загадки (Антиматерия) — nil, строки нет.
+function EntityInfo.ElementRemains(key, element)
+	if EntityInfo.MYSTERY[key] then
+		return nil
+	end
+	local words = EntityInfo.REMAINS_WORDS
+	if element.deathMark then
+		return EntityInfo.TRANSFORM_WORDS[key] or "труп превращается в эффект"
+	elseif key == "Clay" then
+		return words.statue
+	elseif element.remains then
+		return words[element.remains]
+	elseif element.wet then
+		return words.wet
+	elseif element.burning or BURNS[key] then
+		return words.char
+	end
+	return words.body
 end
 
 

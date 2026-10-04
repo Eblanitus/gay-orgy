@@ -109,7 +109,7 @@ hpLabel.Text = "-"
 hpLabel.TextColor3 = Theme.color.accent
 
 -- Шкала прочности: одна заливка по доле оставшегося HP, а не ячейки: прочность стола
--- (alchemy_td_enemies_v1.1.md, «Лабораторный стол») считается сотнями очков (LabTable.MAX_HP),
+-- («Лабораторный стол») считается сотнями очков (LabTable.MAX_HP),
 -- по очку на ячейку панель не построишь.
 local hpBar = Instance.new("Frame")
 hpBar.Size = UDim2.new(1, -28, 0, 6)
@@ -464,7 +464,7 @@ Remotes.RunEnded.OnClientEvent:Connect(function(won)
 	Theme.Static()
 	startWaveButton.Visible = false
 	cancelWaveHold()
-	-- Сервер тут же возвращает игрока в лобби (alchemy_td_lobby.md, шаг 3) — панель забега прячем,
+	-- Сервер тут же возвращает игрока в лобби — панель забега прячем,
 	-- баннер остаётся висеть поверх лобби до следующего WaveReady/WaveChanged.
 	frame.Visible = false
 end)

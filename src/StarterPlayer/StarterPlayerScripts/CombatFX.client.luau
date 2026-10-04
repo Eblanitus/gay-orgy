@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
+local RunService = game:GetService("RunService")
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 -- Турель на риге узнаётся по таблице (Towers[тип].rig), а не по имени деталей:
@@ -15,6 +16,8 @@ local Towers = require(ReplicatedStorage:WaitForChild("Towers"))
 local Theme = require(script.Parent:WaitForChild("UITheme"))
 -- Настройка «Цифры урона» из главного меню — см. onDamageDealt.
 local Settings = require(script.Parent:WaitForChild("Settings"))
+-- Камни удара в землю — настоящая физика, с общим учётом и растворением.
+local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 
 local function makeAnchor(position)
 	local anchor = Instance.new("Part")
@@ -216,6 +219,7 @@ local function onShotFired(fromPos, color, tower)
 end
 
 -- Урон: всплывающая цифра, белая для базового урона башни, оранжевая для тика эффекта.
+-- Отрицательная — лечение постройки (хилер с Жизнью): зелёный плюс.
 --
 -- Выключается в настройках («Цифры урона»): на куче жуков под огнём нескольких турелей
 -- числа идут десятками в секунду и закрывают саму кучу. Отказ стоит в самом начале,
@@ -238,8 +242,13 @@ local function onDamageDealt(position, amount, isBase)
 	label.BackgroundTransparency = 1
 	label.FontFace = Theme.font.strong
 	label.TextScaled = true
-	label.Text = "-" .. tostring(amount)
-	label.TextColor3 = isBase and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(255, 140, 40)
+	if amount < 0 then
+		label.Text = "+" .. tostring(-amount)
+		label.TextColor3 = Color3.fromRGB(90, 255, 140)
+	else
+		label.Text = "-" .. tostring(amount)
+		label.TextColor3 = isBase and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(255, 140, 40)
+	end
 	label.TextStrokeTransparency = 0.2
 	label.Parent = gui
 
@@ -481,11 +490,504 @@ local function onPyroExplosion(position, radius)
 	Debris:AddItem(anchor, 1.2)
 end
 
--- Развилка по третьему аргументу: цвет шлёт только подрыв дрона (Projectile.burst),
--- Порох и Взрыв (Effects) шлют два аргумента, как и шлали.
-local function onExplosion(position, radius, droneColor)
+-- Облачный взрыв (Облако, Дождь, Снег при смерти жука): облако лопается, а не горит.
+-- Ни вспышки, ни огня, ни тёмного дыма — мягкий шар пара раздувается до радиуса удара,
+-- клубы разлетаются и тают, пар поднимается вверх. Оттенок — свой у каждого облака
+-- (blastColor в Elements), а из дождевого и снежного ещё падает осадок: облака
+-- различаются и цветом, и тем, что из них сыплется.
+local PUFF_TEXTURE = "rbxasset://textures/particles/smoke_main.dds"
+
+local function cloudBlast(position, radius, color, kind)
+	radius = radius or BASE_EXPLOSION_RADIUS
+	color = color or Color3.fromRGB(225, 230, 240)
+	local scale = math.clamp(radius / BASE_EXPLOSION_RADIUS, 0.6, 2.5)
+	local anchor = makeAnchor(position)
+	local white = Color3.fromRGB(245, 248, 252)
+
+	-- Шар пара: светлый, плотный в начале, раздувается ровно до радиуса и тает.
+	-- Медленнее огненной вспышки — облако лопается мягко.
+	local puff = Instance.new("Part")
+	puff.Shape = Enum.PartType.Ball
+	puff.Size = Vector3.new(1, 1, 1) * radius * 0.4
+	puff.Anchored = true
+	puff.CanCollide = false
+	puff.CanQuery = false
+	puff.CastShadow = false
+	puff.Material = Enum.Material.SmoothPlastic
+	puff.Color = color
+	puff.Transparency = 0.35
+	puff.Position = position
+	puff.Parent = anchor
+
+	TweenService:Create(puff, TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		Size = Vector3.new(1, 1, 1) * radius * 2,
+		Transparency = 1,
+	}):Play()
+
+	-- Волна по земле: широкое бледное кольцо, без неона — не огонь.
+	local ring = Instance.new("Part")
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.15, 1, 1)
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CastShadow = false
+	ring.Material = Enum.Material.SmoothPlastic
+	ring.Color = color
+	ring.Transparency = 0.45
+	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = anchor
+
+	TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.15, radius * 2.2, radius * 2.2),
+		Transparency = 1,
+	}):Play()
+
+	-- Клубы: крупные, разлетаются до края радиуса, тормозят и тают на месте.
+	local clouds = Instance.new("ParticleEmitter")
+	clouds.Texture = PUFF_TEXTURE
+	clouds.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, white:Lerp(color, 0.6)),
+		ColorSequenceKeypoint.new(1, color),
+	})
+	clouds.LightInfluence = 0.6
+	clouds.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.15),
+		NumberSequenceKeypoint.new(0.6, 0.45),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	clouds.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1.5 * scale),
+		NumberSequenceKeypoint.new(1, 4.5 * scale),
+	})
+	clouds.Lifetime = NumberRange.new(0.8, 1.3)
+	clouds.Speed = NumberRange.new(radius * 1.6, radius * 2.6)
+	clouds.Drag = 3
+	clouds.Rotation = NumberRange.new(0, 360)
+	clouds.RotSpeed = NumberRange.new(-40, 40)
+	clouds.SpreadAngle = Vector2.new(180, 180)
+	clouds.Rate = 0
+	clouds.Parent = anchor
+	clouds:Emit(math.floor(22 * scale + 0.5))
+
+	-- Пар: тонкие струйки поднимаются над местом смерти и висят дольше клубов.
+	local steam = Instance.new("ParticleEmitter")
+	steam.Texture = PUFF_TEXTURE
+	steam.Color = ColorSequence.new(white:Lerp(color, 0.5))
+	steam.LightInfluence = 0.6
+	steam.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.5),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	steam.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.8 * scale),
+		NumberSequenceKeypoint.new(1, 2.5 * scale),
+	})
+	steam.Lifetime = NumberRange.new(1.2, 1.8)
+	steam.Speed = NumberRange.new(2, 5)
+	steam.Acceleration = Vector3.new(0, 4, 0)
+	steam.Rotation = NumberRange.new(0, 360)
+	steam.SpreadAngle = Vector2.new(60, 60)
+	steam.EmissionDirection = Enum.NormalId.Top
+	steam.Rate = 0
+	steam.Parent = anchor
+	steam:Emit(math.floor(12 * scale + 0.5))
+
+	-- Осадок: сыплется с плоской «тучи» над местом смерти на весь радиус удара.
+	-- Частицы летят из нижней грани плашки, поэтому падают по всей площади, а не из точки.
+	if kind == "rain" or kind == "snow" then
+		local sky = Instance.new("Part")
+		sky.Anchored = true
+		sky.CanCollide = false
+		sky.CanQuery = false
+		sky.Transparency = 1
+		sky.Size = Vector3.new(radius * 1.6, 0.2, radius * 1.6)
+		sky.Position = position + Vector3.new(0, 5, 0)
+		sky.Parent = anchor
+
+		local fall = Instance.new("ParticleEmitter")
+		fall.EmissionDirection = Enum.NormalId.Bottom
+		fall.SpreadAngle = Vector2.new(4, 4)
+		fall.Rate = 0
+		if kind == "rain" then
+			-- Капли: мелкие, быстрые, вытянуты по полёту.
+			fall.Color = ColorSequence.new(Color3.fromRGB(150, 185, 230))
+			fall.LightEmission = 0.3
+			fall.Orientation = Enum.ParticleOrientation.VelocityParallel
+			fall.Size = NumberSequence.new(0.12)
+			fall.Transparency = NumberSequence.new(0.2)
+			fall.Lifetime = NumberRange.new(0.25, 0.35)
+			fall.Speed = NumberRange.new(18, 24)
+			fall.Parent = sky
+			fall:Emit(math.floor(60 * scale + 0.5))
+		else
+			-- Хлопья: белые, медленные, кружатся и тают у земли.
+			fall.Texture = PUFF_TEXTURE
+			fall.Color = ColorSequence.new(Color3.fromRGB(250, 252, 255))
+			fall.LightEmission = 0.4
+			fall.Size = NumberSequence.new(0.35)
+			fall.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.1),
+				NumberSequenceKeypoint.new(0.8, 0.3),
+				NumberSequenceKeypoint.new(1, 1),
+			})
+			fall.Lifetime = NumberRange.new(1.4, 2)
+			fall.Speed = NumberRange.new(2, 3.5)
+			fall.Rotation = NumberRange.new(0, 360)
+			fall.RotSpeed = NumberRange.new(-90, 90)
+			fall.Parent = sky
+			fall:Emit(math.floor(40 * scale + 0.5))
+		end
+	end
+
+	Debris:AddItem(anchor, 2.5)
+end
+
+-- Земля под точкой взрыва: удар считается от середины жука, а пыль, трещины и лужа
+-- ложатся на пол — с ямами и вздутиями рельефа (Loose.FloorAt).
+local function groundUnder(position)
+	return Vector3.new(position.X, Loose.FloorAt(position.X, position.Z, position.Y - 1.5), position.Z)
+end
+
+-- Плоский круг на полу (кольцо волны, пятно, лужа): цилиндр лёжа.
+local function floorDisc(anchor, ground, diameter, color, material, transparency)
+	local disc = Instance.new("Part")
+	disc.Shape = Enum.PartType.Cylinder
+	disc.Size = Vector3.new(0.12, diameter, diameter)
+	disc.Anchored = true
+	disc.CanCollide = false
+	disc.CanQuery = false
+	disc.CanTouch = false
+	disc.CastShadow = false
+	disc.Material = material or Enum.Material.SmoothPlastic
+	disc.Color = color
+	disc.Transparency = transparency or 0
+	disc.CFrame = CFrame.new(ground + Vector3.new(0, 0.07, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	disc.Parent = anchor
+	return disc
+end
+
+-- Тряска камеры от удара в землю: тем слабее, чем дальше игрок. Смещение вешается
+-- поверх камеры каждый кадр и гаснет само — управление камерой не перехватывается.
+local shakeLeft, shakeStrength = 0, 0
+local function shakeCamera(position, strength, reach)
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return
+	end
+	local distance = (camera.Focus.Position - position).Magnitude
+	if distance > reach then
+		return
+	end
+	local felt = strength * (1 - distance / reach)
+	if felt <= shakeStrength * shakeLeft / 0.35 then
+		return
+	end
+	shakeStrength, shakeLeft = felt, 0.35
+end
+
+RunService:BindToRenderStep("KillBlastShake", Enum.RenderPriority.Camera.Value + 1, function(dt)
+	if shakeLeft <= 0 then
+		return
+	end
+	shakeLeft = math.max(0, shakeLeft - dt)
+	local amount = shakeStrength * shakeLeft / 0.35
+	local camera = Workspace.CurrentCamera
+	if camera then
+		camera.CFrame *= CFrame.new((math.random() - 0.5) * amount, (math.random() - 0.5) * amount, 0)
+	end
+end)
+
+-- Удар в землю (Континент — "quake") и разлом (Литосфера — "rift") при смерти жука.
+-- Не огонь и не облако: тяжёлое бьёт в пол. Пыль стелется низко по полу до радиуса удара,
+-- от места смерти расходятся трещины, вверх летят камни и падают обратно. power (0..1) —
+-- сила удара от величины убитого (Effects.applyKillDamage): по вики «чем больше жук — тем
+-- сильнее удар», и рой должен давать хлопок, а танк — воронку.
+--
+-- Разлом Литосферы — тот же удар, но глубже: волна идёт тремя кольцами одно за другим,
+-- трещин больше и в них светятся недра, посередине провал, камни крупнее и выше.
+-- Ландшафт под этим поднимает или опускает сам Lithosphere — здесь только удар.
+local function earthBlast(position, radius, color, power, kind)
+	radius = radius or BASE_EXPLOSION_RADIUS
+	color = color or Color3.fromRGB(140, 125, 90)
+	power = math.clamp(power or 1, 0, 1)
+	local rift = kind == "rift"
+	local scale = math.clamp(radius / BASE_EXPLOSION_RADIUS, 0.6, 2.5)
+	local force = 0.45 + 0.55 * power
+	local ground = groundUnder(position)
+	local anchor = makeAnchor(ground)
+	local dust = Color3.fromRGB(200, 185, 150):Lerp(color, 0.35)
+	local dark = color:Lerp(Color3.new(0, 0, 0), 0.6)
+	local magma = Color3.fromRGB(255, 110, 35)
+
+	-- Волна по полу: пыльное кольцо до радиуса удара. У разлома — три подряд.
+	for wave = 0, rift and 2 or 0 do
+		task.delay(wave * 0.16, function()
+			local ring = floorDisc(anchor, ground, 1, dust, Enum.Material.Sand, 0.25)
+			TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Size = Vector3.new(0.12, radius * 2.1, radius * 2.1),
+				Transparency = 1,
+			}):Play()
+		end)
+	end
+
+	-- Вмятина: тёмное пятно под местом смерти; у разлома посередине светится провал.
+	local dent = floorDisc(anchor, ground, radius * 0.5 * force, dark, Enum.Material.Slate, 0.15)
+	if rift then
+		local glow = floorDisc(anchor, ground + Vector3.new(0, 0.02, 0), radius * 0.22 * force, magma, Enum.Material.Neon, 0.1)
+		-- Сразу за ударом Lithosphere двигает пол (яма или вздутие), и плиты едут не мгновенно:
+		-- пятно и провал едут вместе с полом под местом смерти, а не висят на старой высоте.
+		task.spawn(function()
+			local lastY = ground.Y
+			local started = os.clock()
+			while dent.Parent and os.clock() - started < 2.6 do
+				task.wait(0.05)
+				local y = Loose.FloorAt(ground.X, ground.Z, lastY)
+				if math.abs(y - lastY) > 1e-3 then
+					local shift = CFrame.new(0, y - lastY, 0)
+					dent.CFrame = shift * dent.CFrame
+					glow.CFrame = shift * glow.CFrame
+					lastY = y
+				end
+			end
+		end)
+		local light = Instance.new("PointLight")
+		light.Color = magma
+		light.Range = radius * 0.9
+		light.Brightness = 3
+		light.Shadows = false
+		light.Parent = glow
+		TweenService:Create(light, TweenInfo.new(2.2), { Brightness = 0 }):Play()
+		TweenService:Create(glow, TweenInfo.new(1.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 1), {
+			Transparency = 1,
+		}):Play()
+	end
+	TweenService:Create(dent, TweenInfo.new(1, Enum.EasingStyle.Linear, Enum.EasingDirection.In, 0, false, 1.4), {
+		Transparency = 1,
+	}):Play()
+
+	-- Трещины: тонкие клинья по полу из места смерти, вытягиваются за доли секунды.
+	local cracks = rift and 9 or 6
+	for i = 1, cracks do
+		local angle = (i / cracks + (math.random() - 0.5) * 0.08) * math.pi * 2
+		local length = radius * (rift and 0.75 or 0.55) * force * (0.7 + math.random() * 0.4)
+		local width = (rift and 0.45 or 0.3) * (0.7 + math.random() * 0.5)
+		local base = CFrame.new(ground + Vector3.new(0, 0.1, 0)) * CFrame.Angles(0, angle, 0)
+		local crack = Instance.new("Part")
+		crack.Anchored = true
+		crack.CanCollide = false
+		crack.CanQuery = false
+		crack.CanTouch = false
+		crack.CastShadow = false
+		crack.Material = rift and Enum.Material.Neon or Enum.Material.Slate
+		crack.Color = rift and magma or dark
+		crack.Size = Vector3.new(width, 0.08, 0.1)
+		crack.CFrame = base * CFrame.new(0, 0, -0.05)
+		crack.Parent = anchor
+		TweenService:Create(crack, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = Vector3.new(width, 0.08, length),
+			CFrame = base * CFrame.new(0, 0, -length / 2),
+		}):Play()
+		-- Трещины разлома гаснут раньше пятна: пол под ними сейчас поедет, а они лежат по старому.
+		TweenService:Create(crack, TweenInfo.new(rift and 0.6 or 1, Enum.EasingStyle.Linear, Enum.EasingDirection.In, 0, false, rift and 0.5 or 1.2), {
+			Transparency = 1,
+		}):Play()
+	end
+
+	-- Пыль: низко по полу во все стороны до края удара, тормозит и висит.
+	local cloud = Instance.new("ParticleEmitter")
+	cloud.Texture = PUFF_TEXTURE
+	cloud.Color = ColorSequence.new(dust)
+	cloud.LightInfluence = 0.8
+	cloud.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(0.6, 0.5),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	cloud.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1.2 * scale),
+		NumberSequenceKeypoint.new(1, 3.8 * scale),
+	})
+	cloud.Lifetime = NumberRange.new(0.9, 1.5)
+	cloud.Speed = NumberRange.new(radius * 1.4, radius * 2.4)
+	cloud.Drag = 3.5
+	cloud.Rotation = NumberRange.new(0, 360)
+	cloud.RotSpeed = NumberRange.new(-30, 30)
+	cloud.EmissionDirection = Enum.NormalId.Top
+	cloud.SpreadAngle = Vector2.new(80, 80)
+	cloud.Acceleration = Vector3.new(0, -2, 0)
+	cloud.Rate = 0
+	cloud.Parent = anchor
+	cloud:Emit(math.floor((rift and 30 or 18) * force * scale + 0.5))
+
+	-- Камни: настоящие детали в физике — вылетают, падают и раскатываются по полу,
+	-- потом растворяются. Учёт и потолок — общий (Loose.Track, вид "rock").
+	local rocks = math.floor((rift and 8 or 4) + (rift and 8 or 6) * power + 0.5)
+	local rockColor = color:Lerp(Color3.fromRGB(70, 65, 60), 0.4)
+	for _ = 1, rocks do
+		local size = (rift and 0.7 or 0.45) + math.random() * (rift and 0.8 or 0.5)
+		local rock = Instance.new("Part")
+		rock.Size = Vector3.new(size, size * (0.6 + math.random() * 0.4), size * (0.7 + math.random() * 0.5))
+		rock.Material = Enum.Material.Slate
+		rock.Color = rockColor:Lerp(dark, math.random() * 0.5)
+		rock.CanQuery = false
+		rock.CanTouch = false
+		rock.CFrame = CFrame.new(ground + Vector3.new(0, size, 0)) * CFrame.Angles(math.random() * 6, math.random() * 6, math.random() * 6)
+		rock.Parent = anchor
+		local angle = math.random() * math.pi * 2
+		local out = Vector3.new(math.cos(angle), 0, math.sin(angle)) * (6 + math.random() * 8) * force
+		local up = Vector3.new(0, (rift and 26 or 18) + math.random() * 12, 0) * force
+		Loose.Spawn(rock, { folder = "Debris", tag = false, velocity = out + up, spin = Loose.RandomSpin(10) })
+		Loose.Track(rock, "rock")
+		task.delay(1.8 + math.random() * 0.8, function()
+			Loose.Dissolve(rock, 0.8)
+		end)
+	end
+
+	shakeCamera(ground, (rift and 0.9 or 0.45) * force, radius * 4)
+	Debris:AddItem(anchor, rift and 3.2 or 2.6)
+end
+
+-- Водный взрыв (Океан — "wave") при смерти жука: не горит и не клубится, а плещет.
+-- Из места смерти бьёт столб воды и опадает, брызги летят дугой и падают, по полу
+-- разбегается пенное кольцо до радиуса удара — по нему видно, кого намочило (по вики
+-- задетые получают Мокрость). Остаётся лужа и медленно высыхает.
+local function waveBlast(position, radius, color)
+	radius = radius or BASE_EXPLOSION_RADIUS
+	color = color or Color3.fromRGB(0, 165, 155)
+	local scale = math.clamp(radius / BASE_EXPLOSION_RADIUS, 0.6, 2.5)
+	local ground = groundUnder(position)
+	local anchor = makeAnchor(ground)
+	local foam = Color3.fromRGB(235, 250, 250)
+	local light = color:Lerp(foam, 0.45)
+
+	-- Купол: прозрачный шар воды раздувается и лопается.
+	local dome = Instance.new("Part")
+	dome.Shape = Enum.PartType.Ball
+	dome.Size = Vector3.new(1, 1, 1) * radius * 0.3
+	dome.Anchored = true
+	dome.CanCollide = false
+	dome.CanQuery = false
+	dome.CanTouch = false
+	dome.CastShadow = false
+	dome.Material = Enum.Material.Glass
+	dome.Color = light
+	dome.Transparency = 0.35
+	dome.Position = ground + Vector3.new(0, radius * 0.1, 0)
+	dome.Parent = anchor
+	TweenService:Create(dome, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(1, 1, 1) * radius * 1.4,
+		Transparency = 1,
+	}):Play()
+
+	-- Столб: вода бьёт вверх и опадает обратно.
+	local height = radius * 0.9
+	local column = Instance.new("Part")
+	column.Shape = Enum.PartType.Cylinder
+	column.Anchored = true
+	column.CanCollide = false
+	column.CanQuery = false
+	column.CanTouch = false
+	column.CastShadow = false
+	column.Material = Enum.Material.Glass
+	column.Color = color
+	column.Transparency = 0.3
+	column.Size = Vector3.new(0.2, radius * 0.25, radius * 0.25)
+	column.CFrame = CFrame.new(ground + Vector3.new(0, 0.1, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	column.Parent = anchor
+	local rise = TweenService:Create(column, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(height, radius * 0.4, radius * 0.4),
+		CFrame = CFrame.new(ground + Vector3.new(0, height / 2, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+	})
+	rise.Completed:Once(function()
+		TweenService:Create(column, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Size = Vector3.new(0.2, radius * 0.6, radius * 0.6),
+			CFrame = CFrame.new(ground + Vector3.new(0, 0.1, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+			Transparency = 0.9,
+		}):Play()
+	end)
+	rise:Play()
+
+	-- Пенное кольцо и за ним второе, водяное: волна до радиуса удара.
+	for wave, tint in { foam, light } do
+		task.delay((wave - 1) * 0.12, function()
+			local ring = floorDisc(anchor, ground, 1, tint, Enum.Material.SmoothPlastic, 0.3)
+			TweenService:Create(ring, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Size = Vector3.new(0.12, radius * 2.1, radius * 2.1),
+				Transparency = 1,
+			}):Play()
+		end)
+	end
+
+	-- Брызги: капли дугой вверх и в стороны, падают под тяжестью.
+	local spray = Instance.new("ParticleEmitter")
+	spray.Color = ColorSequence.new(light, color)
+	spray.LightEmission = 0.25
+	spray.Orientation = Enum.ParticleOrientation.VelocityParallel
+	spray.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(1, 0.12),
+	})
+	spray.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.1),
+		NumberSequenceKeypoint.new(0.8, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	spray.Lifetime = NumberRange.new(0.8, 1.2)
+	spray.Speed = NumberRange.new(radius * 2, radius * 3.2)
+	spray.Acceleration = Vector3.new(0, -60, 0)
+	spray.EmissionDirection = Enum.NormalId.Top
+	spray.SpreadAngle = Vector2.new(55, 55)
+	spray.Rate = 0
+	spray.Parent = anchor
+	spray:Emit(math.floor(70 * scale + 0.5))
+
+	-- Водяная пыль: низко над полом, светлая, тает.
+	local mist = Instance.new("ParticleEmitter")
+	mist.Texture = PUFF_TEXTURE
+	mist.Color = ColorSequence.new(foam:Lerp(color, 0.25))
+	mist.LightInfluence = 0.6
+	mist.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.45),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	mist.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1 * scale),
+		NumberSequenceKeypoint.new(1, 3 * scale),
+	})
+	mist.Lifetime = NumberRange.new(0.7, 1.1)
+	mist.Speed = NumberRange.new(radius * 1.2, radius * 2)
+	mist.Drag = 4
+	mist.EmissionDirection = Enum.NormalId.Top
+	mist.SpreadAngle = Vector2.new(85, 85)
+	mist.Rate = 0
+	mist.Parent = anchor
+	mist:Emit(math.floor(14 * scale + 0.5))
+
+	-- Лужа: блестящее пятно воды на полу, сохнет и сжимается.
+	local puddle = floorDisc(anchor, ground, radius * 1.3, color, Enum.Material.Glass, 0.45)
+	puddle.Reflectance = 0.25
+	TweenService:Create(puddle, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 1.2), {
+		Size = Vector3.new(0.12, radius * 0.6, radius * 0.6),
+		Transparency = 1,
+	}):Play()
+
+	Debris:AddItem(anchor, 3.2)
+end
+
+-- Развилка по аргументам: цвет третьим шлёт только подрыв дрона (Projectile.burst),
+-- вид взрыва четвёртым — удар по области при смерти (Effects.applyKillDamage, поле blast).
+-- Шестой — сила удара (0..1) у ударов от величины жука. Порох и Взрыв шлют два
+-- аргумента, как и шлали.
+local function onExplosion(position, radius, droneColor, blast, color, power)
 	if droneColor then
 		droneBlast(position, radius, droneColor)
+	elseif blast == "cloud" or blast == "rain" or blast == "snow" then
+		cloudBlast(position, radius, color, blast)
+	elseif blast == "quake" or blast == "rift" then
+		earthBlast(position, radius, color, power, blast)
+	elseif blast == "wave" then
+		waveBlast(position, radius, color)
 	else
 		onPyroExplosion(position, radius)
 	end

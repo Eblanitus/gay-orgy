@@ -12,19 +12,22 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Inventory = require(ServerScriptService:WaitForChild("Inventory"))
 local Crafting = require(ServerScriptService:WaitForChild("Crafting"))
--- Прочность стола (design: alchemy_td_enemies.md): «Если стол уничтожен — комбинирование
+-- Прочность стола: «Если стол уничтожен — комбинирование
 -- невозможно или ограничено.» Проверка здесь, а не в Crafting: само смешивание
 -- про мебель не знает и знать не должно — это тот же вопрос доступа, что и nearTable.
 local LabTable = require(ServerScriptService:WaitForChild("LabTable"))
--- Справочник и производитель базовых элементов — отдельная мебель (alchemy_td_location_v1.6.md):
+-- Справочник и производитель базовых элементов — отдельная мебель:
 -- стол только для крафта, покупка — у производителя, дерево крафта — на доске.
 local LabStations = require(ServerScriptService:WaitForChild("LabStations"))
--- Второй режим того же производителя (alchemy_td_location_v1.6.md): случайный элемент
+-- Второй режим того же производителя: случайный элемент
 -- вместо выбора. Розыгрыш и деньги живут в Roulette, здесь — только доступ к автомату.
 local Roulette = require(ServerScriptService:WaitForChild("Roulette"))
 -- Третий режим того же автомата: элемент двигается вперёд по своей ветке.
 -- Проверки веток и розыгрыш живут в Upgrader, здесь — только доступ к автомату.
 local Upgrader = require(ServerScriptService:WaitForChild("Upgrader"))
+-- Обучение (задача #298): на нём только покупка четырёх базовых, остальное закрыто.
+local Tutorial = require(ServerScriptService:WaitForChild("Tutorial"))
+local TUTORIAL_CLOSED = "на обучении закрыто — пока только покупка базовых элементов"
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestCraft = Remotes:WaitForChild("RequestCraft")
@@ -47,6 +50,10 @@ prompt.ActionText = "Стол крафта"
 prompt.ObjectText = "Лаборатория"
 prompt.HoldDuration = 0
 prompt.MaxActivationDistance = 12
+-- Без проверки прямой видимости, как у подсказок станций: подсказка висит на невидимой
+-- столешнице Top, а её со всех сторон закрывает твёрдый с #386 корпус стола (MapCollision) —
+-- с проверкой стол не открывался вовсе.
+prompt.RequiresLineOfSight = false
 -- Стол берётся из LabTable: при смене локации подсказка переезжает на её стол.
 local function attachPrompt(craftTable)
 	prompt.Parent = craftTable:FindFirstChild("Top") or craftTable.PrimaryPart
@@ -150,9 +157,16 @@ RequestBuyElement.OnServerEvent:Connect(function(player, elementKey)
 		return
 	end
 
+	if not Tutorial.ElementAllowed(elementKey) then
+		Notify:FireClient(player, TUTORIAL_CLOSED)
+		return
+	end
+
 	local ok, reason = Inventory.Buy(elementKey)
 	if not ok then
 		Notify:FireClient(player, reason)
+	else
+		Tutorial.Report("buy")
 	end
 end)
 
@@ -170,6 +184,10 @@ end)
 
 RequestRouletteSpin.OnServerEvent:Connect(function(player, spins)
 	if typeof(spins) ~= "number" then
+		return
+	end
+	if Tutorial.IsRestricted() then
+		Notify:FireClient(player, TUTORIAL_CLOSED)
 		return
 	end
 	if not LabStations.IsAlive("ElementProducer") then
@@ -237,6 +255,10 @@ RequestUpgrade.OnServerEvent:Connect(function(player, fromKey, toKey)
 	if type(fromKey) ~= "string" or type(toKey) ~= "string" then
 		return
 	end
+	if Tutorial.IsRestricted() then
+		Notify:FireClient(player, TUTORIAL_CLOSED)
+		return
+	end
 	if not LabStations.IsAlive("ElementProducer") then
 		Notify:FireClient(player, "производитель разбит — апгрейдить негде")
 		return
@@ -281,6 +303,10 @@ end)
 
 RequestCraft.OnServerEvent:Connect(function(player, a, b)
 	if typeof(a) ~= "string" or typeof(b) ~= "string" then
+		return
+	end
+	if Tutorial.IsRestricted() then
+		Notify:FireClient(player, TUTORIAL_CLOSED)
 		return
 	end
 	if not Elements[a] or not Elements[b] then

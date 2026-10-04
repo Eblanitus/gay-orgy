@@ -180,7 +180,7 @@ tabBar.AnchorPoint = Vector2.new(0.5, 0)
 tabBar.Size = UDim2.new(1, -MARGIN * 2, 0, TAB_H)
 tabBar.BackgroundTransparency = 1
 tabBar.Parent = root
--- Стол, справочник и производитель — три отдельных предмета мебели (alchemy_td_location_v1.6.md):
+-- Стол, справочник и производитель — три отдельных предмета мебели:
 -- каждый открывает только свой раздел (см. PromptTriggered внизу), и переключаться из окна
 -- на чужой нельзя: купить элемент можно только у производителя. Полоса вкладок скрыта.
 tabBar.Visible = false
