@@ -4,9 +4,9 @@
 -- Порядок:
 --   1. Studio → Avatar/Home → Import 3D, по очереди все семь файлов из папки «Модели/Жуки»:
 --      mini_beetle.glb, hmuryi_bron.glb, moth.glb, worker_beetle.glb, builder_beetle.glb,
---      pelican_beetle.glb, standard_beetle.glb. Настройки импорта — по умолчанию. Импорт ляжет в Workspace
---      моделью AuxScene — переименовать в имя файла (worker_beetle и т.д.), по нему скрипт
---      и находит импорт.
+--      pelican_beetle.glb, standard_beetle.glb. Настройки импорта — по умолчанию. Импорт ляжет в Workspace;
+--      переименовывать не нужно — корень каждого .glb назван видом (worker_beetle и т.д.),
+--      по нему скрипт и находит импорт.
 --   2. View → Command Bar, вставить весь файл, Enter. В Output — отчёт по каждому жуку.
 --   3. Ctrl+S / Save to Roblox.
 -- Отменить: Ctrl+Z сразу после запуска.
@@ -220,15 +220,28 @@ local function inGroup(part, name)
 	return false
 end
 
+-- Импорт ищется по имени вида на любой глубине (корень .glb назван видом, Import 3D может
+-- обернуть его в AuxScene) — переименовывать руками ничего не нужно.
 local function findImport(source)
 	for _, container in { workspace, ServerStorage, ReplicatedStorage } do
-		for _, child in container:GetChildren() do
-			if child:IsA("Model") and child.Name:lower() == source then
-				return child
+		for _, d in container:GetDescendants() do
+			if d:IsA("Model") and baseName(d.Name):lower() == source then
+				return d
 			end
 		end
 	end
 	return nil
+end
+
+-- Удаляет импорт и опустевшие обёртки над ним (AuxScene и т.п.).
+local function removeImport(source)
+	local parent = source.Parent
+	source:Destroy()
+	while parent and parent:IsA("Model") and #parent:GetChildren() == 0 do
+		local up = parent.Parent
+		parent:Destroy()
+		parent = up
+	end
 end
 
 -- Края детали вдоль направления dir (мировые углы её коробки).
@@ -497,7 +510,7 @@ local function prepare(spec, normalRoot)
 	end
 	template.Parent = ReplicatedStorage
 	import:Destroy()
-	source:Destroy()
+	removeImport(source)
 
 	local _, size = template:GetBoundingBox()
 	local note = #unpainted > 0 and ("; без цвета: " .. table.concat(unpainted, ", ")) or ""
