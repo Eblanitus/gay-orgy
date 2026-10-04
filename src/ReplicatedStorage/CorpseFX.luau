@@ -37,7 +37,6 @@ local RunService = game:GetService("RunService")
 
 local CollectionService = game:GetService("CollectionService")
 
-local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local EnemyGait = require(ReplicatedStorage:WaitForChild("EnemyGait"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
@@ -105,6 +104,12 @@ local byId = setmetatable({}, { __mode = "v" })
 local container = Loose.Folder
 local dissolve = Loose.Dissolve
 local remember = Loose.Remember
+
+-- Высота опоры под моделью: плиты пола с ямами и обломки (Loose.FloorAt), а не плоский пол арены.
+local function floorUnder(model)
+	local at = model:GetPivot().Position
+	return Loose.FloorAt(at.X, at.Z)
+end
 
 -- Останки жука на месте смерти. Зовётся ДО enemy:Destroy() — модель ещё целая
 -- и стоит там, где его убили.
@@ -426,7 +431,7 @@ function Corpses.Leave(enemy, hit, id)
 	-- Тела нет — у вида своя картинка (CorpseRemains), туши в списке трупов не будет.
 	local special = hit and Remains[hit.remains]
 	if special then
-		special(enemy, hit, (hit.scale or 3) / 3, hit.floorY or Arena.floorY)
+		special(enemy, hit, (hit.scale or 3) / 3, hit.floorY or floorUnder(enemy))
 		return nil
 	end
 
@@ -581,10 +586,10 @@ function Corpses.Leave(enemy, hit, id)
 			smoke.Enabled = false
 		end)
 		-- Потом осыпается (по вики); запись на сервере снимется к тому же сроку.
-		Remains.crumble(corpse, scale, hit and hit.floorY or Arena.floorY)
+		Remains.crumble(corpse, scale, hit and hit.floorY or floorUnder(corpse))
 	end
 	if hit and hit.swampy then
-		Remains.swampy(corpse, scale, enemy:GetPivot().Position, hit.floorY or Arena.floorY)
+		Remains.swampy(corpse, scale, enemy:GetPivot().Position, hit.floorY or floorUnder(enemy))
 	end
 
 	-- Досадка на брюхо — общий цикл перед Corpses.Splat, для всех трупов сразу.
@@ -700,16 +705,15 @@ task.spawn(function()
 end)
 
 -- Пятно крови на полу. size — диаметр основного пятна в studs; drops — сколько вокруг
--- него брызг. Капля всегда ложится на пол арены, а не на ту высоту, где шла кровь:
+-- него брызг. Капля всегда ложится на опору под собой, а не на ту высоту, где шла кровь:
 -- следы боя нужны на карте, а не в воздухе над ней.
 --
 -- Плоский цилиндр, а не декаль с картинкой: текстура потребовала бы залитого
 -- ассета, а форма пятна собирается из нескольких кругов разного размера не хуже.
--- floorY переопределяет высоту пола для вызововшего (по умолчанию Arena.floorY) —
+-- floorY переопределяет высоту пола для вызвавшего (по умолчанию опора под каплей, Loose.FloorAt) —
 -- нужен тем, чьё поле живёт не на арене (например, Аркада).
 function Corpses.Splat(position, size, drops, floorY)
 	local folder = container("Blood")
-	local y = (floorY or Arena.floorY) + BLOOD_LIFT
 
 	local function drop(at, diameter)
 		local stain = Instance.new("Part")
@@ -719,6 +723,8 @@ function Corpses.Splat(position, size, drops, floorY)
 		-- на 90° по Z кладёт его плашмя. Овал вместо круга (Y и Z разные) — чтобы
 		-- пятна не читались одинаковыми штампами.
 		stain.Size = Vector3.new(BLOOD_THICKNESS, diameter, diameter * (0.75 + math.random() * 0.5))
+		-- Каждая капля — на свою опору: в яму, на обломок, на пол (Loose.FloorAt).
+		local y = (floorY or Loose.FloorAt(at.X, at.Z)) + BLOOD_LIFT
 		stain.CFrame = CFrame.new(at.X, y, at.Z)
 			* CFrame.Angles(0, math.random() * math.pi * 2, 0)
 			* CFrame.Angles(0, 0, math.rad(90))

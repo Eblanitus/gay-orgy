@@ -14,6 +14,7 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
+local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 
 local Loose = {}
 
@@ -206,6 +207,33 @@ function Loose.Push(found, offset)
 		local falloff = 1 - item.distance / plan.radius
 		Loose.Kick(item.root, direction * speed * falloff, Loose.RandomSpin(speed * 0.2 * falloff))
 	end
+end
+
+-- Высота опоры в точке (x, z): бетонные плиты пола (с ямами Строителя и Литосферы)
+-- и лежащие обломки турелей. Раньше всё, что ложится на пол (кровь, лужи, лепёшки, угли),
+-- клалось на одну плоскую высоту арены и висело в воздухе над ямой. fallback — если под
+-- точкой нет ни плит, ни обломков (Аркада, меню); по умолчанию пол арены.
+local FLOOR_FOLDERS = { "ConcreteFloor", "TowerDebris" }
+local FLOOR_PROBE = 30 -- studs над полом арены, откуда пускается луч: выше любого вздутия рельефа
+local floorParams = RaycastParams.new()
+floorParams.FilterType = Enum.RaycastFilterType.Include
+
+function Loose.FloorAt(x, z, fallback)
+	fallback = fallback or Arena.floorY
+	local include = {}
+	for _, name in FLOOR_FOLDERS do
+		local folder = Workspace:FindFirstChild(name)
+		if folder then
+			table.insert(include, folder)
+		end
+	end
+	if #include == 0 or not Arena.floorY then
+		return fallback
+	end
+	floorParams.FilterDescendantsInstances = include
+	local from = Vector3.new(x, Arena.floorY + FLOOR_PROBE, z)
+	local hit = Workspace:Raycast(from, Vector3.new(0, -FLOOR_PROBE * 2, 0), floorParams)
+	return hit and hit.Position.Y or fallback
 end
 
 -- Выпускает деталь или сборку в физику: снимает якорь, ставит группу столкновений,
