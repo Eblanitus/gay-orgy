@@ -115,6 +115,44 @@ function Loose.Remember(list, instance, limit)
 	end
 end
 
+-- Общий учёт живых деталей по видам: у каждого вида свой потолок (PhysicsFX.cleanup.limits),
+-- лишние самые старые растворяются. Ушедшее само (растаяло, разбилось, снесено по таймеру)
+-- выпадает из учёта по Destroying — отдельно «забывать» его не нужно.
+local tracked = {} -- [вид] = { экземпляры по порядку появления }
+function Loose.Track(instance, kind)
+	local limit = PhysicsFX.cleanup.limits[kind]
+	assert(limit, "Loose.Track: нет потолка для вида " .. tostring(kind))
+	local list = tracked[kind]
+	if not list then
+		list = {}
+		tracked[kind] = list
+	end
+	instance.Destroying:Once(function()
+		local index = table.find(list, instance)
+		if index then
+			table.remove(list, index)
+		end
+	end)
+	Loose.Remember(list, instance, limit)
+end
+
+-- Сколько деталей вида сейчас живо (для отладки и проверок).
+function Loose.Count(kind)
+	return tracked[kind] and #tracked[kind] or 0
+end
+
+-- Сносит всё учтённое сразу, без растворения (конец забега).
+function Loose.ClearTracked()
+	for _, list in tracked do
+		for _, instance in table.clone(list) do
+			if instance.Parent then
+				instance:Destroy()
+			end
+		end
+		table.clear(list)
+	end
+end
+
 function Loose.RandomSpin(amount)
 	return Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5) * 2 * amount
 end

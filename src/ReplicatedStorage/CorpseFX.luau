@@ -95,7 +95,6 @@ local BLOOD_LIFT = 0.03 -- studs над полом: тот же зазор пр�
 -- Живые останки в порядке появления: самый старый — первый в списке.
 local corpses = {}
 local stains = {}
-local pieces = {} -- оторванные конечности (см. detachPieces), свой потолок PhysicsFX.gore.fieldLimit
 -- Номер записи серверного Corpses -> туша: по нему Пеликан съедает именно тот труп, у которого стоит.
 -- Слабые значения: растворённая по лимиту туша уходит и отсюда сама.
 local byId = setmetatable({}, { __mode = "v" })
@@ -354,11 +353,7 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 			weld.Parent = root
 		end
 	end
-	for _, part in parts do
-		part.Anchored = false
-	end
-	piece.Parent = container("Debris")
-	CollectionService:AddTag(piece, Loose.Tag)
+	Loose.Spawn(piece, { folder = "Debris" })
 
 	-- Летит от удара и от тела сразу: только «от удара» сбило бы все куски в одну кучу,
 	-- только «от тела» — потеряло бы направление выстрела.
@@ -381,7 +376,7 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 	Loose.Kick(root, direction * speed + (carry or Vector3.zero), Loose.RandomSpin(plan.spin))
 
 	Corpses.Splat(root.Position, plan.splatSize * scale, 1, floorY)
-	remember(pieces, piece, plan.fieldLimit)
+	Loose.Track(piece, "gore")
 end
 
 -- Туша уходит не по лимиту (осыпалась, лопнула): из списка трупов и из номеров записей.
@@ -788,14 +783,9 @@ function Corpses.Clear()
 			stain:Destroy()
 		end
 	end
-	for _, piece in pieces do
-		if piece.Parent then
-			piece:Destroy()
-		end
-	end
+	Loose.ClearTracked() -- оторванные конечности и осколки
 	table.clear(corpses)
 	table.clear(stains)
-	table.clear(pieces)
 	table.clear(byId)
 end
 

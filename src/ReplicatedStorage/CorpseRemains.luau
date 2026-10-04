@@ -10,6 +10,8 @@ local Debris = game:GetService("Debris")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
+local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
+local CollectionService = game:GetService("CollectionService")
 
 return function(deps)
 	local PhysicsFX = deps.PhysicsFX
@@ -449,14 +451,19 @@ return function(deps)
 					local out = part.Position - center
 					out = Vector3.new(out.X, 0, out.Z)
 					out = out.Magnitude > 1e-3 and out.Unit or Vector3.new(math.random() - 0.5, 0, math.random() - 0.5).Unit
-					part.Anchored = false
-					part.AssemblyLinearVelocity = (out + Vector3.yAxis * p.lift) * p.fragmentSpeed * (0.6 + math.random() * 0.8)
-					part.AssemblyAngularVelocity = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5) * 20
+					Loose.Spawn(part, {
+						group = "Corpses",
+						tag = false, -- метка — на всём разлёте ниже, не на каждом осколке
+						velocity = (out + Vector3.yAxis * p.lift) * p.fragmentSpeed * (0.6 + math.random() * 0.8),
+						spin = Loose.RandomSpin(10),
+					})
 					TweenService:Create(part, fade, { Transparency = 1, Size = part.Size * 0.4 }):Play()
 				end
 			end
 		end
 		Debris:AddItem(clone, p.fragmentTime + 0.1)
+		CollectionService:AddTag(clone, Loose.Tag)
+		Loose.Track(clone, "burst")
 	end
 
 	-- УНИЧТОЖАЕТ (Звезда): жук сгорает в свет без следа. Зону Звезды ставит сервер.
@@ -784,13 +791,15 @@ return function(deps)
 			shard.Color = p.color
 			shard.Transparency = 0.1
 			shard.CanCollide = true
-			shard.CollisionGroup = CORPSE_GROUP
-			shard.Anchored = false
 			local out = shard.Position - center
 			out = Vector3.new(out.X, 0, out.Z)
 			out = out.Magnitude > 1e-3 and out.Unit or Vector3.xAxis
-			shard.AssemblyLinearVelocity = (out + Vector3.yAxis * p.lift) * p.speed * (0.5 + math.random())
-			shard.AssemblyAngularVelocity = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5) * 16
+			Loose.Spawn(shard, {
+				group = "Corpses",
+				velocity = (out + Vector3.yAxis * p.lift) * p.speed * (0.5 + math.random()),
+				spin = Loose.RandomSpin(8),
+			})
+			Loose.Track(shard, "shard")
 			task.delay(p.lieTime, function()
 				if shard.Parent then
 					TweenService:Create(shard, melt, { Transparency = 1, Size = shard.Size * 0.3 }):Play()
