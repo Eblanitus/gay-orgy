@@ -29,6 +29,9 @@ local function addPourPrompt(tower)
 	prompt.ObjectText = tower.Name
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 10
+	-- Подсказка на модели турели встаёт в её корень, а он внутри деталей, твёрдых с #382:
+	-- с проверкой видимости турель могла не открываться.
+	prompt.RequiresLineOfSight = false
 	prompt.Parent = tower
 	return prompt
 end

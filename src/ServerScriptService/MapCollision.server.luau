@@ -31,29 +31,27 @@ local RULES = {
 	},
 }
 
--- Общее правило поверх имён: любая заметная непрозрачная деталь локации на высоте тела
--- игрока твёрдая. Имена мебели в месте меняются (тумба у южной стены зала в одной версии
--- места — LabBench, в другой — иначе), и правило по именам её теряло: игрок заходил в тумбу
--- по пояс. Мелочь (колбы, слоты, решётки) отсекает объём, плитку пола — высота верха.
+-- Общее правило поверх имён: любая заметная непрозрачная деталь локации твёрдая, на любой
+-- высоте. Имена в месте меняются (тумба у южной стены — LabBench в одной версии места и иначе
+-- в другой; операторская на южной стене собрана в Studio под своим именем), и правила по именам
+-- их теряли. Заметность — по самой большой грани, а не по объёму: тонкое стекло операторской
+-- (4×3×0.2) по объёму сходило за мелочь, и в комнату заходили сквозь окно (скрины автора).
+-- Мелочь (колбы, пробирки, ручки) отсекает грань, плоскую разметку пола — высота верха.
 local BODY_BOTTOM = 0.7 -- верх детали выше этого над полом — в неё можно войти телом
--- Низ детали ниже этого — до неё достаёт игрок: рост ~5.5 плюс прыжок 7.2. Раньше было 6
--- (только рост), и комната наблюдения на стене зала, низ которой над головой, оставалась
--- нетвёрдой: игрок подпрыгивал и уходил в неё головой и плечами (скрин автора).
-local BODY_TOP = 13
-local MIN_VOLUME = 3 -- studs³: меньше — мелочь на столах, её не трогаем
+local MIN_FACE = 2 -- studs²: самая большая грань меньше — мелочь на столах, её не трогаем
 local SKIP = { Ceiling = true, Markers = true } -- потолок прячет камера, маркеры — разметка
 
-local function bodyHigh(part, floorY)
+local function noticeable(part, floorY)
 	local size = part.Size
-	if size.X * size.Y * size.Z < MIN_VOLUME or part.Transparency >= 0.95 then
+	local face = math.max(size.X * size.Y, size.Y * size.Z, size.X * size.Z)
+	if face < MIN_FACE or part.Transparency >= 0.95 then
 		return false
 	end
 	-- Полувысота ящика детали по вертикали с учётом поворота.
 	local cf = part.CFrame
 	local halfY = (math.abs(cf.RightVector.Y) * size.X + math.abs(cf.UpVector.Y) * size.Y
 		+ math.abs(cf.LookVector.Y) * size.Z) / 2
-	local y = part.Position.Y - floorY
-	return y - halfY < BODY_TOP and y + halfY > BODY_BOTTOM
+	return part.Position.Y - floorY + halfY > BODY_BOTTOM
 end
 
 local function skipped(part, location)
@@ -96,7 +94,7 @@ local function apply()
 	local changed = 0
 	for _, d in location:GetDescendants() do
 		if d:IsA("BasePart") and not d.CanCollide and d.Parent and not skipped(d, location)
-			and (bodyHigh(d, floorY) or inObsPost(d, location)) then
+			and (noticeable(d, floorY) or inObsPost(d, location)) then
 			d.CanCollide = true
 			changed += 1
 		elseif d:IsA("BasePart") and not d.CanCollide and d.Parent then
@@ -114,47 +112,78 @@ local function apply()
 	end
 end
 
--- Комната наблюдения закрыта целиком невидимым блоком по её габариту. Одних твёрдых деталей
--- мало: снизу на твёрдую обшивку и подоконник запрыгивается, а дальше в комнату ведёт любой
--- зазор между стеклом, рамой и крышей (скрин автора: стоял внутри кабины). Блок в группе
--- PlayerBarrier — держит только игрока; луч линии огня (Probe) и трупы его не видят.
+-- Всё, что висит на стенах выше роста (операторская, посты наблюдения, короба), закрыто
+-- целиком невидимым блоком по габариту модели. Одних твёрдых деталей мало: снизу на обшивку
+-- и подоконник запрыгивается, а в комнату ведёт любой зазор между стеклом, рамой и крышей
+-- (скрин автора: стоял внутри кабины). Без имён: берётся каждая верхняя модель локации, низ
+-- которой выше HIGH над полом, и посты НП (ObsPost_*), даже если это папки. Блок в группе
+-- PlayerBarrier — держит только игрока; луч линии огня (Probe), трупы и камера его не видят.
 local BLOCK_NAME = "PlayerBlock"
+local HIGH = 6 -- низ модели выше этого над полом — она над головой, внутрь ей входить нечем
 
-local function blockObsPosts(location)
+local function bounds(node)
+	local lo, hi
+	for _, d in node:GetDescendants() do
+		if d:IsA("BasePart") and d.Name ~= BLOCK_NAME then
+			local cf, size = d.CFrame, d.Size
+			local half = Vector3.new(
+				math.abs(cf.RightVector.X) * size.X + math.abs(cf.UpVector.X) * size.Y + math.abs(cf.LookVector.X) * size.Z,
+				math.abs(cf.RightVector.Y) * size.X + math.abs(cf.UpVector.Y) * size.Y + math.abs(cf.LookVector.Y) * size.Z,
+				math.abs(cf.RightVector.Z) * size.X + math.abs(cf.UpVector.Z) * size.Y + math.abs(cf.LookVector.Z) * size.Z
+			) / 2
+			lo = lo and lo:Min(d.Position - half) or d.Position - half
+			hi = hi and hi:Max(d.Position + half) or d.Position + half
+		end
+	end
+	return lo, hi
+end
+
+local function block(node, lo, hi)
+	local old = node:FindFirstChild(BLOCK_NAME)
+	if old then
+		old:Destroy()
+	end
+	local part = Instance.new("Part")
+	part.Name = BLOCK_NAME
+	part.Anchored = true
+	part.CanCollide = true
+	part.CanTouch = false
+	part.CanQuery = false
+	part.CastShadow = false
+	part.Transparency = 1
+	part.Size = hi - lo
+	part.CFrame = CFrame.new((lo + hi) / 2)
+	part.CollisionGroup = Loose.Groups.Barrier
+	part.Parent = node
+end
+
+-- Верхняя модель: модель, у которой между ней и локацией нет другой модели.
+local function topModel(node, location)
+	local p = node.Parent
+	while p and p ~= location do
+		if p:IsA("Model") then
+			return false
+		end
+		p = p.Parent
+	end
+	return true
+end
+
+local function blockHigh(location, floorY)
+	local count = 0
 	for _, node in location:GetDescendants() do
-		if (node:IsA("Model") or node:IsA("Folder")) and node.Name:sub(1, 8) == "ObsPost_" then
-			local old = node:FindFirstChild(BLOCK_NAME)
-			if old then
-				old:Destroy()
-			end
-			local lo, hi
-			for _, d in node:GetDescendants() do
-				if d:IsA("BasePart") then
-					local cf, size = d.CFrame, d.Size
-					local half = Vector3.new(
-						math.abs(cf.RightVector.X) * size.X + math.abs(cf.UpVector.X) * size.Y + math.abs(cf.LookVector.X) * size.Z,
-						math.abs(cf.RightVector.Y) * size.X + math.abs(cf.UpVector.Y) * size.Y + math.abs(cf.LookVector.Y) * size.Z,
-						math.abs(cf.RightVector.Z) * size.X + math.abs(cf.UpVector.Z) * size.Y + math.abs(cf.LookVector.Z) * size.Z
-					) / 2
-					lo = lo and lo:Min(d.Position - half) or d.Position - half
-					hi = hi and hi:Max(d.Position + half) or d.Position + half
-				end
-			end
-			if lo then
-				local block = Instance.new("Part")
-				block.Name = BLOCK_NAME
-				block.Anchored = true
-				block.CanCollide = true
-				block.CanTouch = false
-				block.CanQuery = false
-				block.CastShadow = false
-				block.Transparency = 1
-				block.Size = hi - lo
-				block.CFrame = CFrame.new((lo + hi) / 2)
-				block.CollisionGroup = Loose.Groups.Barrier
-				block.Parent = node
+		local obsPost = (node:IsA("Model") or node:IsA("Folder")) and node.Name:sub(1, 8) == "ObsPost_"
+		local model = node:IsA("Model") and topModel(node, location)
+		if (obsPost or model) and not skipped(node, location) and not SKIP[node.Name] then
+			local lo, hi = bounds(node)
+			if lo and (obsPost or lo.Y - floorY > HIGH) then
+				block(node, lo, hi)
+				count += 1
 			end
 		end
+	end
+	if count > 0 then
+		print(("[Коллизия] закрыто блоками верхних объектов: %d"):format(count))
 	end
 end
 
@@ -162,7 +191,7 @@ local function applyAll()
 	apply()
 	local location = Arena.Location()
 	if location then
-		blockObsPosts(location)
+		blockHigh(location, Arena.floorY or 0)
 	end
 end
 
