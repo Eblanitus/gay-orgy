@@ -206,6 +206,9 @@ local BODY_PITCH = 0.6
 -- самой ступни её бы не заметил.
 local PROBE_UP = 1.4
 local PROBE_LENGTH = 3.2
+-- Пол ниже стойки ступни больше чем на столько (× масштаб походки) — жук стоит не на полу,
+-- а на спине соседа: опора ищется на его спине (см. neighbourBack).
+local SUPPORT_DROP = 0.6
 
 -- На сколько шире ставятся ноги, когда жук лезет: на вертикали он распластывается
 -- по поверхности, а не стоит на ней столбиком.
@@ -746,10 +749,51 @@ end
 -- Где опора под номинальной стуйкой. Нет опоры (жук над краем, висит над проломом) —
 -- нога остаётся там, где ей полагается быть по строению тела: пусть висит, но не тянется
 -- к бесконечности.
-local function findSupport(nominal, up, gaitScale, underTower)
+--
+-- Жук на спине соседа (ярус толкучки, Crowd) ставит лапы на этого соседа, а не тянет их
+-- сквозь него до пола: тела жуков лучом не ловятся (CanQuery = false), и раньше верхний ярус
+-- стоял на ногах-ходулях, проткнувших нижних (плейтест: «не особо физично»). Спина соседа —
+-- купол над его следом-капсулой (атрибуты FootRadius/FootFront/FootBack, BodyHalfHeight
+-- серверной модели): ступня ближе к хребту встаёт выше, у борта — ниже, на бок.
+local function neighbourBack(point, selfModel)
+	local enemies = Workspace:FindFirstChild("Enemies")
+	if not enemies then
+		return nil
+	end
+	local best
+	local own = selfModel and selfModel.Parent
+	for _, enemy in enemies:GetChildren() do
+		local visual = enemy ~= own and enemy:FindFirstChild("Visual")
+		local radius = visual and enemy:GetAttribute("FootRadius")
+		if radius then
+			local pivot = visual:GetPivot()
+			local localPoint = pivot:PointToObjectSpace(point)
+			local z = math.clamp(localPoint.Z, enemy:GetAttribute("FootBack") or 0, enemy:GetAttribute("FootFront") or 0)
+			local across = Vector2.new(localPoint.X, localPoint.Z - z).Magnitude
+			if across < radius then
+				local dome = math.sqrt(1 - (across / radius) ^ 2)
+				local top = pivot.Position.Y + (enemy:GetAttribute("BodyHalfHeight") or 0.6) * dome
+				if top < point.Y + PROBE_UP and (not best or top > best) then
+					best = top
+				end
+			end
+		end
+	end
+	return best
+end
+
+local function findSupport(nominal, up, gaitScale, underTower, selfModel)
 	local scale = gaitScale or 1
 	local result = Workspace:Raycast(nominal + up * (PROBE_UP * scale), -up * (PROBE_LENGTH * scale), groundFilter(underTower))
-	return result and result.Position or nominal
+	local foot = result and result.Position or nominal
+	-- Под ступнёй пол намного ниже, чем ей положено стоять, — жук поднят (на чьей-то спине).
+	if nominal.Y - foot.Y > SUPPORT_DROP * scale then
+		local back = neighbourBack(nominal, selfModel)
+		if back and back > foot.Y then
+			foot = Vector3.new(nominal.X, back, nominal.Z)
+		end
+	end
+	return foot
 end
 
 -- Заводит походку для модели. legs — тот же список, по которому собрана модель
@@ -1088,7 +1132,7 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 					-- тела от ступни и требует следующий перенос в тот же кадр, как только встала.
 					and plantAhead(hipWorld, nominal, velocity, leg.length * MODEL_STEP_PLANT, stride * 0.5)
 					or nominal
-				leg.stepTo = findSupport(aim, up, modelScale, underTower)
+				leg.stepTo = findSupport(aim, up, modelScale, underTower, model)
 				leg.stepUntil = now + stepTime
 				leg.planted = leg.stepTo
 				if stepping == nil then
