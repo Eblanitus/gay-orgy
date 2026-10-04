@@ -33,7 +33,10 @@ local RULES = {
 -- места — LabBench, в другой — иначе), и правило по именам её теряло: игрок заходил в тумбу
 -- по пояс. Мелочь (колбы, слоты, решётки) отсекает объём, плитку пола — высота верха.
 local BODY_BOTTOM = 0.7 -- верх детали выше этого над полом — в неё можно войти телом
-local BODY_TOP = 6 -- низ детали ниже этого — она на высоте тела (рост персонажа ~5.5)
+-- Низ детали ниже этого — до неё достаёт игрок: рост ~5.5 плюс прыжок 7.2. Раньше было 6
+-- (только рост), и комната наблюдения на стене зала, низ которой над головой, оставалась
+-- нетвёрдой: игрок подпрыгивал и уходил в неё головой и плечами (скрин автора).
+local BODY_TOP = 13
 local MIN_VOLUME = 3 -- studs³: меньше — мелочь на столах, её не трогаем
 local SKIP = { Ceiling = true, Markers = true } -- потолок прячет камера, маркеры — разметка
 
@@ -61,6 +64,19 @@ local function skipped(part, location)
 	return false
 end
 
+-- Комната наблюдения целиком, со всеми подпорками и обшивкой снизу, какой бы мелкой ни была
+-- деталь: в неё лезут прыжком снизу. Мебель внутри за твёрдой коробкой и так недоступна.
+local function inObsPost(part, location)
+	local p = part.Parent
+	while p and p ~= location do
+		if p.Name:sub(1, 8) == "ObsPost_" then
+			return true
+		end
+		p = p.Parent
+	end
+	return false
+end
+
 local function parentMatches(rule, name)
 	if rule.prefix then
 		return name:sub(1, #rule.prefix) == rule.prefix
@@ -76,7 +92,8 @@ local function apply()
 	local floorY = Arena.floorY or 0 -- верх пола активной локации
 	local changed = 0
 	for _, d in location:GetDescendants() do
-		if d:IsA("BasePart") and not d.CanCollide and d.Parent and not skipped(d, location) and bodyHigh(d, floorY) then
+		if d:IsA("BasePart") and not d.CanCollide and d.Parent and not skipped(d, location)
+			and (bodyHigh(d, floorY) or (inObsPost(d, location) and d.Transparency < 0.95)) then
 			d.CanCollide = true
 			changed += 1
 		elseif d:IsA("BasePart") and not d.CanCollide and d.Parent then
