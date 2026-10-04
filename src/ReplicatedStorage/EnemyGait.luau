@@ -20,6 +20,8 @@
 -- и так переписывается каждый кадр — на репликацию ноги не добавляют ничего сверх того,
 -- что уже шло.
 local Workspace = game:GetService("Workspace")
+-- Спина соседа под лапой — по общей с толкучкой формуле (EnemyBody.BackHeight).
+local EnemyBody = require(script.Parent:WaitForChild("EnemyBody"))
 
 local EnemyGait = {}
 
@@ -209,6 +211,9 @@ local PROBE_LENGTH = 3.2
 -- Спины соседей для лап (см. neighbourBack) перечитываются не чаще, чем раз в столько
 -- секунд: шагов за кадр десятки, а жуков сотня.
 local BACKS_REFRESH = 0.05
+-- Толщина ступни, доля высоты пивота: задевшая борт соседа ступня ложится на него.
+-- То же число, что FOOT_RADIUS в Crowd.
+local FOOT_RADIUS = 0.2
 
 -- На сколько шире ставятся ноги, когда жук лезет: на вертикали он распластывается
 -- по поверхности, а не стоит на ней столбиком.
@@ -780,7 +785,7 @@ local function refreshBacks()
 				radius = radius,
 				front = front,
 				back = back,
-				halfHeight = enemy:GetAttribute("BodyHalfHeight") or 0.6,
+				top = enemy:GetAttribute("ShellTop") or enemy:GetAttribute("BodyHalfHeight") or 0.6,
 				reach = radius + math.max(math.abs(front), math.abs(back)),
 			})
 		end
@@ -790,21 +795,25 @@ end
 local function neighbourBack(point, selfModel)
 	refreshBacks()
 	local own = selfModel and selfModel.Parent
-	-- Выше своей спины лапа не тянется.
-	local limit = math.huge
+	-- Выше своей спины лапа не тянется. Толщина ступни — как у толкучки (Crowd.FOOT_RADIUS).
+	local limit, margin = math.huge, 0
 	if own then
-		limit = selfModel:GetPivot().Position.Y + (selfModel:GetAttribute("BodyHalfHeight") or 0.6)
+		limit = selfModel:GetPivot().Position.Y
+			+ (selfModel:GetAttribute("ShellTop") or selfModel:GetAttribute("BodyHalfHeight") or 0.6)
+		margin = (selfModel:GetAttribute("RideHeight") or 1.5) * FOOT_RADIUS
 	end
 	local best
 	for _, entry in backs do
 		local position = entry.pivot.Position
 		local dx, dz = point.X - position.X, point.Z - position.Z
-		if entry.model ~= own and dx * dx + dz * dz < entry.reach * entry.reach then
-			local localPoint = entry.pivot:PointToObjectSpace(point)
-			local z = math.clamp(localPoint.Z, entry.back, entry.front)
-			local across = Vector2.new(localPoint.X, localPoint.Z - z).Magnitude
-			if across < entry.radius then
-				local top = position.Y + entry.halfHeight * math.sqrt(1 - (across / entry.radius) ^ 2)
+		local reach = entry.reach + margin
+		if entry.model ~= own and dx * dx + dz * dz < reach * reach then
+			-- Голова модели по +Z, а пивот развёрнут на 180°: ход — минус LookVector.
+			local look = -entry.pivot.LookVector
+			local height = EnemyBody.BackHeight(dx, dz, look.X, look.Z, entry.radius,
+				entry.front, entry.back, entry.top, margin)
+			if height then
+				local top = position.Y + height
 				if top < limit and top < point.Y + PROBE_UP and (not best or top > best) then
 					best = top
 				end
