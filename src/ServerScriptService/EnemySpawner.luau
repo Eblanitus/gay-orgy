@@ -213,11 +213,14 @@ local function planClimb(position, points, cells, index, climbHeight, climbSpeed
 		time = 0,
 		leg = 1,
 		-- «Верх» жука на подъёме и спуске — это сторона ОТ стены: брюхом он прижат
-		-- к поверхности, мордой смотрит вверх. Наверху он просто идёт по крыше.
+		-- к поверхности. Наверху он просто идёт по крыше. Стена подъёма — впереди (верх
+		-- смотрит назад, -horizontal), стена спуска — уже ПОЗАДИ жука (верх смотрит вперёд,
+		-- +horizontal). Раньше у спуска стоял тот же -horizontal, и жук слезал с мешков
+		-- мордой вниз брюхом наружу (плейтест: «у них не туда смотрит брюхо»).
 		legs = {
 			{ from = position, to = topEntry, duration = vertical, up = -horizontal },
 			{ from = topEntry, to = topExit, duration = across, up = Vector3.yAxis },
-			{ from = topExit, to = exitPoint, duration = vertical, up = -horizontal },
+			{ from = topExit, to = exitPoint, duration = vertical, up = horizontal },
 		},
 	}
 end
@@ -226,6 +229,8 @@ end
 -- «верх» — либо nil, если всё уже кончилось. Отрезок может закончиться и посреди кадра:
 -- остаток времени перетекает в следующий, а не теряется — иначе на просадке кадров
 -- подъём шёл бы дольше, чем посчитал поиск пути.
+local CLIMB_BEND = 0.25 -- сек перегиба через ребро преграды (см. advanceClimb)
+
 local function advanceClimb(climb, dt)
 	climb.time += dt
 
@@ -245,10 +250,27 @@ local function advanceClimb(climb, dt)
 	if direction.Magnitude < 1e-3 then
 		direction = climb.horizontal
 	end
+	local up = leg.up
+
+	-- Перегиб через ребро — плавный: первые CLIMB_BEND секунд отрезка ход и «верх» переходят
+	-- от прошлого отрезка к новому, а не щёлкают на 90° за кадр.
+	local previous = climb.legs[climb.leg - 1]
+	if previous and climb.time < CLIMB_BEND then
+		local t = climb.time / CLIMB_BEND
+		t = t * t * (3 - 2 * t)
+		local before = previous.to - previous.from
+		before = before.Magnitude > 1e-3 and before.Unit or climb.horizontal
+		local blendDirection = before:Lerp(direction.Unit, t)
+		local blendUp = previous.up:Lerp(up, t)
+		if blendDirection.Magnitude > 1e-3 and blendUp.Magnitude > 1e-3 then
+			direction = blendDirection
+			up = blendUp.Unit
+		end
+	end
 
 	-- Скорость отрезка нужна атрибуту Velocity: по нему снаряды берут упреждение,
 	-- а лезущий жук движется со своей скоростью подъёма, а не со скоростью ходьбы.
-	return leg.from:Lerp(leg.to, fraction), direction.Unit, leg.up, direction.Magnitude / leg.duration
+	return leg.from:Lerp(leg.to, fraction), direction.Unit, up, (leg.to - leg.from).Magnitude / leg.duration
 end
 
 -- Ближайший живой наземный жук из folder, до которого enemy уже дотягивается жвалами.
