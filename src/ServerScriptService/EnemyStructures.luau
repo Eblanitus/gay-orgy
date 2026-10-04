@@ -92,9 +92,11 @@ local function build(kind, position, lift, facing, size)
 	part.Color = spec.color
 	part.Material = kind == "chitin" and Enum.Material.Glass or Enum.Material.Slate
 	part.Anchored = true
-	-- Ни одна из них не толкается физически: жуки ходят по маршруту, а игрок должен
-	-- мочь пройти сквозь. Луч линии огня ищет их по белому списку, а не по коллизии.
-	part.CanCollide = false
+	-- Твёрдые: всё, что лежит на карте, игрок обходит или перелезает, а трупы и лапы ложатся
+	-- сверху. Жукам это не мешает (они анкорнуты, их группа с Default не сталкивается), линии
+	-- огня тоже: папка EnemyStructures исключена из луча Targeting, а закрывание линии огня
+	-- Стеной считается отдельно (BlocksLine).
+	part.CanCollide = true
 	part.CanTouch = false
 	lift = lift or (part.Size.Y / 2)
 	local at = Vector3.new(position.X,
@@ -165,7 +167,7 @@ local function rubble(model, centre, material)
 		local chunk = Instance.new("Part")
 		chunk.Name = "Chunk"
 		chunk.Anchored = true
-		chunk.CanCollide = false
+		chunk.CanCollide = true
 		chunk.CanTouch = false
 		chunk.CanQuery = false
 		chunk.Size = Vector3.new(0.8 + math.random() * 0.9, 0.5 + math.random() * 0.5,
