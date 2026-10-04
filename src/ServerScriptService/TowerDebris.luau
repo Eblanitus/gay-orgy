@@ -37,11 +37,19 @@ local MAX_PIECES = 48
 -- Деталь, которую жук может унести: самая длинная сторона не больше этого.
 local CARRY_MAX = 3.5
 
--- Полёт: время, высота дуги, разлёт (доля ширины следа) и кувырок.
-local FLIGHT_TIME = { 0.55, 0.95 }
-local ARC_HEIGHT = { 1.5, 4 }
-local SCATTER = { 0.15, 0.75 }
-local SPIN = 2 * math.pi
+-- Падение. Не взрыв, а развал: детали в основном валятся вниз и чуть в стороны.
+-- Тяжёлая деталь (объём от HEAVY_VOLUME) почти не отлетает и не подпрыгивает — оседает
+-- и заваливается; лёгкая отлетает дальше и успевает немного повернуться.
+local HEAVY_VOLUME = 6
+local SCATTER = { 0.08, 0.35 } -- разлёт лёгкой детали с верха турели, доля ширины следа
+local ARC_HEIGHT = { 0.2, 0.8 } -- подскок над прямой траекторией у лёгкой детали, студы
+local TUMBLE = { 0.15, 0.6 } -- лишний поворот в воздухе у лёгкой, радианы (сверх укладки)
+local YAW_DRIFT = 0.5 -- насколько деталь доворачивается вокруг вертикали, радианы
+-- Время падения — от высоты, как у настоящего падения (растёт корнем), в этих пределах.
+local FALL_TIME_PER_ROOT = 0.25
+local FALL_TIME = { 0.45, 0.9 }
+-- Детали отваливаются не все в один кадр, а вразнобой — верх раньше.
+local STAGGER = 0.25
 
 -- Крошки: сколько лежат после падения и за сколько тают.
 local CRUMB_LIFE = 2.5
@@ -208,15 +216,22 @@ local function step()
 	local now = os.clock()
 	for i = #flying, 1, -1 do
 		local f = flying[i]
-		local t = math.min((now - f.start) / f.duration, 1)
+		local t = math.clamp((now - f.start) / f.duration, 0, 1)
 		if not f.part.Parent then
 			table.remove(flying, i)
-		else
-			local position = f.from.Position:Lerp(f.to.Position, t)
-				+ Vector3.new(0, f.arc * 4 * t * (1 - t), 0)
+		elseif now >= f.start then
+			-- По горизонтали — с затуханием (толчок в начале), по вертикали — с разгоном
+			-- вниз (t²), как падение, плюс небольшой подскок у лёгких деталей.
+			local from, to = f.from.Position, f.to.Position
+			local h = 1 - (1 - t) * (1 - t)
+			local x = from.X + (to.X - from.X) * h
+			local z = from.Z + (to.Z - from.Z) * h
+			local y = from.Y + (to.Y - from.Y) * t * t + f.arc * 4 * t * (1 - t)
+			-- Поворот к положению лёжа идёт вместе с падением (заваливается), а лишний
+			-- поворот в воздухе невелик и к касанию гаснет.
 			local rotation = f.from.Rotation:Lerp(f.to.Rotation, t)
-				* CFrame.fromAxisAngle(f.axis, f.spin * (1 - t) * t * 4)
-			f.part.CFrame = CFrame.new(position) * rotation
+				* CFrame.fromAxisAngle(f.axis, f.spin * math.sin(math.pi * t))
+			f.part.CFrame = CFrame.new(x, y, z) * rotation
 			if t >= 1 then
 				table.remove(flying, i)
 				f.part.CFrame = f.to
@@ -230,16 +245,16 @@ local function step()
 	end
 end
 
-local function launch(part, to, arc, duration, landed)
+local function launch(part, to, arc, spin, duration, delay, landed)
 	table.insert(flying, {
 		part = part,
 		from = part.CFrame,
 		to = to,
 		arc = arc,
 		duration = duration,
-		start = os.clock(),
+		start = os.clock() + delay,
 		axis = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5).Unit,
-		spin = SPIN * (0.5 + math.random()),
+		spin = spin,
 		landed = landed,
 	})
 	if not connection then
@@ -306,20 +321,30 @@ function TowerDebris.Leave(tower, footprint, material)
 			local from = part.CFrame
 			prepare(part)
 
-			-- Куда летит: от центра в сторону своего места на турели, и тем дальше, чем выше
-			-- деталь сидела. Низ (платформа) оседает почти на месте.
+			-- Куда валится: от центра в сторону своего места на турели, и тем дальше, чем выше
+			-- деталь сидела и чем она легче. Низ (платформа) оседает на месте.
 			local offset = from.Position - centre
 			local outward = Vector3.new(offset.X, 0, offset.Z)
 			local angle = outward.Magnitude > 0.2 and math.atan2(outward.Z, outward.X) or math.random() * math.pi * 2
-			angle += (math.random() - 0.5) * 1.2
+			angle += (math.random() - 0.5) * 0.8
 			local lift = math.clamp(offset.Y / 4, 0, 1)
-			local distance = outward.Magnitude * 0.5 + width * between(SCATTER) * lift
+			local size = part.Size
+			local light = 1 - math.clamp(size.X * size.Y * size.Z / HEAVY_VOLUME, 0, 1)
+			local distance = outward.Magnitude + width * between(SCATTER) * lift * (0.3 + 0.7 * light)
 			local x = centre.X + math.cos(angle) * distance
 			local z = centre.Z + math.sin(angle) * distance
-			local to, flat, up, a, b, floorY = restingFrame(part, x, z, math.random() * math.pi * 2)
+			-- Ложится почти как стояла, лишь немного довернувшись, — а не в случайную сторону:
+			-- полный случайный разворот в полёте читался как волчок.
+			local _, yaw = from:ToEulerAnglesYXZ()
+			local to, flat, up, a, b, floorY = restingFrame(part, x, z, yaw + (math.random() - 0.5) * YAW_DRIFT)
+
+			local drop = math.max(from.Position.Y - to.Position.Y, 0)
+			local duration = math.clamp(math.sqrt(drop) * FALL_TIME_PER_ROOT, FALL_TIME[1], FALL_TIME[2])
+			local delay = (1 - lift) * STAGGER * math.random()
 
 			local unit = role == "material" and 1 or nil
-			launch(part, to, between(ARC_HEIGHT) * (0.3 + lift), between(FLIGHT_TIME), function()
+			launch(part, to, between(ARC_HEIGHT) * lift * light, between(TUMBLE) * light,
+				duration, delay, function()
 				if role == "crumb" then
 					crumbFade(part)
 				else
