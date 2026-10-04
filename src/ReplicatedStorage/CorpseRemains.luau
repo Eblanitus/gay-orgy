@@ -184,6 +184,25 @@ return function(deps)
 	-- там же, где была (чуть шире — раздавленное расползается), той своей осью, что ближе
 	-- всех к нормали плоскости, и сплющивается по ней. Силуэт с растопыренными лапами
 	-- остаётся узнаваемым: видно, кого раздавило.
+	-- Лепёшки на полу: где лежат и докуда поднимаются. Новая ложится ПОВЕРХ тех, что уже под ней,
+	-- а не на ту же высоту пола: на одной высоте лепёшки резали друг друга (плейтест).
+	local pancakes = {} -- { clone, at, radius, top }
+	local function pileUnder(at, radius)
+		local top = 0
+		for index = #pancakes, 1, -1 do
+			local cake = pancakes[index]
+			if not cake.clone.Parent then
+				table.remove(pancakes, index)
+			else
+				local flat = Vector3.new(at.X - cake.at.X, 0, at.Z - cake.at.Z)
+				if flat.Magnitude < radius + cake.radius then
+					top = math.max(top, cake.top)
+				end
+			end
+		end
+		return top
+	end
+
 	local function crush(enemy, hit, scale, floorY)
 		local p = plan.crush
 		local clone = bodyClone(enemy)
@@ -214,6 +233,10 @@ return function(deps)
 		local onWall = normal.Y < 0.5
 		local base = center + travel
 		local contact = base - normal * (base - planePoint):Dot(normal)
+		local radius = width / 2 * p.spread
+		local pile = onWall and 0 or pileUnder(contact, radius)
+		contact += normal * pile
+		local cakeTop = pile
 
 		-- Что дальше от плоскости, ложится поверх: без этого детали мерцают друг с другом.
 		local items, lowest = {}, math.huge
@@ -225,24 +248,25 @@ return function(deps)
 			end
 		end
 
-		local fallback = onWall and normal:Cross(Vector3.yAxis).Unit or Vector3.xAxis
-		for _, item in items do
-			local part = item.part
+		-- Как деталь ложится на плоскость с нормалью n: ось детали, что ближе всех к нормали,
+		-- сплющивается вдоль неё, остальные две ложатся в плоскость.
+		local function flatten(part, n)
+			local fallback = math.abs(n.Y) < 0.5 and n:Cross(Vector3.yAxis).Unit or Vector3.xAxis
 			local cf = part.CFrame
 			local cols = { cf.RightVector, cf.UpVector, cf.LookVector }
 			local b = 1
 			for i = 2, 3 do
-				if math.abs(cols[i]:Dot(normal)) > math.abs(cols[b]:Dot(normal)) then
+				if math.abs(cols[i]:Dot(n)) > math.abs(cols[b]:Dot(n)) then
 					b = i
 				end
 			end
 			-- b — ось, что ближе всех к нормали, a и c — следующие по кругу (b × a = c).
 			local a = b % 3 + 1
 			local c = a % 3 + 1
-			local flat = cols[a] - normal * cols[a]:Dot(normal)
+			local flat = cols[a] - n * cols[a]:Dot(n)
 			flat = flat.Magnitude > 1e-3 and flat.Unit or fallback
 			local m = {}
-			m[b] = normal * (cols[b]:Dot(normal) >= 0 and 1 or -1)
+			m[b] = n * (cols[b]:Dot(n) >= 0 and 1 or -1)
 			m[a] = flat
 			m[c] = m[b]:Cross(m[a])
 
@@ -250,12 +274,73 @@ return function(deps)
 			local thin = math.max(size[AXES[b]] * p.squash, p.minThickness)
 			local dims = { size.X, size.Y, size.Z }
 			dims[b] = thin
+			return m, dims, thin
+		end
+
+		-- Угол. Лепёшка ложится на одну грань, а то, что вылезло за её край, загибается на
+		-- соседнюю, а не торчит в воздух пластиной (плейтест: жук влетел в угол проёма).
+		--   * внутренний угол (стена у пола, две стены) — деталь упирается во вторую грань и
+		--     ползёт по ней вверх на остаток пути;
+		--   * внешний угол (торец стены, косяк проёма) — за краем грани стены нет, деталь
+		--     огибает ребро и ложится на боковую грань на ту же глубину за ребром.
+		-- Не нашлось, куда загнуть, — деталь прячется: лучше без кусочка, чем пластина в воздухе.
+		local walls = wallParams()
+		local function backed(point, n)
+			return Workspace:Raycast(point + n * 0.4, -n * 0.8, walls) ~= nil
+		end
+		local function fold(offset, n)
+			local length = offset.Magnitude
+			if length < 1e-3 then
+				return nil
+			end
+			local u = offset / length
+			local from = contact + n * (LIFT + 0.05)
+			local wall = Workspace:Raycast(from, offset, walls)
+			if wall and math.abs(wall.Normal:Dot(n)) < 0.5 then
+				local rise = n - wall.Normal * n:Dot(wall.Normal)
+				rise = rise.Magnitude > 1e-3 and rise.Unit or n
+				return wall.Position + rise * (length - wall.Distance), wall.Normal
+			end
+			if not onWall or backed(contact + offset, n) then
+				return nil
+			end
+			-- Край грани: последняя точка, за которой ещё есть стена.
+			local inside, outside = 0, length
+			for _ = 1, 6 do
+				local mid = (inside + outside) / 2
+				if backed(contact + u * mid, n) then
+					inside = mid
+				else
+					outside = mid
+				end
+			end
+			local edge = contact + u * inside
+			local past = length - inside
+			local probe = edge - n * past + u * 0.5
+			local side = Workspace:Raycast(probe, -u * 1, walls)
+			if side and math.abs(side.Normal:Dot(n)) < 0.5 then
+				return side.Position, side.Normal
+			end
+			return false
+		end
+
+		for _, item in items do
+			local part = item.part
+			local m, dims, thin = flatten(part, normal)
 
 			local layer = math.clamp(item.height - lowest, 0, 20) * p.layer
 			local rel = part.Position + travel - contact
 			rel -= normal * rel:Dot(normal)
-			local position = contact + rel * p.spread + normal * (LIFT + thin / 2 + layer)
-			if onWall then
+			local offset = rel * p.spread
+			local position = contact + offset + normal * (LIFT + thin / 2 + layer)
+
+			local folded, foldNormal = fold(offset, normal)
+			if folded == false then
+				item.hide = true
+			elseif folded then
+				m, dims, thin = flatten(part, foldNormal)
+				position = folded + foldNormal * (LIFT + thin / 2 + layer)
+			elseif onWall then
 				-- На стене деталь не уходит в пол: низ — не ниже пола.
 				local half = (math.abs(m[1].Y) * dims[1] + math.abs(m[2].Y) * dims[2] + math.abs(m[3].Y) * dims[3]) / 2
 				position = Vector3.new(position.X, math.max(position.Y, floorY + half), position.Z)
@@ -263,6 +348,12 @@ return function(deps)
 			item.size = Vector3.new(dims[1], dims[2], dims[3])
 			item.cframe = CFrame.fromMatrix(position, m[1], m[2], m[3])
 			part.CastShadow = false
+			if not folded then
+				cakeTop = math.max(cakeTop, pile + LIFT + thin + layer)
+			end
+		end
+		if not onWall then
+			table.insert(pancakes, { clone = clone, at = contact, radius = radius, top = cakeTop })
 		end
 
 		clone.Name = enemy.Name .. " (раздавлен)"
@@ -283,6 +374,7 @@ return function(deps)
 						Size = item.size,
 						CFrame = item.cframe,
 						Color = part.Color:Lerp(p.color, p.darken),
+						Transparency = item.hide and 1 or part.Transparency,
 					}):Play()
 				end
 			end)
