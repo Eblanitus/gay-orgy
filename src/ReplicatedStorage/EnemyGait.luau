@@ -206,9 +206,9 @@ local BODY_PITCH = 0.6
 -- самой ступни её бы не заметил.
 local PROBE_UP = 1.4
 local PROBE_LENGTH = 3.2
--- Пол ниже стойки ступни больше чем на столько (× масштаб походки) — жук стоит не на полу,
--- а на спине соседа: опора ищется на его спине (см. neighbourBack).
-local SUPPORT_DROP = 0.6
+-- Спины соседей для лап (см. neighbourBack) перечитываются не чаще, чем раз в столько
+-- секунд: шагов за кадр десятки, а жуков сотня.
+local BACKS_REFRESH = 0.05
 
 -- На сколько шире ставятся ноги, когда жук лезет: на вертикали он распластывается
 -- по поверхности, а не стоит на ней столбиком.
@@ -752,32 +752,60 @@ end
 -- нога остаётся там, где ей полагается быть по строению тела: пусть висит, но не тянется
 -- к бесконечности.
 --
--- Жук на спине соседа (толкучка, Crowd: опора под брюхом) ставит лапы на этого соседа, а не тянет их
--- сквозь него до пола: тела жуков лучом не ловятся (CanQuery = false), и раньше верхний ярус
--- стоял на ногах-ходулях, проткнувших нижних (плейтест: «не особо физично»). Спина соседа —
--- купол над его следом-капсулой (атрибуты FootRadius/FootFront/FootBack, BodyHalfHeight
--- серверной модели): ступня ближе к хребту встаёт выше, у борта — ниже, на бок.
-local function neighbourBack(point, selfModel)
+-- Лапа встаёт на то, что под ней: на пол или на спину соседа, если тот закрывает пол под
+-- точкой. Так же ставит лапы толкучка (Crowd: лапы и опора тела), и ступни стоят там,
+-- где их держит сервер. Тела жуков лучом не ловятся (CanQuery = false), поэтому спина
+-- соседа — купол над его следом-капсулой (атрибуты FootRadius/FootFront/FootBack,
+-- BodyHalfHeight серверной модели): ступня ближе к хребту встаёт выше, у борта — ниже.
+local backs, backsTime = {}, -math.huge
+local function refreshBacks()
+	local now = os.clock()
+	if now - backsTime < BACKS_REFRESH then
+		return
+	end
+	backsTime = now
+	table.clear(backs)
 	local enemies = Workspace:FindFirstChild("Enemies")
 	if not enemies then
-		return nil
+		return
+	end
+	for _, enemy in enemies:GetChildren() do
+		local radius = enemy:GetAttribute("FootRadius")
+		if radius and enemy:IsA("Model") then
+			local front = enemy:GetAttribute("FootFront") or 0
+			local back = enemy:GetAttribute("FootBack") or 0
+			table.insert(backs, {
+				model = enemy,
+				pivot = enemy:GetPivot(),
+				radius = radius,
+				front = front,
+				back = back,
+				halfHeight = enemy:GetAttribute("BodyHalfHeight") or 0.6,
+				reach = radius + math.max(math.abs(front), math.abs(back)),
+			})
+		end
+	end
+end
+
+local function neighbourBack(point, selfModel)
+	refreshBacks()
+	local own = selfModel and selfModel.Parent
+	-- Выше своей спины лапа не тянется.
+	local limit = math.huge
+	if own then
+		limit = selfModel:GetPivot().Position.Y + (selfModel:GetAttribute("BodyHalfHeight") or 0.6)
 	end
 	local best
-	local own = selfModel and selfModel.Parent
-	for _, enemy in enemies:GetChildren() do
-		local visual = enemy ~= own and enemy:FindFirstChild("Visual")
-		local radius = visual and enemy:GetAttribute("FootRadius")
-		if radius then
-			local pivot = visual:GetPivot()
-			local localPoint = pivot:PointToObjectSpace(point)
-			local z = math.clamp(localPoint.Z, enemy:GetAttribute("FootBack") or 0, enemy:GetAttribute("FootFront") or 0)
+	for _, entry in backs do
+		local position = entry.pivot.Position
+		local dx, dz = point.X - position.X, point.Z - position.Z
+		if entry.model ~= own and dx * dx + dz * dz < entry.reach * entry.reach then
+			local localPoint = entry.pivot:PointToObjectSpace(point)
+			local z = math.clamp(localPoint.Z, entry.back, entry.front)
 			local across = Vector2.new(localPoint.X, localPoint.Z - z).Magnitude
-			if across < radius then
-				local dome = math.sqrt(1 - (across / radius) ^ 2)
-				local top = pivot.Position.Y + (enemy:GetAttribute("BodyHalfHeight") or 0.6) * dome
-				-- Только тот, чья спина ниже нашего тела: на равного или выше лапы не ставятся.
-				local below = selfModel == nil or top < selfModel:GetPivot().Position.Y
-				if below and top < point.Y + PROBE_UP and (not best or top > best) then
+			if across < entry.radius then
+				local top = position.Y + entry.halfHeight * math.sqrt(1 - (across / entry.radius) ^ 2)
+				if top < limit and top < point.Y + PROBE_UP and (not best or top > best) then
 					best = top
 				end
 			end
@@ -790,12 +818,8 @@ local function findSupport(nominal, up, gaitScale, underTower, selfModel)
 	local scale = gaitScale or 1
 	local result = Workspace:Raycast(nominal + up * (PROBE_UP * scale), -up * (PROBE_LENGTH * scale), groundFilter(underTower))
 	local foot = result and result.Position or nominal
-	-- Жук стоит на чужой спине (толкучка ставит атрибут OnBack серверной модели), и пол под
-	-- ступнёй намного ниже, чем ей положено стоять, — опора лапам на спине соседа. Без
-	-- атрибута соседей не ищем вовсе: на земле жук ставит лапы только на землю.
-	local server = selfModel and selfModel.Parent
-	local onBack = server and server:GetAttribute("OnBack")
-	if onBack and nominal.Y - foot.Y > SUPPORT_DROP * scale then
+	-- Спина соседа над полом в этой точке закрывает пол: лапа встаёт на неё.
+	if selfModel then
 		local back = neighbourBack(nominal, selfModel)
 		if back and back > foot.Y then
 			foot = Vector3.new(nominal.X, back, nominal.Z)
