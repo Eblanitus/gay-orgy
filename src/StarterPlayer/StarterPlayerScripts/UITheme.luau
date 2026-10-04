@@ -68,6 +68,15 @@ Theme.color = {
 	textDim = Color3.fromRGB(168, 186, 207),
 	textMute = Color3.fromRGB(125, 144, 166),
 	ink = Color3.fromRGB(12, 16, 22), -- текст поверх светлой заливки элемента
+	sheen = Color3.fromRGB(122, 156, 176), -- стекло подсветки решётки панелей (UIThemePanel)
+
+	-- Не окна, а метки в мире: подсветка стройки (TowerInteraction) и полоски HP
+	-- над жуками (EnemyVisuals) и постройками (BuildingVisuals).
+	build = Color3.fromRGB(90, 200, 90), -- место свободно, круг дальности
+	forbidden = Color3.fromRGB(220, 70, 70), -- ставить нельзя, слепая зона
+	hpBack = Color3.fromRGB(25, 25, 25), -- подложка полоски HP и кант меток при смерти
+	hpFull = Color3.fromRGB(80, 220, 80), -- полное HP
+	hpLow = Color3.fromRGB(220, 60, 60), -- HP на нуле; между ними — смесь по доле
 }
 
 -- Три размера скругления, а не один на всё: одинаковый радиус у окна и у кнопки внутри
