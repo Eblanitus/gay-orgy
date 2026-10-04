@@ -86,7 +86,11 @@
 --                                blast = "cloud" | "rain" | "snow" — клиент рисует облачный
 --                                взрыв (клубы пара) вместо огненного; из дождевого падают капли,
 --                                из снежного — хлопья. blastColor — оттенок облака: цвета самих
---                                элементов почти белые, и облака по ним не различить
+--                                элементов почти белые, и облака по ним не различить.
+--                                blast = "quake" — удар в землю (Континент): пыль, трещины,
+--                                камни; "rift" — разлом (Литосфера): то же глубже, волнами,
+--                                трещины светятся недрами; "wave" — водный взрыв (Океан):
+--                                столб воды, брызги, пена и лужа. Без blast — огненный взрыв
 --   killZone = { duration, radius | radiusScale, damagePerSecond, growth, slowPercent,
 --                spreadElement, charges, dries, extendOnKill, radiusOnKill, unlimited }
 --                                зона на месте смерти, одна на турель: новая вытесняет
@@ -707,7 +711,7 @@ local Elements = {
 		knockback = { distance = 4 },
 		-- Единоразовый удар по области при убийстве, и чем крупнее был жук, тем сильнее:
 		-- считается от его MaxHP, а не от урона выстрела — рой оставляет хлопок, танк воронку.
-		killDamage = { radius = 10, damagePerMaxHp = 0.8, minDamage = 10, maxDamage = 120 },
+		killDamage = { radius = 10, damagePerMaxHp = 0.8, minDamage = 10, maxDamage = 120, blast = "quake" },
 	},
 
 	-- Шаг 3. Цена внутри шага впервые расходится: Взрыв, Гора, Лёд, Металл и Песок
@@ -750,7 +754,7 @@ local Elements = {
 		slowDuration = 5.5,
 		-- Водный взрыв при убийстве: урон плюс Мокрость всем вокруг — то есть готовая
 		-- проводимость для Молнии и Электричества рядом.
-		killDamage = { radius = 9, damage = 30, spreadElement = "Water" },
+		killDamage = { radius = 9, damage = 30, spreadElement = "Water", blast = "wave" },
 	},
 	Hurricane = {
 		name = "Ураган",
@@ -1215,7 +1219,7 @@ local Elements = {
 		-- состава, а не множителем.
 		damageMultiplier = 4,
 		knockback = { distance = 6 },
-		killDamage = { radius = 14, damagePerMaxHp = 1.2, minDamage = 20, maxDamage = 200 },
+		killDamage = { radius = 14, damagePerMaxHp = 1.2, minDamage = 20, maxDamage = 200, blast = "rift" },
 		-- Изменение ландшафта при убийстве (документ v4): «ландшафт карты
 		-- поднимается/опускается. Без HP, изменяет рельеф. При определённом количестве
 		-- врагов в изменённом ландшафте — если была яма, то появляется плита сверху

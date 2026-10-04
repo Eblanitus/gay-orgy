@@ -794,9 +794,14 @@ local function applyKillDamage(target, elementData)
 	local position = target:GetPivot().Position
 
 	local amount = plan.damage
+	-- Сила удара для картинки, 0..1: у ударов от MaxHP — где удар между minDamage и
+	-- maxDamage (рой хлопает, танк выбивает воронку), у ударов с одним числом — всегда 1.
+	local power = 1
 	if plan.damagePerMaxHp then
 		amount = math.clamp((target:GetAttribute("MaxHP") or 0) * plan.damagePerMaxHp,
 			plan.minDamage or 1, plan.maxDamage or math.huge)
+		local low, high = plan.minDamage or 1, plan.maxDamage or amount
+		power = high > low and (amount - low) / (high - low) or 1
 	end
 
 	local hits = damageAround(position, plan.radius, amount, target, nil, elementData, elementData.name)
@@ -810,8 +815,9 @@ local function applyKillDamage(target, elementData)
 		end
 	end
 
-	-- Вид взрыва (blast) и оттенок — клиенту: облако лопается паром, а не огнём.
-	ExplosionRemote:FireAllClients(position, plan.radius, nil, plan.blast, plan.blastColor or elementData.color)
+	-- Вид взрыва (blast), оттенок и сила — клиенту: облако лопается паром, Континент
+	-- бьёт в землю, Океан плещет водой, а не огнём.
+	ExplosionRemote:FireAllClients(position, plan.radius, nil, plan.blast, plan.blastColor or elementData.color, power)
 	if Effects.OnImpulseBlast then
 		Effects.OnImpulseBlast(position, plan.radius)
 	end
