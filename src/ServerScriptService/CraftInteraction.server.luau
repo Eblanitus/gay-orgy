@@ -25,6 +25,9 @@ local Roulette = require(ServerScriptService:WaitForChild("Roulette"))
 -- Третий режим того же автомата: элемент двигается вперёд по своей ветке.
 -- Проверки веток и розыгрыш живут в Upgrader, здесь — только доступ к автомату.
 local Upgrader = require(ServerScriptService:WaitForChild("Upgrader"))
+-- Обучение (задача #298): на нём только покупка четырёх базовых, остальное закрыто.
+local Tutorial = require(ServerScriptService:WaitForChild("Tutorial"))
+local TUTORIAL_CLOSED = "на обучении закрыто — пока только покупка базовых элементов"
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestCraft = Remotes:WaitForChild("RequestCraft")
@@ -150,9 +153,16 @@ RequestBuyElement.OnServerEvent:Connect(function(player, elementKey)
 		return
 	end
 
+	if not Tutorial.ElementAllowed(elementKey) then
+		Notify:FireClient(player, TUTORIAL_CLOSED)
+		return
+	end
+
 	local ok, reason = Inventory.Buy(elementKey)
 	if not ok then
 		Notify:FireClient(player, reason)
+	else
+		Tutorial.Report("buy")
 	end
 end)
 
@@ -170,6 +180,10 @@ end)
 
 RequestRouletteSpin.OnServerEvent:Connect(function(player, spins)
 	if typeof(spins) ~= "number" then
+		return
+	end
+	if Tutorial.IsRestricted() then
+		Notify:FireClient(player, TUTORIAL_CLOSED)
 		return
 	end
 	if not LabStations.IsAlive("ElementProducer") then
@@ -237,6 +251,10 @@ RequestUpgrade.OnServerEvent:Connect(function(player, fromKey, toKey)
 	if type(fromKey) ~= "string" or type(toKey) ~= "string" then
 		return
 	end
+	if Tutorial.IsRestricted() then
+		Notify:FireClient(player, TUTORIAL_CLOSED)
+		return
+	end
 	if not LabStations.IsAlive("ElementProducer") then
 		Notify:FireClient(player, "производитель разбит — апгрейдить негде")
 		return
@@ -281,6 +299,10 @@ end)
 
 RequestCraft.OnServerEvent:Connect(function(player, a, b)
 	if typeof(a) ~= "string" or typeof(b) ~= "string" then
+		return
+	end
+	if Tutorial.IsRestricted() then
+		Notify:FireClient(player, TUTORIAL_CLOSED)
 		return
 	end
 	if not Elements[a] or not Elements[b] then
