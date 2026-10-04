@@ -46,7 +46,7 @@ return function(deps)
 			moves = {}, -- { from, to, chance } — все попытки апгрейда, доступные при текущем запасе
 			index = 1,
 			follow = nil, -- удачная попытка: на этот элемент перейдёт выбор, когда он придёт в сумку
-			cap = 11, -- размер подписи у показаний: меняется вместе с раскладкой
+			cap = Theme.MIN_TEXT, -- размер подписи у показаний: меняется вместе с раскладкой
 		}
 		local refresh, lock -- объявлены ниже: их зовут кнопки, собранные раньше них
 
@@ -165,7 +165,7 @@ return function(deps)
 		-- Шрифт окна — RobotoMono; у жирного ширина букв та же.
 		local function fitSize(list, want, width)
 			local size = want
-			while size > 10 do
+			while size > Theme.MIN_TEXT do
 				local widest = 0
 				for _, word in list do
 					widest = math.max(widest, TextService:GetTextSize(word, size, Enum.Font.RobotoMono, Vector2.new(4000, 1000)).X)
@@ -662,7 +662,7 @@ return function(deps)
 			local function by(phone, pc)
 				return compact and phone or pc
 			end
-			st.cap = by(11, 14)
+			st.cap = Theme.MIN_TEXT
 
 			-- Рамка — под полосой Roblox, с отступом от краёв экрана.
 			-- Внутри: шапка, линия, поле режима, линия, подвал.
@@ -714,7 +714,7 @@ return function(deps)
 			place(map, px, footY, tabW * #MODES + tabGap * (#MODES - 1), rowH)
 			for i, m in MODES do
 				local b = modeButtons[m.id]
-				b.TextSize = by(13, 18)
+				b.TextSize = by(Theme.MIN_TEXT, 18)
 				b.Pad.PaddingLeft = UDim.new(0, by(10, 16))
 				place(b, (i - 1) * (tabW + tabGap), 0, tabW, rowH)
 			end
@@ -757,7 +757,7 @@ return function(deps)
 				tile.TextSize = tileSize
 			end
 			local rowY = by(20, 34)
-			roul.caption.TextSize = by(11, 14)
+			roul.caption.TextSize = Theme.MIN_TEXT
 			place(roul.caption, colX, 0, colW, rowY - by(4, 8))
 			Theme.Section(roul.caption, "Прокруток")
 			local nw = (colW - g * (#roul.counts - 1)) / math.max(#roul.counts, 1)
@@ -783,12 +783,18 @@ return function(deps)
 			local chipW, chipH = by(104, 160), by(44, 56)
 			local bw = sideW - pp * 2
 			for cap, caption in { [up.srcCap] = "Затраты", [up.dstCap] = "Результат" } do
-				cap.TextSize = by(11, 14)
+				cap.TextSize = Theme.MIN_TEXT
 				place(cap, pp, pp, bw, capH)
 				Theme.Section(cap, caption)
 			end
-			local burnH = up.burn.Visible and by(14, 22) or 0
-			up.burn.TextSize = by(10, 14)
+			-- Предупреждение в узкой колонке телефона в строку не влезает — высота по замеру,
+			-- с переносом на вторую строку.
+			up.burn.TextSize = Theme.MIN_TEXT
+			local burnH = 0
+			if up.burn.Visible then
+				local textH = TextService:GetTextSize(up.burn.Text, Theme.MIN_TEXT, Enum.Font.RobotoMono, Vector2.new(bw, 1000)).Y
+				burnH = math.max(by(18, 22), math.ceil(textH) + 4)
+			end
 			place(up.burn, pp, pp + capH, bw, burnH)
 			-- Запас: строка на телефоне, две на большом экране, остальное — прокруткой.
 			local listH = by(chipH, chipH * 2 + gap)
@@ -796,7 +802,7 @@ return function(deps)
 			place(up.list, pp, listY, bw, listH)
 			up.grid.CellSize = UDim2.fromOffset(chipW, chipH)
 			up.grid.CellPadding = UDim2.fromOffset(gap, gap)
-			local chipSize = fitSize(up.words, by(12, 16), chipW - 8)
+			local chipSize = fitSize(up.words, by(Theme.MIN_TEXT, 16), chipW - 8)
 			for _, chip in up.stock do
 				chip.TextSize = chipSize
 			end
@@ -809,7 +815,7 @@ return function(deps)
 			local nameSize = fitSize(up.words, by(16, 30), bw - 8)
 			up.src.TextSize = nameSize
 			up.dst.TextSize = nameSize
-			up.empty.TextSize = by(12, 20)
+			up.empty.TextSize = by(Theme.MIN_TEXT, 20)
 			place(up.stepRow, pp, listY, bw, chipH)
 			local sw = (bw - gap * (#up.steps - 1)) / math.max(#up.steps, 1)
 			for i, b in up.steps do

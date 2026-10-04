@@ -238,7 +238,7 @@ return function(T, page)
 		place(invPlate, 0, ly, W, H - ly)
 		place(invList, pad, ly + pad, W - pad * 2, H - ly - pad * 2)
 		place(emptyLabel, pad * 3, ly + pad * 3, W - pad * 6, 60)
-		emptyLabel.TextSize = by(13, 15)
+		emptyLabel.TextSize = by(Theme.MIN_TEXT, 15)
 		local grid = invList:FindFirstChildOfClass("UIGridLayout")
 		if grid then
 			Theme.GridFit(grid)

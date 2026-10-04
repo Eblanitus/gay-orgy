@@ -72,7 +72,7 @@ return function(T, page)
 		place(plate, 0, ly, W, H - ly)
 		place(list, pad, ly + pad, W - pad * 2, H - ly - pad * 2)
 		place(emptyLabel, pad * 3, ly + pad * 3, W - pad * 6, 60)
-		emptyLabel.TextSize = compact and 13 or 15
+		emptyLabel.TextSize = compact and Theme.MIN_TEXT or 15
 	end
 	page:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
 

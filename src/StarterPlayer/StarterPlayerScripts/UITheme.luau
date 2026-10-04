@@ -108,6 +108,12 @@ Theme.font = {
 	body = Font.new(MONO, Enum.FontWeight.Regular),
 }
 
+-- Самый мелкий текст в интерфейсе, в пикселях. Ниже не ставить нигде — ни подписям,
+-- ни «второстепенным» строкам: на телефоне мельче не читается (правило автора, CLAUDE.md).
+-- TextScale.client дотягивает до него любую надпись в PlayerGui, но раскладку под
+-- этот размер окно должно считать само, иначе текст обрежется.
+Theme.MIN_TEXT = 14
+
 local HOVER = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 -- Твин, который сейчас красит заливку кнопки по наведению — по кнопке, слабая таблица
@@ -331,14 +337,14 @@ function Theme.Title(label, color)
 	return label
 end
 
--- Показание прибора одной строкой. Подпись не просто приглушена, а напечатана
--- вдвое мельче числа: в референсе подпись у числа почти не видна, и первым
+-- Показание прибора одной строкой. Подпись приглушена и мельче числа: первым
 -- читается значение, а не то, как оно называется. Размер задан в самом теге,
--- потому что второго TextLabel ради двух кеглей заводить ни к чему.
+-- потому что второго TextLabel ради двух кеглей заводить ни к чему. Мельче
+-- Theme.MIN_TEXT подпись не бывает: TextScale до тега <font size> не дотягивается.
 -- Требует label.RichText = true у вызывающего.
 function Theme.Readout(caption, value, valueColor, captionSize)
 	return ('<font size="%d" color="%s">%s</font>  <font color="%s">%s</font>'):format(
-		captionSize or 11,
+		math.max(Theme.MIN_TEXT, captionSize or Theme.MIN_TEXT),
 		Theme.Hex(Theme.color.textMute),
 		Theme.Caps(caption),
 		Theme.Hex(valueColor or Theme.color.accent),

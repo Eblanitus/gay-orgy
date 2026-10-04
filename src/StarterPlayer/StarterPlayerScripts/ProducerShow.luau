@@ -487,7 +487,7 @@ local function jackpotShow(overlay, skin, jackpot, reels, span)
 	local name = label(
 		gift,
 		("+%d %s"):format(jackpot.amount, Theme.Caps(Elements[jackpot.key].name)),
-		math.clamp(math.floor(cellH * 0.45), 12, 26),
+		math.clamp(math.floor(cellH * 0.45), Theme.MIN_TEXT, 26),
 		z + 4
 	)
 	name.Size = UDim2.fromScale(1, 1)
@@ -504,7 +504,7 @@ local function jackpotShow(overlay, skin, jackpot, reels, span)
 
 	-- Правило под подарком — только на экране, где ему есть место.
 	if H >= 140 then
-		local capSize = math.clamp(math.floor(H * 0.055), 11, 16)
+		local capSize = math.clamp(math.floor(H * 0.055), Theme.MIN_TEXT, 16)
 		local caption = label(
 			layer,
 			("%d ОДИНАКОВЫХ — ЕЩЁ %d В ПОДАРОК"):format(jackpot.count, jackpot.amount),
@@ -779,7 +779,7 @@ function Show.Dial(holder, chance, dial, z)
 		shades[t + 1] = shade
 	end
 
-	local size = dial >= 300 and 44 or dial >= 200 and 30 or dial >= 80 and 16 or 11
+	local size = dial >= 300 and 44 or dial >= 200 and 30 or dial >= 80 and 16 or Theme.MIN_TEXT
 	local value = label(ring, percent(chance), size, z + 2)
 	value.TextColor3 = Theme.color.action
 	value.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -787,7 +787,7 @@ function Show.Dial(holder, chance, dial, z)
 	value.Size = UDim2.fromOffset(hub * 1.8, size * 1.4)
 	-- На большом круге над числом подпись: что это за число.
 	if dial >= 200 then
-		local cap = label(ring, "ШАНС", dial >= 300 and 13 or 11, z + 2)
+		local cap = label(ring, "ШАНС", dial >= 300 and 15 or Theme.MIN_TEXT, z + 2)
 		cap.FontFace = Theme.font.body
 		cap.TextColor3 = Theme.color.textDim
 		cap.AnchorPoint = Vector2.new(0.5, 1)
@@ -897,7 +897,7 @@ function Show.Upgrade(screen, skin, result, time)
 	local pad = 8
 	local dial = math.max(math.min(size.Y - pad * 2, math.floor(size.X * 0.4)), 30)
 	local sideW = math.min(math.floor((size.X - dial - pad * 4) / 2), 360)
-	local textSize = sideW >= 200 and 26 or sideW >= 110 and 18 or 13
+	local textSize = sideW >= 200 and 26 or sideW >= 110 and 18 or Theme.MIN_TEXT
 
 	for side, key in { result.from, result.to } do
 		local box = part("Frame", overlay)

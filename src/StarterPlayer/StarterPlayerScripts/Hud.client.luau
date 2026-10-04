@@ -33,12 +33,12 @@ resultGui.Parent = playerGui
 -- это три колонки в одну полосу: подпись мелким и под ней крупное число. Три числа
 -- рядом считываются одним взглядом, а панель перестала занимать четверть высоты экрана
 -- на телефоне.
-local STAT_W = 66
+local STAT_W = 78 -- «ПРОЧНОСТЬ» в 14px моноширинным — 76px
 local STAT_GAP = 6
 
 -- Ширина панели вынесена в имя: по ней равняется кнопка промокода под ней.
 -- Прежде кнопка была 130 при панели в 232, и левый столбец шёл уступом.
-local PANEL_W = 232
+local PANEL_W = 276
 
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0, PANEL_W, 0, 72)
@@ -63,9 +63,9 @@ local function makeStat(caption)
 	statOrder += 1
 
 	local cap = Instance.new("TextLabel")
-	cap.Size = UDim2.new(0, STAT_W, 0, 12)
-	cap.Position = UDim2.new(0, x, 0, 10)
-	cap.TextSize = 10
+	cap.Size = UDim2.new(0, STAT_W, 0, 16)
+	cap.Position = UDim2.new(0, x, 0, 8)
+	cap.TextSize = Theme.MIN_TEXT
 	cap.TextXAlignment = Enum.TextXAlignment.Left
 	cap.Text = caption
 	cap.Parent = frame
@@ -73,7 +73,7 @@ local function makeStat(caption)
 
 	local value = Instance.new("TextLabel")
 	value.Size = UDim2.new(0, STAT_W, 0, 26)
-	value.Position = UDim2.new(0, x, 0, 22)
+	value.Position = UDim2.new(0, x, 0, 24)
 	value.BackgroundTransparency = 1
 	value.TextSize = 22
 	value.TextColor3 = Theme.color.text
@@ -114,7 +114,7 @@ hpLabel.TextColor3 = Theme.color.accent
 -- по очку на ячейку панель не построишь.
 local hpBar = Instance.new("Frame")
 hpBar.Size = UDim2.new(1, -28, 0, 6)
-hpBar.Position = UDim2.new(0, 14, 0, 54)
+hpBar.Position = UDim2.new(0, 14, 0, 56)
 hpBar.BackgroundColor3 = Theme.color.danger:Lerp(Theme.color.panel, 0.72)
 hpBar.BackgroundTransparency = 0
 hpBar.BorderSizePixel = 0
@@ -251,9 +251,9 @@ Theme.Display(resultLabel)
 local resultCaption = nil
 if not MobileUI.isMobile then
 	resultCaption = Instance.new("TextLabel")
-	resultCaption.Size = UDim2.new(1, -28, 0, 12)
-	resultCaption.Position = UDim2.new(0, 14, 0, 9)
-	resultCaption.TextSize = 11
+	resultCaption.Size = UDim2.new(1, -28, 0, 16)
+	resultCaption.Position = UDim2.new(0, 14, 0, 7)
+	resultCaption.TextSize = Theme.MIN_TEXT
 	resultCaption.ZIndex = resultLabel.ZIndex + 1
 	resultCaption.Parent = resultFrame
 
