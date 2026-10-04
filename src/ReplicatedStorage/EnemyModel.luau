@@ -137,12 +137,9 @@ end
 local function buildPrimitive(enemyData)
 	local model = Instance.new("Model")
 	local scale = enemyData.scale or 1
-	-- Цвета — из BugPalette (Enemies заполняет их всем видам). Броня видна по металлу, а не
-	-- по отдельному серому цвету: каста бронированного жука читается так же, как у прочих.
-	local color = enemyData.color or Color3.fromRGB(55, 80, 45)
-	local headColor = enemyData.headColor or color
+	local color = enemyData.color or (enemyData.armor and Color3.fromRGB(120, 120, 130) or Color3.fromRGB(55, 80, 45))
 	local material = enemyData.material or (enemyData.armor and Enum.Material.Metal or Enum.Material.SmoothPlastic)
-	local legColor = enemyData.legColor or Color3.fromRGB(30, 25, 20)
+	local legColor = enemyData.legColor or (enemyData.armor and Color3.fromRGB(60, 60, 66) or Color3.fromRGB(30, 25, 20))
 
 	-- Shape = Ball игнорирует неравномерный Size — нужен SpecialMesh(Sphere).
 	local body = Instance.new("Part")
@@ -166,7 +163,7 @@ local function buildPrimitive(enemyData)
 	head.Anchored = true
 	head.CanCollide = false
 	head.CanTouch = false
-	head.Color = headColor
+	head.Color = color
 	head.Material = material
 	head.CFrame = CFrame.new(0, -0.1 * scale, 1.72 * scale)
 	head.Parent = model
@@ -193,7 +190,7 @@ local function buildPrimitive(enemyData)
 		leg.CanCollide = false
 		leg.CanTouch = false
 		leg.Color = legColor
-		leg.Material = Enum.Material.SmoothPlastic
+		leg.Material = material
 		leg.CFrame = CFrame.lookAt(pair.hip:Lerp(pair.foot, 0.5), pair.foot) * CFrame.Angles(0, math.rad(90), 0)
 		leg.Parent = model
 		table.insert(legs, { part = leg, hip = pair.hip, foot = pair.foot })
