@@ -242,6 +242,10 @@ local function onDamageDealt(position, amount, isBase)
 	label.BackgroundTransparency = 1
 	label.FontFace = Theme.font.strong
 	label.TextScaled = true
+	-- Табличка в студах и на отдалении сжимается — мельче Theme.MIN_TEXT цифра не становится.
+	local floor = Instance.new("UITextSizeConstraint")
+	floor.MinTextSize = Theme.MIN_TEXT
+	floor.Parent = label
 	if amount < 0 then
 		label.Text = "+" .. tostring(-amount)
 		label.TextColor3 = Color3.fromRGB(90, 255, 140)

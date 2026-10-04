@@ -37,7 +37,7 @@ local root = Instance.new("Frame")
 local ROW_H = MobileUI.isMobile and 48 or 34
 local ROW_GAP = 6
 -- Шапка выросла на подпись раздела с линией — та же разметка, что и в Лаборатории.
-local SECTION_H = 16
+local SECTION_H = 18
 local MARGIN = 16
 -- Отступ внутри рамки окна: всё содержимое считается от него, а не каждое от своего.
 local INNER = MobileUI.isMobile and 12 or 18
@@ -115,8 +115,8 @@ footerRule.Parent = window
 Theme.Rule(footerRule)
 
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -INNER * 2, 0, 16)
-statusLabel.TextSize = MobileUI.isMobile and 10 or 12
+statusLabel.Size = UDim2.new(1, -INNER * 2, 0, 18)
+statusLabel.TextSize = Theme.MIN_TEXT
 statusLabel.Parent = window
 Theme.Status(statusLabel, "инвентарь", "элементы живут один забег и пропадают в конце")
 
@@ -132,7 +132,7 @@ Theme.CloseButton(closeButton)
 
 local sectionLabel = Instance.new("TextLabel")
 sectionLabel.Size = UDim2.new(1, -INNER * 2, 0, SECTION_H)
-sectionLabel.TextSize = 11
+sectionLabel.TextSize = Theme.MIN_TEXT
 sectionLabel.Parent = window
 
 Theme.Section(sectionLabel, "элементы", 0)
@@ -205,7 +205,7 @@ emptyText.Size = UDim2.new(1, 0, 0, 0)
 emptyText.AutomaticSize = Enum.AutomaticSize.Y
 emptyText.BackgroundTransparency = 1
 emptyText.FontFace = Theme.font.body
-emptyText.TextSize = 13
+emptyText.TextSize = Theme.MIN_TEXT
 emptyText.TextWrapped = true
 emptyText.TextXAlignment = Enum.TextXAlignment.Left
 emptyText.TextYAlignment = Enum.TextYAlignment.Top
@@ -317,9 +317,9 @@ local function refreshList()
 		countLabel.TextSize = 15
 		countLabel.RichText = true
 		countLabel.TextXAlignment = Enum.TextXAlignment.Right
-		-- Подпись «шт» вдвое мельче самого числа, число — цветом элемента: заливок
+		-- Подпись «шт» мельче самого числа, число — цветом элемента: заливок
 		-- в полную силу больше нет, и цвету нужно второе место в строке помимо засечки.
-		countLabel.Text = Theme.Readout("шт", inventory[key], Theme.Legible(data.color), 10)
+		countLabel.Text = Theme.Readout("шт", inventory[key], Theme.Legible(data.color))
 		countLabel.Parent = content
 	end
 

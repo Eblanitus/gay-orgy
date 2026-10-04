@@ -32,7 +32,7 @@ local Detail = {}
 local mobile = MobileUI.isMobile
 -- Места в карточке много — текст крупный (просьба автора: описание было слишком мелким).
 local TEXT = mobile and 15 or 18
-local SMALL = mobile and 13 or 14
+local SMALL = Theme.MIN_TEXT
 
 -- Во что идёт элемент: рецепты, где он один из двух ингредиентов. Считается один раз.
 local usedIn = {}

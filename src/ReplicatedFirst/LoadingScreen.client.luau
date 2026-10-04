@@ -58,6 +58,9 @@ screen.Parent = gui
 
 local W = small and 360 or 520
 local LINE_H = small and 18 or 22
+-- Самый мелкий текст — как Theme.MIN_TEXT в UITheme: тот модуль лежит в StarterPlayerScripts
+-- и до экрана загрузки ещё не доехал, поэтому число повторено здесь.
+local MIN_TEXT = 14
 local block = Instance.new("Frame")
 block.AnchorPoint = Vector2.new(0.5, 0.5)
 block.Position = UDim2.fromScale(0.5, 0.5)
@@ -115,12 +118,12 @@ local STAGES = {
 }
 local rows = {}
 for _, stage in STAGES do
-	local name = label(BODY, small and 11 or 13, C.textMute, stage.name)
+	local name = label(BODY, MIN_TEXT, C.textMute, stage.name)
 	local state = Instance.new("TextLabel")
 	state.Size = UDim2.fromScale(1, 1)
 	state.BackgroundTransparency = 1
 	state.FontFace = BOLD
-	state.TextSize = small and 11 or 13
+	state.TextSize = MIN_TEXT
 	state.TextXAlignment = Enum.TextXAlignment.Right
 	state.Parent = name
 	rows[stage.key] = { name = name, state = state }
@@ -157,7 +160,7 @@ rule(small and 10 or 16)
 
 -- Полоса — те же столбики, что у ползунков громкости: горят по доле загруженного.
 local SEGMENTS = 40
-local BAR_H = small and 10 or 14
+local BAR_H = 14
 order += 1
 local barRow = Instance.new("Frame")
 barRow.LayoutOrder = order
@@ -171,7 +174,7 @@ percent.Position = UDim2.fromScale(1, 0)
 percent.Size = UDim2.new(0, 48, 1, 0)
 percent.BackgroundTransparency = 1
 percent.FontFace = BOLD
-percent.TextSize = small and 11 or 13
+percent.TextSize = MIN_TEXT
 percent.TextColor3 = C.accent
 percent.TextXAlignment = Enum.TextXAlignment.Right
 percent.Text = "0%"
@@ -275,7 +278,7 @@ if okTips and type(tipLists) == "table" then
 	head.Size = UDim2.new(1, 0, 0, LINE_H)
 	head.BackgroundTransparency = 1
 	head.FontFace = BOLD
-	head.TextSize = small and 11 or 13
+	head.TextSize = MIN_TEXT
 	head.TextColor3 = C.accent
 	head.TextXAlignment = Enum.TextXAlignment.Left
 	head.Parent = tipBox
@@ -285,7 +288,7 @@ if okTips and type(tipLists) == "table" then
 	nextHint.Size = UDim2.fromScale(1, 1)
 	nextHint.BackgroundTransparency = 1
 	nextHint.FontFace = BODY
-	nextHint.TextSize = small and 11 or 13
+	nextHint.TextSize = MIN_TEXT
 	nextHint.TextColor3 = C.textMute
 	nextHint.TextXAlignment = Enum.TextXAlignment.Right
 	nextHint.Text = "[ ДАЛЕЕ ]"
@@ -297,7 +300,7 @@ if okTips and type(tipLists) == "table" then
 	body.AutomaticSize = Enum.AutomaticSize.Y
 	body.BackgroundTransparency = 1
 	body.FontFace = BODY
-	body.TextSize = small and 12 or 15
+	body.TextSize = small and MIN_TEXT or 15
 	body.LineHeight = 1.15
 	body.TextColor3 = C.text
 	body.TextWrapped = true

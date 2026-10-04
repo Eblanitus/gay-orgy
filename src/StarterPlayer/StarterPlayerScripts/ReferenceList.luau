@@ -31,7 +31,7 @@ return function(deps)
 		listScroll:ClearAllChildren()
 		-- Сетка: рецепт — короткая строка в три слова, и на полном экране колонка таких
 		-- строк — это метр пустоты справа от каждой и прокрутка после десятой.
-		Theme.Grid(listScroll, 24, 340, 4)
+		Theme.Grid(listScroll, 24, 380, 4) -- 380: самый длинный рецепт в 14px
 
 		local steps = {}
 		if ref.selected then
@@ -90,7 +90,7 @@ return function(deps)
 
 			local label = Instance.new("TextLabel")
 			label.FontFace = Theme.font.body
-			label.TextSize = 13
+			label.TextSize = Theme.MIN_TEXT
 			label.TextXAlignment = Enum.TextXAlignment.Left
 			label.Text = known
 				and ((isCraftable(entry.key) and "● " or "") .. Theme.Caps(("%s + %s = %s"):format(
@@ -124,7 +124,7 @@ return function(deps)
 			empty.Size = UDim2.new(1, -10, 0, 24)
 			empty.BackgroundTransparency = 1
 			empty.FontFace = Theme.font.body
-			empty.TextSize = 13
+			empty.TextSize = Theme.MIN_TEXT
 			empty.TextColor3 = Theme.color.textMute
 			empty.TextXAlignment = Enum.TextXAlignment.Left
 			empty.Text = ref.selected ~= nil

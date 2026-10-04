@@ -182,7 +182,7 @@ local pathLabel = Instance.new("TextLabel")
 pathLabel.Position = UDim2.new(0, 0, 0, mobile and 28 or 44)
 pathLabel.Size = UDim2.new(1, -(ACTION_W + 16), 0, mobile and 16 or 18)
 pathLabel.BackgroundTransparency = 1
-pathLabel.TextSize = mobile and 11 or 13
+pathLabel.TextSize = Theme.MIN_TEXT
 pathLabel.TextXAlignment = Enum.TextXAlignment.Left
 pathLabel.TextTruncate = Enum.TextTruncate.AtEnd
 pathLabel.Text = ""
@@ -267,7 +267,7 @@ local statusLabel = Instance.new("TextLabel")
 statusLabel.AnchorPoint = Vector2.new(0, 1)
 statusLabel.Position = UDim2.new(0, 0, 1, 0)
 statusLabel.Size = UDim2.new(1, 0, 0, ACTION_H)
-statusLabel.TextSize = mobile and 10 or 12
+statusLabel.TextSize = Theme.MIN_TEXT
 statusLabel.TextYAlignment = Enum.TextYAlignment.Center
 statusLabel.Parent = frame
 
@@ -290,7 +290,7 @@ rootPage.BackgroundTransparency = 1
 rootPage.BorderSizePixel = 0
 rootPage.Parent = body
 
-local BOOT_LINE_H = mobile and 16 or 18
+local BOOT_LINE_H = 18
 local BOOT_H = BOOT_LINE_H * 3
 
 -- Строки запуска стоят СПРАВА от колонки пунктов, а не над ней. Игра только альбомная
@@ -304,7 +304,7 @@ bootLabel.Position = UDim2.new(0.52, mobile and 10 or 20, 0, 0)
 bootLabel.Size = UDim2.new(0.48, -(mobile and 10 or 20), 0, BOOT_H)
 bootLabel.BackgroundTransparency = 1
 bootLabel.FontFace = Theme.font.body
-bootLabel.TextSize = mobile and 11 or 13
+bootLabel.TextSize = Theme.MIN_TEXT
 bootLabel.TextXAlignment = Enum.TextXAlignment.Left
 bootLabel.TextYAlignment = Enum.TextYAlignment.Top
 bootLabel.TextColor3 = Theme.color.accentDim
@@ -340,7 +340,7 @@ summary.Parent = rootPage
 
 local summaryCaption = Instance.new("TextLabel")
 summaryCaption.Size = UDim2.new(1, 0, 0, SUM_CAP_H)
-summaryCaption.TextSize = mobile and 11 or 12
+summaryCaption.TextSize = Theme.MIN_TEXT
 summaryCaption.Parent = summary
 Theme.Section(summaryCaption, "сводка")
 
@@ -361,7 +361,7 @@ for index, row in SUM_ROWS do
 	caption.Size = UDim2.new(1, -110, 1, 0)
 	caption.BackgroundTransparency = 1
 	caption.FontFace = Theme.font.body
-	caption.TextSize = mobile and 11 or 13
+	caption.TextSize = Theme.MIN_TEXT
 	caption.TextXAlignment = Enum.TextXAlignment.Left
 	caption.TextTruncate = Enum.TextTruncate.AtEnd
 	caption.TextColor3 = Theme.color.textDim
@@ -374,7 +374,7 @@ for index, row in SUM_ROWS do
 	value.Size = UDim2.new(0, 106, 1, 0)
 	value.BackgroundTransparency = 1
 	value.FontFace = Theme.font.strong
-	value.TextSize = mobile and 12 or 14
+	value.TextSize = mobile and Theme.MIN_TEXT or 15
 	value.TextXAlignment = Enum.TextXAlignment.Right
 	value.TextColor3 = row.energy and Theme.color.energy or Theme.color.accent
 	value.Text = "—"
@@ -443,7 +443,7 @@ actionButton.AnchorPoint = Vector2.new(1, 0)
 actionButton.Position = UDim2.new(1, 0, 0, mobile and 0 or 4)
 actionButton.Size = UDim2.new(0, ACTION_W, 0, ACTION_H)
 actionButton.FontFace = Theme.font.strong
-actionButton.TextSize = mobile and 12 or 13
+actionButton.TextSize = Theme.MIN_TEXT
 actionButton.Text = ""
 actionButton.Parent = frame
 Theme.Button(actionButton, "quiet")
@@ -731,7 +731,7 @@ local openButton = Instance.new("TextButton")
 -- раньше этот скрипт брал угол своим числом и на телефоне накрывал кнопку инвентаря.
 MobileUI.TopRight(openButton, MobileUI.CornerSlot.Menu)
 openButton.FontFace = Theme.font.strong
-openButton.TextSize = mobile and 12 or 13
+openButton.TextSize = Theme.MIN_TEXT
 openButton.Text = Theme.Caps("Меню")
 openButton.Parent = openGui
 Theme.Button(openButton, "ghost")

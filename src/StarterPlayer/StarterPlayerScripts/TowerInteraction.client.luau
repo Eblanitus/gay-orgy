@@ -164,7 +164,7 @@ local function refreshElementList()
 		button.TextXAlignment = Enum.TextXAlignment.Left
 		button.Text = ("%s   %s"):format(
 			Theme.Caps(data.name),
-			Theme.Readout("шт", inventory[key], Theme.Legible(data.color), 10)
+			Theme.Readout("шт", inventory[key], Theme.Legible(data.color))
 		)
 		button.Parent = elementList
 
@@ -932,6 +932,11 @@ end
 local setBuildMode
 
 local BUILD_BTN = 64
+-- Ячейка шире своей высоты: самые длинные слова в именах («ЦЕНТРИФУГА», «FPV-ДРОНОВ»)
+-- в 14px моноширинным — 84px, в квадрат 64 они не влезали и раньше держались только
+-- мелким кеглем. Высота прежняя: панель не поднимается выше над джойстиком и промокодом,
+-- а 4 x 96 с зазорами справа кончается до кнопки прыжка (655px на 750x322).
+local BUILD_BTN_W = 96
 local BUILD_BTN_GAP = 8
 
 -- Кнопок стало восемь (семь построек плюс переключатель режима), и в одну строку по низу
@@ -944,7 +949,7 @@ local BUILD_COLS = 4
 local function buildSlotPosition(slot)
 	return UDim2.new(
 		0,
-		(slot % BUILD_COLS) * (BUILD_BTN + BUILD_BTN_GAP),
+		(slot % BUILD_COLS) * (BUILD_BTN_W + BUILD_BTN_GAP),
 		0,
 		math.floor(slot / BUILD_COLS) * (BUILD_BTN + BUILD_BTN_GAP)
 	)
@@ -971,10 +976,10 @@ if MobileUI.isMobile then
 	-- Имя, а не текст: у ячейки собственный текст погашен и переехал на подложку,
 	-- и setBuildMode ниже узнаёт эту кнопку по имени.
 	buildBtn.Name = "BuildModeButton"
-	buildBtn.Size = UDim2.new(0, BUILD_BTN, 0, BUILD_BTN)
+	buildBtn.Size = UDim2.new(0, BUILD_BTN_W, 0, BUILD_BTN)
 	buildBtn.Position = buildSlotPosition(0)
 	buildBtn.FontFace = Theme.font.strong
-	buildBtn.TextSize = 13
+	buildBtn.TextSize = Theme.MIN_TEXT
 	buildBtn.TextWrapped = true
 	buildBtn.Text = 'СТРОЙКА'
 	buildBtn.Parent = buildPanel
@@ -1017,7 +1022,7 @@ if MobileUI.isMobile then
 		local rows = math.ceil((#BUILD_ORDER + 2) / BUILD_COLS)
 		buildPanel.Size = UDim2.new(
 			0,
-			BUILD_BTN * BUILD_COLS + BUILD_BTN_GAP * (BUILD_COLS - 1),
+			BUILD_BTN_W * BUILD_COLS + BUILD_BTN_GAP * (BUILD_COLS - 1),
 			0,
 			BUILD_BTN * rows + BUILD_BTN_GAP * (rows - 1)
 		)
@@ -1025,13 +1030,13 @@ if MobileUI.isMobile then
 		for i, key in BUILD_ORDER do
 			local b = Instance.new('TextButton')
 			b.Name = "TowerButton"
-			b.Size = UDim2.new(0, BUILD_BTN, 0, BUILD_BTN)
+			b.Size = UDim2.new(0, BUILD_BTN_W, 0, BUILD_BTN)
 			b.Position = buildSlotPosition(i)
 			b.FontFace = Theme.font.strong
 			-- Имена стали длиннее («Центрифуга» вдвое длиннее «Колбы») — переносим по словам,
-			-- иначе в квадрат 64x64 они просто обрезаются.
+			-- иначе в ячейку они просто обрезаются.
 			b.TextWrapped = true
-			b.TextSize = 11
+			b.TextSize = Theme.MIN_TEXT
 			b.Text = Theme.Caps(Towers[key].name)
 			b.Visible = buildMode
 			-- Номер слота атрибутом: по нему refreshBuildSelection узнаёт, какая из ячеек
@@ -1051,11 +1056,11 @@ if MobileUI.isMobile then
 		-- совпадать с цифровыми клавишами ПК, и вставлять что-то в середину нельзя.
 		rotateBtn = Instance.new('TextButton')
 		rotateBtn.Name = "RotateButton"
-		rotateBtn.Size = UDim2.new(0, BUILD_BTN, 0, BUILD_BTN)
+		rotateBtn.Size = UDim2.new(0, BUILD_BTN_W, 0, BUILD_BTN)
 		rotateBtn.Position = buildSlotPosition(#BUILD_ORDER + 1)
 		rotateBtn.FontFace = Theme.font.strong
 		rotateBtn.TextWrapped = true
-		rotateBtn.TextSize = 11
+		rotateBtn.TextSize = Theme.MIN_TEXT
 		rotateBtn.Text = ("ПОВОРОТ\n%d°"):format(buildTurn * 90)
 		rotateBtn.Visible = buildMode
 		rotateBtn.Parent = buildPanel

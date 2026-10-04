@@ -328,9 +328,9 @@ local TAB_STATUS = {
 
 local statusLabel = Instance.new("TextLabel")
 statusLabel.AnchorPoint = Vector2.new(0, 1)
-statusLabel.Size = UDim2.new(1, -MARGIN * 2, 0, 16)
+statusLabel.Size = UDim2.new(1, -MARGIN * 2, 0, 18)
 statusLabel.Position = UDim2.new(0, MARGIN, 1, -6)
-statusLabel.TextSize = 12
+statusLabel.TextSize = Theme.MIN_TEXT
 statusLabel.Parent = root
 
 -- Своя обстановка у каждой вкладки (Theme.scene): покупка, скрещивание и карта

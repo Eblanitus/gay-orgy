@@ -284,7 +284,7 @@ return function(deps)
 	openedLabel.Position = UDim2.new(0, 0, GRAPH_SHARE, 6)
 	openedLabel.BackgroundTransparency = 1
 	openedLabel.FontFace = Theme.font.strong
-	openedLabel.TextSize = 11
+	openedLabel.TextSize = Theme.MIN_TEXT
 	openedLabel.Parent = mapFrame
 
 	local listScroll = Instance.new("ScrollingFrame")
@@ -350,7 +350,7 @@ return function(deps)
 	hintBar.BackgroundColor3 = Theme.color.panel
 	hintBar.BackgroundTransparency = 0.1
 	hintBar.FontFace = Theme.font.body
-	hintBar.TextSize = 12
+	hintBar.TextSize = Theme.MIN_TEXT
 	hintBar.TextColor3 = Theme.color.textDim
 	hintBar.TextXAlignment = Enum.TextXAlignment.Left
 	hintBar.ZIndex = 6
@@ -372,7 +372,7 @@ return function(deps)
 	listButton.Size = UDim2.new(0, 96, 0, MobileUI.isMobile and MobileUI.MIN_TAP or 22)
 	listButton.Position = UDim2.new(0, 2, 0, 2)
 	listButton.FontFace = Theme.font.strong
-	listButton.TextSize = 11
+	listButton.TextSize = Theme.MIN_TEXT
 	listButton.Text = "СПИСОК ▲"
 	listButton.ZIndex = 6
 	listButton.Parent = mapFrame

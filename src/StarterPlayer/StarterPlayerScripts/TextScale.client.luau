@@ -8,9 +8,14 @@
 --
 -- Растёт только TextSize. Размер вписанного в RichText (<font size>) и рамки окон не
 -- меняются — длинная подпись на 130 % может обрезаться.
+--
+-- Заодно здесь пол: мельче Theme.MIN_TEXT на экране не бывает ничего, даже если окно
+-- поставило меньше (запрет автора на мелкий текст). Это страховка — окна сами ставят
+-- не меньше минимума и считают под него раскладку.
 local Players = game:GetService("Players")
 
 local Settings = require(script.Parent:WaitForChild("Settings"))
+local Theme = require(script.Parent:WaitForChild("UITheme"))
 
 local gui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
@@ -23,9 +28,14 @@ local function readScale()
 end
 
 local function apply(label)
-	local size = math.floor(base[label] * scale + 0.5)
+	local size = math.max(Theme.MIN_TEXT, math.floor(base[label] * scale + 0.5))
 	shown[label] = size
 	label.TextSize = size
+end
+
+-- Нужно ли своё число на экране: множитель не единица или родной размер ниже пола.
+local function needs(label)
+	return scale ~= 1 or base[label] < Theme.MIN_TEXT
 end
 
 local function track(label)
@@ -36,7 +46,7 @@ local function track(label)
 		return
 	end
 	base[label] = label.TextSize
-	if scale ~= 1 then
+	if needs(label) then
 		apply(label)
 	end
 	label:GetPropertyChangedSignal("TextSize"):Connect(function()
@@ -44,7 +54,7 @@ local function track(label)
 			return
 		end
 		base[label] = label.TextSize
-		if scale ~= 1 then
+		if needs(label) then
 			apply(label)
 		else
 			shown[label] = label.TextSize

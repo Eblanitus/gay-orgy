@@ -171,7 +171,7 @@ function Frame.Build(root, gui, modes, opts)
 		local searchW = math.min(by(170, 320), math.floor((MW - px * 2 - closeW - g) / 2))
 		local searchX = MW - px - closeW - g - searchW
 		place(searchBox, searchX, closeY, searchW, closeH)
-		searchBox.TextSize = by(13, 15)
+		searchBox.TextSize = by(Theme.MIN_TEXT, 15)
 		local capGap, capW = by(10, 14), by(14, 18)
 		place(searchCaption, searchX + capGap, closeY + (closeH - capW) / 2, capW, capW)
 		searchPad.PaddingLeft = UDim.new(0, capGap + capW + 10)
@@ -184,7 +184,7 @@ function Frame.Build(root, gui, modes, opts)
 		place(map, px, footY, tabW * #modes + tabGap * (#modes - 1), rowH)
 		for i, m in modes do
 			local b = modeButtons[m.id]
-			b.TextSize = by(13, 18)
+			b.TextSize = by(Theme.MIN_TEXT, 18)
 			b.Pad.PaddingLeft = UDim.new(0, by(10, 16))
 			place(b, (i - 1) * (tabW + tabGap), 0, tabW, rowH)
 		end

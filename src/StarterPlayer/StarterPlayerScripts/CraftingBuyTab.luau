@@ -97,7 +97,7 @@ return function(deps)
 			l.TextScaled = true
 			l.Text = str
 			local limit = Instance.new("UITextSizeConstraint")
-			limit.MinTextSize = 6
+			limit.MinTextSize = Theme.MIN_TEXT
 			limit.Parent = l
 			return l
 		end
@@ -113,7 +113,7 @@ return function(deps)
 			b.Text = str
 			Theme.Corner(b, Theme.radius.mark)
 			local limit = Instance.new("UITextSizeConstraint")
-			limit.MinTextSize = 6
+			limit.MinTextSize = Theme.MIN_TEXT
 			limit.Parent = b
 			local pad = Instance.new("UIPadding")
 			pad.PaddingLeft = UDim.new(0, 3)
@@ -382,7 +382,7 @@ return function(deps)
 		end
 
 		local function textMax(inst, size)
-			inst:FindFirstChildOfClass("UITextSizeConstraint").MaxTextSize = math.max(6, math.floor(size))
+			inst:FindFirstChildOfClass("UITextSizeConstraint").MaxTextSize = math.max(Theme.MIN_TEXT, math.floor(size))
 		end
 
 		local function layout()

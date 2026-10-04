@@ -118,7 +118,7 @@ local function page(parent, name, spec)
 	back.Size = UDim2.new(0, 120, 0, BACK_H)
 	back.Position = UDim2.new(0, 8, 0, 8)
 	back.FontFace = Theme.font.strong
-	back.TextSize = 11
+	back.TextSize = Theme.MIN_TEXT
 	back.Text = Theme.Caps("< к списку")
 	back.ZIndex = 5
 	back.Parent = card

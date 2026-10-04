@@ -68,9 +68,9 @@ function SettingsUI.Mount(parent)
 	-- Ползунок громкости: столбики высотой METER_H, под ними полоса и строка подписей.
 	-- Строка громкости выше обычной: ползунок лежит под названием и подписью.
 	local METER_H = mobile and 26 or 22
-	local CAPTION_H = 11
+	local CAPTION_H = 17
 	local SLIDER_H = METER_H + 8 + CAPTION_H
-	local VOLUME_ROW_H = mobile and 120 or 112
+	local VOLUME_ROW_H = mobile and 126 or 118
 
 	local page = Instance.new("Frame")
 	page.Name = "SettingsPage"
@@ -136,7 +136,7 @@ function SettingsUI.Mount(parent)
 		button.LayoutOrder = index
 		button.Size = UDim2.new(1 / #UISettings.Tabs, -6 * (#UISettings.Tabs - 1) / #UISettings.Tabs, 1, 0)
 		button.FontFace = Theme.font.strong
-		button.TextSize = mobile and 11 or 13
+		button.TextSize = mobile and Theme.MIN_TEXT or 15
 		button.TextTruncate = Enum.TextTruncate.AtEnd
 		button.Text = Theme.Caps(tab.name)
 		button.Parent = tabsRow
@@ -206,6 +206,12 @@ function SettingsUI.Mount(parent)
 		pad.PaddingRight = UDim.new(0, 12)
 		pad.PaddingTop = UDim.new(0, 9)
 		pad.Parent = row
+		-- Описание переносится, и в строку ROW_H длинное в три строки не влезает:
+		-- обычная строка дорастает по нему (ROW_H — её наименьшая высота).
+		if not item.step then
+			pad.PaddingBottom = UDim.new(0, 9)
+			row.AutomaticSize = Enum.AutomaticSize.Y
+		end
 
 		local nameLabel = Instance.new("TextLabel")
 		nameLabel.Size = UDim2.new(1, -(stateW + 10), 0, mobile and 19 or 21)
@@ -224,7 +230,10 @@ function SettingsUI.Mount(parent)
 		noteLabel.Position = UDim2.new(0, 0, 0, mobile and 21 or 23)
 		noteLabel.BackgroundTransparency = 1
 		noteLabel.FontFace = Theme.font.body
-		noteLabel.TextSize = mobile and 11 or 12
+		noteLabel.TextSize = Theme.MIN_TEXT
+		if not item.step then
+			noteLabel.AutomaticSize = Enum.AutomaticSize.Y
+		end
 		noteLabel.TextXAlignment = Enum.TextXAlignment.Left
 		noteLabel.TextYAlignment = Enum.TextYAlignment.Top
 		noteLabel.TextColor3 = Theme.color.textMute
@@ -333,7 +342,7 @@ function SettingsUI.Mount(parent)
 				label.Size = UDim2.new(width, -4, 0, CAPTION_H)
 				label.BackgroundTransparency = 1
 				label.FontFace = Theme.font.strong
-				label.TextSize = 10
+				label.TextSize = Theme.MIN_TEXT
 				label.TextXAlignment = align
 				label.TextColor3 = color
 				label.Text = text

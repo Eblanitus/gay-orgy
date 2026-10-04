@@ -46,7 +46,7 @@ return function(deps)
 	-- стихия читается ядром с ореолом (HALO), остальные — мелкими точками своего цвета.
 	local DOT, DOT_BASE, HALO = 4, 10, 26
 	-- Подпись базовой стихии у её точки на полном отдалении: размер и отступ в пикселях экрана.
-	local SIDE_TEXT, SIDE_GAP = 10, 4
+	local SIDE_TEXT, SIDE_GAP = Theme.MIN_TEXT, 4
 
 	-- Постороннее не прячется совсем, а гаснет: карта должна остаться на месте, иначе
 	-- по одной висящей в пустоте цепочке не понять, откуда в дереве она растёт.
@@ -191,7 +191,7 @@ return function(deps)
 		nameLabel.Position = UDim2.new(0, 3, 0, 0)
 		nameLabel.BackgroundTransparency = 1
 		nameLabel.FontFace = Theme.font.strong
-		nameLabel.TextSize = 12
+		nameLabel.TextSize = Theme.MIN_TEXT -- ширину узла под этот кегль считает RecipeGraph (CHAR_W)
 		-- Ширину узла раскладка считала по числу букв в моноширинном шрифте, поэтому имя
 		-- влезает целиком; обрезка оставлена на случай, если шрифт когда-нибудь сменят.
 		nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
@@ -227,12 +227,12 @@ return function(deps)
 		detail.AnchorPoint = Vector2.new(0.5, 0)
 		detail.Position = UDim2.new(0, place.x, 0, place.y + place.h / 2 + 4)
 		detail.AutomaticSize = Enum.AutomaticSize.X
-		detail.Size = UDim2.new(0, 0, 0, 14)
+		detail.Size = UDim2.new(0, 0, 0, 18)
 		detail.BackgroundColor3 = Theme.color.panel
 		detail.BackgroundTransparency = 0.15
 		detail.BorderSizePixel = 0
 		detail.FontFace = Theme.font.body
-		detail.TextSize = 10
+		detail.TextSize = Theme.MIN_TEXT
 		detail.TextColor3 = Theme.color.textMute
 		detail.Text = detailText or ""
 		detail.ZIndex = 2
