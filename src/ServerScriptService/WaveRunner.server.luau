@@ -300,7 +300,8 @@ local function runWaves(myGeneration, levelNumber)
 		Plutonium.AwardLevelClear(levelNumber)
 		print("победа")
 		ProfileStats.Add("wins")
-		RunEndedRemote:FireAllClients(true)
+		-- Номер уровня — для подписи итога: после обучения она говорит, что открыто дальше.
+		RunEndedRemote:FireAllClients(true, levelNumber)
 		returnToLobby()
 	end
 end
@@ -425,6 +426,29 @@ end)
 -- Вход в уровень. Два вызывающих — прибор в лобби и кнопка «Играть» в главном меню, —
 -- поэтому проверки живут здесь, а не в обработчике одного из них. Разойдись они — игрок
 -- попадал бы с кнопки туда, куда прибор его не пускает.
+-- Первый открытый и ещё не пройденный уровень; всё пройдено — последний открытый.
+local function defaultLevel(data)
+	if not data then
+		return 1
+	end
+	local numbers = {}
+	for number in Levels do
+		table.insert(numbers, number)
+	end
+	table.sort(numbers)
+	local last = 1
+	for _, number in numbers do
+		local levelData = data.levels[number]
+		if levelPlayable(number) and levelData and levelData.unlocked then
+			if not levelData.completed then
+				return number
+			end
+			last = number
+		end
+	end
+	return last
+end
+
 local function enterLevel(player)
 	if not runEnded then
 		-- забег уже идёт: второй поверх первого не начинаем, но если игрока унесло в лобби
@@ -434,10 +458,13 @@ local function enterLevel(player)
 		return
 	end
 
-	-- По умолчанию первый уровень — так прибор работает и без единого клика по списку,
-	-- как и до шага 4. Дальше всё перепроверяется заново, а не берётся на веру из selectedLevel.
-	local levelNumber = selectedLevel[player] or 1
+	-- Без явного выбора — следующий непройденный уровень (задача #298): пройдя обучение,
+	-- игрок по «Играть» идёт дальше, а не в обучение по кругу. Выбор (строка уровня
+	-- в Журнале) держится один вход. Дальше всё перепроверяется заново, а не берётся на
+	-- веру из selectedLevel.
 	local data = PlayerData.Get(player)
+	local levelNumber = selectedLevel[player] or defaultLevel(data)
+	selectedLevel[player] = nil
 	local levelData = data and data.levels[levelNumber]
 	if not levelPlayable(levelNumber) or not levelData or not levelData.unlocked then
 		return

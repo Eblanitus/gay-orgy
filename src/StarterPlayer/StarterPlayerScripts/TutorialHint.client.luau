@@ -1,11 +1,13 @@
 -- Плашка подсказки обучения (задача #298): текущий шаг сверху по центру экрана.
--- Текст решает сервер (Tutorial) и кладёт атрибутом TutorialHint на ReplicatedStorage;
--- пустая строка — плашки нет (не обучение, шаги пройдены или введён промокод test).
+-- Номер шага решает сервер (Tutorial) и кладёт атрибутом TutorialStep на ReplicatedStorage;
+-- 0 — плашки нет (не обучение, шаги пройдены или введён промокод test). Текст шага —
+-- из TutorialConfig: на телефоне свой, там нет клавиш.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
 local Theme = require(script.Parent:WaitForChild("UITheme"))
+local TutorialConfig = require(ReplicatedStorage:WaitForChild("TutorialConfig"))
 
 local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
@@ -40,7 +42,8 @@ label.TextColor3 = Theme.color.text
 label.Parent = frame
 
 local function refresh()
-	local text = ReplicatedStorage:GetAttribute("TutorialHint") or ""
+	local step = TutorialConfig.steps[ReplicatedStorage:GetAttribute("TutorialStep") or 0]
+	local text = step and (MobileUI.isMobile and step.mobile or step.text) or ""
 	frame.Visible = text ~= ""
 	if text ~= "" and label.Text ~= text then
 		label.Text = text
@@ -48,5 +51,5 @@ local function refresh()
 	end
 end
 
-ReplicatedStorage:GetAttributeChangedSignal("TutorialHint"):Connect(refresh)
+ReplicatedStorage:GetAttributeChangedSignal("TutorialStep"):Connect(refresh)
 refresh()

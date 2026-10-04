@@ -21,6 +21,7 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local ProfileSyncedRemote = Remotes:WaitForChild("ProfileSynced")
 local RecipeLearnedRemote = Remotes:WaitForChild("RecipeLearned")
 local ProfileStatsRemote = Remotes:WaitForChild("ProfileStats")
+local RequestSelectLevelRemote = Remotes:WaitForChild("RequestSelectLevel")
 
 local Journal = {}
 
@@ -419,14 +420,38 @@ function Journal.Mount(parent, onStatus)
 		end
 		table.sort(levelNumbers)
 
-		local levelRows = {}
+		-- Строка открытого уровня — выбор, куда поведёт «Играть» (задача #298): без выбора
+		-- сервер берёт следующий непройденный, так что пройденное обучение повторяют отсюда.
+		-- Выбор держится один вход — сервер забывает его, как только уровень запущен.
+		local levelRows, levelCaps = {}, {}
+		local chosenLevel = nil
+		local refresh
 		for i, number in levelNumbers do
 			local cap, val = statsRow(200 + i)
-			cap.Text = Theme.Caps(("%d. %s"):format(number, Levels[number].name or "?"))
 			levelRows[number] = val
+			levelCaps[number] = cap
+			local pick = Instance.new("TextButton")
+			pick.Name = "Pick"
+			pick.BackgroundTransparency = 1
+			pick.Text = ""
+			pick.Size = UDim2.fromScale(1, 1)
+			pick.ZIndex = cap.ZIndex + 1
+			pick.Parent = cap.Parent
+			pick.Activated:Connect(function()
+				local data = profile.levels[number]
+				if not data or not data.unlocked then
+					return
+				end
+				chosenLevel = number
+				RequestSelectLevelRemote:FireServer(number)
+				refresh()
+			end)
 		end
+		Remotes:WaitForChild("WaveReady").OnClientEvent:Connect(function()
+			chosenLevel = nil
+		end)
 
-		local function refresh()
+		function refresh()
 			plutoniumVal.Text = tostring(profile.plutonium)
 
 			local known = countKeys(profile.recipes)
@@ -443,6 +468,8 @@ function Journal.Mount(parent, onStatus)
 
 			for number, val in levelRows do
 				local data = profile.levels[number]
+				levelCaps[number].Text = Theme.Caps(("%s%d. %s"):format(
+					chosenLevel == number and "▶ " or "", number, Levels[number].name or "?"))
 				if not data or not data.unlocked then
 					val.Text = Theme.Caps("закрыт")
 					val.TextColor3 = Theme.color.textMute
