@@ -107,6 +107,8 @@ local STUCK_SPREAD = 0.8
 local BACKOFF_TIME = 0.9
 local BACKOFF_SPEED = 4
 local SQUEEZE = 0.4
+-- Поворачиваясь вокруг своей оси, жук может войти в соседа на столько (см. Resolve).
+local TURN_SQUEEZE = 0.6
 
 -- Запас к поиску соседей рядом, studs.
 local SUPPORT_MARGIN = 0.3
@@ -783,26 +785,25 @@ function Crowd.Resolve(model, desired, dt, facing)
 		z = homeZ
 	end
 
-	-- Стена могла вернуть тело в соседа. Тогда пробуем по отдельности: только развернуться
-	-- на месте, только шагнуть без разворота, — и только если не выходит ничего, жук ждёт
-	-- кадр на прошлой позиции (она заведомо допустима: allowed считан из неё). Раньше
-	-- отменялось всё сразу, и развернувшийся поперёк проёма жук так и стоял поперёк.
-	local function fits(px, pz, qx, qz)
-		for _, other in solid do
-			if penetration(me, px, pz, qx, qz, other) > standing[other] + 1e-3 then
-				return false
-			end
+	-- Стена могла вернуть тело в соседа. Тогда шаг не делается: жук остаётся на прошлой
+	-- позиции (она заведомо допустима: allowed считан из неё). Разворот вокруг своей оси
+	-- делается и в тесноте (решение автора: развернувшийся поперёк проёма жук стоял поперёк
+	-- навсегда): поворачиваясь, жук может войти в соседа до TURN_SQUEEZE, а перекрытие
+	-- потом снимает расталкивание. Глубже — довернётся на следующих кадрах, когда соседи
+	-- расступятся.
+	for _, other in solid do
+		if penetration(me, x, z, fx, fz, other) > standing[other] + 1e-3 then
+			x, z = me.x, me.z
+			break
 		end
-		return true
 	end
-	if not fits(x, z, fx, fz) then
-		if fits(me.x, me.z, fx, fz) then
-			x, z = me.x, me.z
-		elseif fits(x, z, me.fx, me.fz) then
-			fx, fz = me.fx, me.fz
-		else
-			x, z = me.x, me.z
-			fx, fz = me.fx, me.fz
+	if fx ~= me.fx or fz ~= me.fz then
+		for _, other in solid do
+			local depth = penetration(me, x, z, fx, fz, other)
+			if depth > math.max(standing[other], TURN_SQUEEZE) + 1e-3 then
+				fx, fz = me.fx, me.fz
+				break
+			end
 		end
 	end
 
