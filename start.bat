@@ -17,7 +17,8 @@ if errorlevel 1 (
   for /d %%D in ("%LOCALAPPDATA%\GitHubDesktop\app-*") do set "GIT=%%D\resources\app\git\cmd\git.exe"
 )
 
-"%GIT%" pull --ff-only -q
+for /f "usebackq" %%B in (`"%GIT%" branch --show-current`) do echo Ветка: %%B
+call :pull
 call :project
 set "RUNNING=%PROJ%"
 start "Rojo" rojo.exe serve
@@ -26,8 +27,7 @@ echo В Studio нажми Connect в Rojo. Остановить - закрыть
 
 :loop
 timeout /t 30 /nobreak >nul
-"%GIT%" pull --ff-only -q
-if errorlevel 1 echo [%time%] Не удалось забрать изменения - открой GitHub Desktop и посмотри, что мешает.
+call :pull
 call :project
 if not "%PROJ%"=="%RUNNING%" (
   echo [%time%] Изменился default.project.json - перезапускаю Rojo, в Studio нажми Connect ещё раз.
@@ -36,6 +36,26 @@ if not "%PROJ%"=="%RUNNING%" (
 )
 set "RUNNING=%PROJ%"
 goto loop
+
+:pull
+rem Сначала качаем, потом переносим. Нет сети - просто ждём следующего раза.
+"%GIT%" fetch -q
+if errorlevel 1 (
+  echo [%time%] Нет связи с GitHub - попробую через 30 секунд.
+  exit /b
+)
+"%GIT%" merge --ff-only -q @{u} >nul 2>nul
+if not errorlevel 1 exit /b
+rem Не перенеслось: мешают файлы на диске. Откладываем их в stash (ничего не теряется) и пробуем снова.
+"%GIT%" stash push -u -q -m "start.bat: отложено перед обновлением"
+"%GIT%" merge --ff-only -q @{u}
+if errorlevel 1 (
+  echo [%time%] Не удалось забрать изменения - открой GitHub Desktop и посмотри, что мешает.
+) else (
+  echo [%time%] Файлы на диске мешали обновлению - отложил их в stash и обновился.
+  echo            Вернуть их: git stash pop
+)
+exit /b
 
 :project
 set "PROJ="
