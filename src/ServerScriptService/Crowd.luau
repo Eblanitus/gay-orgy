@@ -52,6 +52,11 @@ local STACK_PROGRESS = 0.35
 -- полсекунды — а расталкивание такую пробку разбирает само за несколько кадров.
 local STACK_DELAY = 0.35
 
+-- Лезут только на того, кто сам стоит: идёт медленнее этого (studs/сек) — значит упёрся.
+-- Идущего впереди догоняют и ждут за ним, а не лезут ему на спину: пара в пустом коридоре
+-- (задний чуть быстрее переднего) иначе складывалась в стопку (плейтест).
+local STUCK_SPEED = 1
+
 -- С какой скоростью давление забывается, когда прожим отпустил. Сбрасывать его в ноль нельзя:
 -- в живой давке перекрытие дрожит и на кадр-другой проваливается ниже порога у кого угодно,
 -- и с жёстким сбросом счётчик не доживал до STACK_DELAY почти ни у кого (замер в проходе:
@@ -629,22 +634,30 @@ function Crowd.Resolve(model, desired, dt, facing)
 				pushZ += tz / length * step
 			end
 		elseif not carrying and (me.calm or 0) >= STEP_OFF_DELAY then
-			-- Вбок от хода опоры — туда, где рядом на земле есть место (сначала та сторона,
-			-- к краю которой мы и так ближе). Места нет ни с одной стороны — толпа ещё плотная,
-			-- остаёмся на спине.
+			-- Туда, где рядом на земле есть место: сначала вбок (к краю, к которому мы и так
+			-- ближе), потом вперёд по ходу опоры, потом назад — в узком коридоре боков нет.
+			-- Места нет нигде — толпа ещё плотная, остаёмся на спине.
 			local sideX, sideZ = -support.fz, support.fx
 			local side = (desired.X - support.x) * sideX + (desired.Z - support.z) * sideZ
 			local first = side > 0.02 and 1 or side < -0.02 and -1 or (me.id % 2 == 0 and 1 or -1)
 			local ground = {
 				id = me.id, radius = me.radius, front = me.front, back = me.back,
-				halfHeight = me.halfHeight, y = me.groundY, groundY = me.groundY, fx = me.fx, fz = me.fz,
+				halfHeight = me.halfHeight, bodyHeight = me.bodyHeight,
+				y = me.groundY, groundY = me.groundY, fx = me.fx, fz = me.fz,
 			}
 			local clear = support.radius + me.radius
-			for _, sign in { first, -first } do
-				local gx, gz = support.x + sideX * sign * clear, support.z + sideZ * sign * clear
+			local reach = clear + math.max(math.abs(support.front), math.abs(support.back))
+				+ math.max(math.abs(me.front), math.abs(me.back))
+			for _, way in {
+				{ sideX * first, sideZ * first, clear },
+				{ -sideX * first, -sideZ * first, clear },
+				{ support.fx, support.fz, reach },
+				{ -support.fx, -support.fz, reach },
+			} do
+				local gx, gz = support.x + way[1] * way[3], support.z + way[2] * way[3]
 				if fitsProbe(ground, gx, gz) then
-					pushX += sideX * sign * STEP_OFF_SPEED * dt
-					pushZ += sideZ * sign * STEP_OFF_SPEED * dt
+					pushX += way[1] * STEP_OFF_SPEED * dt
+					pushZ += way[2] * STEP_OFF_SPEED * dt
 					break
 				end
 			end
@@ -732,6 +745,9 @@ function Crowd.Resolve(model, desired, dt, facing)
 		me.pressed = 0
 	end
 
+	if supportCandidate and (supportCandidate.speed or 0) > STUCK_SPEED then
+		supportCandidate = nil
+	end
 	if not me.support and not carrying and me.pressed >= STACK_DELAY and supportCandidate then
 		me.support = supportCandidate
 		me.pressed = 0
@@ -793,6 +809,19 @@ function Crowd.Resolve(model, desired, dt, facing)
 				end
 			end
 		end
+	end
+
+	-- Скорость по полу — по ней соседи решают, стоит ли этот жук (см. STUCK_SPEED).
+	if dt > 1e-4 then
+		local moved = math.sqrt((x - me.x) ^ 2 + (z - me.z) ^ 2) / dt
+		me.speed = me.speed and me.speed + (moved - me.speed) * math.clamp(dt * 8, 0, 1) or moved
+	end
+	-- Клиенту: стоит ли жук на чужой спине. По нему походка ищет опору лапам на соседе, а
+	-- не на полу (EnemyGait.findSupport); на земле лапы соседей не касаются никогда.
+	local onBack = me.support ~= nil
+	if me.onBack ~= onBack then
+		me.onBack = onBack
+		me.model:SetAttribute("OnBack", onBack)
 	end
 
 	me.x, me.y, me.z = x, y, z
