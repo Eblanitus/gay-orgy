@@ -19,6 +19,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
+-- Цвета полоски HP — из общей палитры интерфейса.
+local Theme = require(script.Parent:WaitForChild("UITheme"))
 
 local enemiesFolder = Workspace:WaitForChild("Enemies")
 
@@ -49,7 +51,7 @@ local function attachVisuals(enemy)
 	gui.Parent = anchor
 
 	local back = Instance.new("Frame")
-	back.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	back.BackgroundColor3 = Theme.color.hpBack
 	back.BorderSizePixel = 0
 	back.Size = UDim2.new(1, 0, 1, 0)
 	back.Parent = gui
@@ -58,7 +60,7 @@ local function attachVisuals(enemy)
 	fill.Name = "Fill"
 	fill.BorderSizePixel = 0
 	fill.Size = UDim2.new(1, 0, 1, 0)
-	fill.BackgroundColor3 = Color3.fromRGB(80, 220, 80)
+	fill.BackgroundColor3 = Theme.color.hpFull
 	fill.Parent = back
 
 	-- Метки при смерти — отдельная плашка чуть выше полоски HP, квадратик на метку.
@@ -153,7 +155,7 @@ local function attachVisuals(enemy)
 		local maxHp = enemy:GetAttribute("MaxHP") or hp
 		local fraction = maxHp > 0 and math.clamp(hp / maxHp, 0, 1) or 0
 		fill.Size = UDim2.new(fraction, 0, 1, 0)
-		fill.BackgroundColor3 = Color3.fromRGB(220, 60, 60):Lerp(Color3.fromRGB(80, 220, 80), fraction)
+		fill.BackgroundColor3 = Theme.color.hpLow:Lerp(Theme.color.hpFull, fraction)
 	end
 
 	local function updateBurning()
@@ -211,7 +213,7 @@ local function attachVisuals(enemy)
 				square.DominantAxis = Enum.DominantAxis.Height
 				square.Parent = pip
 				local stroke = Instance.new("UIStroke")
-				stroke.Color = Color3.fromRGB(25, 25, 25)
+				stroke.Color = Theme.color.hpBack
 				stroke.Thickness = 1
 				stroke.Parent = pip
 				pip.Parent = markRow

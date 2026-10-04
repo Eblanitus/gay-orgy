@@ -14,6 +14,8 @@ local towersFolder = Workspace:WaitForChild("Towers")
 local Towers = require(ReplicatedStorage:WaitForChild("Towers"))
 -- Доворот башни считается той же формулой, что и на сервере (задача #70).
 local Aiming = require(ReplicatedStorage:WaitForChild("Aiming"))
+-- Цвета полоски HP — из общей палитры интерфейса.
+local Theme = require(script.Parent:WaitForChild("UITheme"))
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local ShotFiredRemote = Remotes:WaitForChild("ShotFired") -- отдача турели: см. recoilFrame ниже
 
@@ -933,7 +935,7 @@ local function addHealthBar(model, anchor)
 	gui.Parent = anchor
 
 	local back = Instance.new("Frame")
-	back.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	back.BackgroundColor3 = Theme.color.hpBack
 	back.BorderSizePixel = 0
 	back.Size = UDim2.new(1, 0, 1, 0)
 	back.Parent = gui
@@ -942,7 +944,7 @@ local function addHealthBar(model, anchor)
 	fill.Name = "Fill"
 	fill.BorderSizePixel = 0
 	fill.Size = UDim2.new(1, 0, 1, 0)
-	fill.BackgroundColor3 = Color3.fromRGB(80, 220, 80)
+	fill.BackgroundColor3 = Theme.color.hpFull
 	fill.Parent = back
 
 	local offsetApplied = false
@@ -965,7 +967,7 @@ local function addHealthBar(model, anchor)
 		end
 
 		fill.Size = UDim2.new(fraction, 0, 1, 0)
-		fill.BackgroundColor3 = Color3.fromRGB(220, 60, 60):Lerp(Color3.fromRGB(80, 220, 80), fraction)
+		fill.BackgroundColor3 = Theme.color.hpLow:Lerp(Theme.color.hpFull, fraction)
 	end
 
 	updateHealth()

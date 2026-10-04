@@ -291,7 +291,7 @@ return function(deps)
 
 	-- Цвет стекла, к которому подмешивается тон обстановки: чистый цвет рёбер в подсветке
 	-- дал бы цветное пятно во всю панель, а не перепад яркости.
-	local SHEEN_BASE = Color3.fromRGB(122, 156, 176)
+	local SHEEN_BASE = Theme.color.sheen
 
 	function Theme.Backdrop(frame, name)
 		-- Панель, которая сама растёт по содержимому, решётки не получает: слой размером
