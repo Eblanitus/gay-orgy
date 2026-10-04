@@ -16,6 +16,7 @@ local Workspace = game:GetService("Workspace")
 
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
+local Corpses = require(script.Parent:WaitForChild("Corpses"))
 local EnemyFXRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("EnemyFX")
 
 local Impulse = {}
@@ -70,6 +71,7 @@ function Impulse.Blast(center, radius, power)
 	local plan = PhysicsFX.blast
 	radius = math.max(radius or plan.referenceRadius, 1)
 	local reach = radius * plan.reach
+	Corpses.Touch(center, reach) -- хрупкие трупы лопаются от ударной волны
 	local strength = plan.speed
 		* math.clamp(radius / plan.referenceRadius, plan.powerMin, plan.powerMax)
 		* (power or 1)
@@ -105,7 +107,12 @@ function Impulse.Push(at, offset)
 end
 
 -- Попадание в живого жука: вздрагивание рисует клиент (EnemyRender) по HP и HitFrom.
-function Impulse.Hit(enemy, from, fraction) end
+-- Снаряд задел и хрупкий труп под ногами жука — тот лопается.
+function Impulse.Hit(enemy, from, fraction)
+	if enemy and enemy.Parent then
+		Corpses.Touch(enemy:GetPivot().Position, PhysicsFX.brittle.hit)
+	end
+end
 
 Impulse.Kick = kick
 Impulse.RandomSpin = randomSpin

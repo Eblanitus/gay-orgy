@@ -216,6 +216,7 @@ local function onShotFired(fromPos, color, tower)
 end
 
 -- Урон: всплывающая цифра, белая для базового урона башни, оранжевая для тика эффекта.
+-- Отрицательная — лечение постройки (хилер с Жизнью): зелёный плюс.
 --
 -- Выключается в настройках («Цифры урона»): на куче жуков под огнём нескольких турелей
 -- числа идут десятками в секунду и закрывают саму кучу. Отказ стоит в самом начале,
@@ -238,8 +239,13 @@ local function onDamageDealt(position, amount, isBase)
 	label.BackgroundTransparency = 1
 	label.FontFace = Theme.font.strong
 	label.TextScaled = true
-	label.Text = "-" .. tostring(amount)
-	label.TextColor3 = isBase and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(255, 140, 40)
+	if amount < 0 then
+		label.Text = "+" .. tostring(-amount)
+		label.TextColor3 = Color3.fromRGB(90, 255, 140)
+	else
+		label.Text = "-" .. tostring(amount)
+		label.TextColor3 = isBase and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(255, 140, 40)
+	end
 	label.TextStrokeTransparency = 0.2
 	label.Parent = gui
 
@@ -481,11 +487,167 @@ local function onPyroExplosion(position, radius)
 	Debris:AddItem(anchor, 1.2)
 end
 
--- Развилка по третьему аргументу: цвет шлёт только подрыв дрона (Projectile.burst),
--- Порох и Взрыв (Effects) шлют два аргумента, как и шлали.
-local function onExplosion(position, radius, droneColor)
+-- Облачный взрыв (Облако, Дождь, Снег при смерти жука): облако лопается, а не горит.
+-- Ни вспышки, ни огня, ни тёмного дыма — мягкий шар пара раздувается до радиуса удара,
+-- клубы разлетаются и тают, пар поднимается вверх. Оттенок — свой у каждого облака
+-- (blastColor в Elements), а из дождевого и снежного ещё падает осадок: облака
+-- различаются и цветом, и тем, что из них сыплется.
+local PUFF_TEXTURE = "rbxasset://textures/particles/smoke_main.dds"
+
+local function cloudBlast(position, radius, color, kind)
+	radius = radius or BASE_EXPLOSION_RADIUS
+	color = color or Color3.fromRGB(225, 230, 240)
+	local scale = math.clamp(radius / BASE_EXPLOSION_RADIUS, 0.6, 2.5)
+	local anchor = makeAnchor(position)
+	local white = Color3.fromRGB(245, 248, 252)
+
+	-- Шар пара: светлый, плотный в начале, раздувается ровно до радиуса и тает.
+	-- Медленнее огненной вспышки — облако лопается мягко.
+	local puff = Instance.new("Part")
+	puff.Shape = Enum.PartType.Ball
+	puff.Size = Vector3.new(1, 1, 1) * radius * 0.4
+	puff.Anchored = true
+	puff.CanCollide = false
+	puff.CanQuery = false
+	puff.CastShadow = false
+	puff.Material = Enum.Material.SmoothPlastic
+	puff.Color = color
+	puff.Transparency = 0.35
+	puff.Position = position
+	puff.Parent = anchor
+
+	TweenService:Create(puff, TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		Size = Vector3.new(1, 1, 1) * radius * 2,
+		Transparency = 1,
+	}):Play()
+
+	-- Волна по земле: широкое бледное кольцо, без неона — не огонь.
+	local ring = Instance.new("Part")
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Size = Vector3.new(0.15, 1, 1)
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.CanQuery = false
+	ring.CastShadow = false
+	ring.Material = Enum.Material.SmoothPlastic
+	ring.Color = color
+	ring.Transparency = 0.45
+	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = anchor
+
+	TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.15, radius * 2.2, radius * 2.2),
+		Transparency = 1,
+	}):Play()
+
+	-- Клубы: крупные, разлетаются до края радиуса, тормозят и тают на месте.
+	local clouds = Instance.new("ParticleEmitter")
+	clouds.Texture = PUFF_TEXTURE
+	clouds.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, white:Lerp(color, 0.6)),
+		ColorSequenceKeypoint.new(1, color),
+	})
+	clouds.LightInfluence = 0.6
+	clouds.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.15),
+		NumberSequenceKeypoint.new(0.6, 0.45),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	clouds.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1.5 * scale),
+		NumberSequenceKeypoint.new(1, 4.5 * scale),
+	})
+	clouds.Lifetime = NumberRange.new(0.8, 1.3)
+	clouds.Speed = NumberRange.new(radius * 1.6, radius * 2.6)
+	clouds.Drag = 3
+	clouds.Rotation = NumberRange.new(0, 360)
+	clouds.RotSpeed = NumberRange.new(-40, 40)
+	clouds.SpreadAngle = Vector2.new(180, 180)
+	clouds.Rate = 0
+	clouds.Parent = anchor
+	clouds:Emit(math.floor(22 * scale + 0.5))
+
+	-- Пар: тонкие струйки поднимаются над местом смерти и висят дольше клубов.
+	local steam = Instance.new("ParticleEmitter")
+	steam.Texture = PUFF_TEXTURE
+	steam.Color = ColorSequence.new(white:Lerp(color, 0.5))
+	steam.LightInfluence = 0.6
+	steam.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.5),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	steam.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.8 * scale),
+		NumberSequenceKeypoint.new(1, 2.5 * scale),
+	})
+	steam.Lifetime = NumberRange.new(1.2, 1.8)
+	steam.Speed = NumberRange.new(2, 5)
+	steam.Acceleration = Vector3.new(0, 4, 0)
+	steam.Rotation = NumberRange.new(0, 360)
+	steam.SpreadAngle = Vector2.new(60, 60)
+	steam.EmissionDirection = Enum.NormalId.Top
+	steam.Rate = 0
+	steam.Parent = anchor
+	steam:Emit(math.floor(12 * scale + 0.5))
+
+	-- Осадок: сыплется с плоской «тучи» над местом смерти на весь радиус удара.
+	-- Частицы летят из нижней грани плашки, поэтому падают по всей площади, а не из точки.
+	if kind == "rain" or kind == "snow" then
+		local sky = Instance.new("Part")
+		sky.Anchored = true
+		sky.CanCollide = false
+		sky.CanQuery = false
+		sky.Transparency = 1
+		sky.Size = Vector3.new(radius * 1.6, 0.2, radius * 1.6)
+		sky.Position = position + Vector3.new(0, 5, 0)
+		sky.Parent = anchor
+
+		local fall = Instance.new("ParticleEmitter")
+		fall.EmissionDirection = Enum.NormalId.Bottom
+		fall.SpreadAngle = Vector2.new(4, 4)
+		fall.Rate = 0
+		if kind == "rain" then
+			-- Капли: мелкие, быстрые, вытянуты по полёту.
+			fall.Color = ColorSequence.new(Color3.fromRGB(150, 185, 230))
+			fall.LightEmission = 0.3
+			fall.Orientation = Enum.ParticleOrientation.VelocityParallel
+			fall.Size = NumberSequence.new(0.12)
+			fall.Transparency = NumberSequence.new(0.2)
+			fall.Lifetime = NumberRange.new(0.25, 0.35)
+			fall.Speed = NumberRange.new(18, 24)
+			fall.Parent = sky
+			fall:Emit(math.floor(60 * scale + 0.5))
+		else
+			-- Хлопья: белые, медленные, кружатся и тают у земли.
+			fall.Texture = PUFF_TEXTURE
+			fall.Color = ColorSequence.new(Color3.fromRGB(250, 252, 255))
+			fall.LightEmission = 0.4
+			fall.Size = NumberSequence.new(0.35)
+			fall.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.1),
+				NumberSequenceKeypoint.new(0.8, 0.3),
+				NumberSequenceKeypoint.new(1, 1),
+			})
+			fall.Lifetime = NumberRange.new(1.4, 2)
+			fall.Speed = NumberRange.new(2, 3.5)
+			fall.Rotation = NumberRange.new(0, 360)
+			fall.RotSpeed = NumberRange.new(-90, 90)
+			fall.Parent = sky
+			fall:Emit(math.floor(40 * scale + 0.5))
+		end
+	end
+
+	Debris:AddItem(anchor, 2.5)
+end
+
+-- Развилка по аргументам: цвет третьим шлёт только подрыв дрона (Projectile.burst),
+-- вид взрыва четвёртым — удар по области при смерти (Effects.applyKillDamage, поле blast).
+-- Порох и Взрыв шлют два аргумента, как и шлали.
+local function onExplosion(position, radius, droneColor, blast, color)
 	if droneColor then
 		droneBlast(position, radius, droneColor)
+	elseif blast == "cloud" or blast == "rain" or blast == "snow" then
+		cloudBlast(position, radius, color, blast)
 	else
 		onPyroExplosion(position, radius)
 	end

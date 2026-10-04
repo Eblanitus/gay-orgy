@@ -101,19 +101,38 @@ return function(deps)
 		disc.CFrame = CFrame.new(position.X, Arena.floorY + 0.15, position.Z) * CFrame.Angles(0, 0, math.rad(90))
 		disc.Parent = zonesFolder()
 		Debris:AddItem(disc, duration)
+		return disc
 	end
 
 	-- Заводит зону на карте по общему описанию (те же поля, что у killZone в Elements).
 	-- Одна функция на всех, потому что источников зон теперь два: смерть цели
 	-- (killZone) и пробой Смога (breakthrough.zone), а тик-цикл ниже их не различает.
-	local function spawnZone(position, radius, plan, elementData)
+	-- owner — турель, чей выстрел оставил зону. По вики зона живёт одна на турель:
+	-- новая заменяет старую той же турели, у двух турелей — две зоны. Без owner (пробой
+	-- Смога, разнос по зоне) и с plan.unlimited (пепел Угля) зоны не вытесняют друг друга.
+	local function spawnZone(position, radius, plan, elementData, owner)
 		local spread = plan.spreadElement and Elements[plan.spreadElement] or nil
 		assert(not plan.spreadElement or spread,
 			("[Effects] зона %s ссылается на несуществующий элемент %s")
 				:format(elementData.name, tostring(plan.spreadElement)))
 
+		if owner and not plan.unlimited then
+			for i = #zones, 1, -1 do
+				local old = zones[i]
+				if old.owner == owner then
+					table.remove(zones, i)
+					if old.visual then
+						old.visual:Destroy()
+					end
+					print(("[Эффект] %s: новая зона %s заменяет старую")
+						:format(owner.Name, elementData.name))
+				end
+			end
+		end
+
 		local now = os.clock()
 		local zone = {
+			owner = owner,
 			position = position,
 			radius = radius,
 			born = now,
@@ -141,7 +160,9 @@ return function(deps)
 		end
 
 		table.insert(zones, zone)
-		spawnZoneVisual(position, radius, plan.duration, elementData.color)
+		-- Продлеваемую зону (Звезда) гасит тик-цикл в Effects, а не Debris по сроку.
+		local visualLife = plan.extendOnKill and 3600 or plan.duration
+		zone.visual = spawnZoneVisual(position, radius, visualLife, elementData.color)
 		return zone
 	end
 
@@ -210,6 +231,42 @@ return function(deps)
 		byKind[kind] = nil
 		target:SetAttribute(MARK_ATTRIBUTE[kind], false)
 		print(("[Эффект] метка «%s» смыта с %s"):format(kind, target.Name))
+	end
+
+	-- Мокрость тушит Горение (по вики): снимает урон по времени всех элементов с burning.
+	-- Кроме записи самого source: Остров и мокрит, и поджигает одним попаданием, и своё
+	-- горение не гасит — иначе каждый его выстрел сбрасывал бы стеки до одного.
+	-- Плавление и Ошпаривание вода не трогает: это не Горение.
+	local function extinguish(target, source)
+		local byElement = effects[target]
+		if not byElement then
+			return
+		end
+
+		local doused = {}
+		for elementData in pairs(byElement) do
+			if elementData.burning and elementData ~= source then
+				byElement[elementData] = nil
+				table.insert(doused, elementData.name)
+			end
+		end
+		if #doused == 0 then
+			return
+		end
+
+		-- Обугливание и кровь — как в конце записи в тик-цикле: по тем, кто остался.
+		local chars, bleeds = false, false
+		for other in pairs(byElement) do
+			chars = chars or other.chars == true
+			bleeds = bleeds or other.bleeds == true
+		end
+		target:SetAttribute("Scorched", chars or nil)
+		target:SetAttribute("Bleeding", bleeds or nil)
+		if next(byElement) == nil then
+			effects[target] = nil
+			target:SetAttribute("Burning", false)
+		end
+		print(("[Эффект] %s тушит на %s: %s"):format(source.name, target.Name, table.concat(doused, ", ")))
 	end
 
 	-- Катализатор горения (Кислород). Уже висящие записи пересчитываются тут же:
@@ -591,6 +648,7 @@ return function(deps)
 		local _, powerScale = amplifier(target)
 		local damage = scaled(plan.damage, powerScale)
 		hp = math.max(0, hp - damage)
+		Effects.MarkHit(target, elementData)
 		target:SetAttribute("HP", hp)
 		DamageDealtRemote:FireAllClients(target:GetPivot().Position, damage, false)
 		print(("[Эффект] %s пробивает %s: %d урона мимо брони, осталось %d HP")
@@ -627,7 +685,8 @@ return function(deps)
 
 	-- Урон по площади. Броня работает как против обычного попадания — это удар, а не отравление;
 	-- пробитие самого элемента при этом учитывается. Возвращает, скольких задело.
-	local function damageAround(center, radius, amount, exclude, limit, elementData, sourceName)
+	-- remainsOf — чьи останки у добитого, если не того же elementData (подрыв Пороха).
+	local function damageAround(center, radius, amount, exclude, limit, elementData, sourceName, remainsOf)
 		if amount <= 0 then
 			return 0
 		end
@@ -640,6 +699,9 @@ return function(deps)
 
 			local enemy = found.enemy
 			local damage = Effects.AfterArmor(enemy, amount, elementData)
+			if remainsOf and damage > 0 then
+				Effects.MarkHit(enemy, remainsOf)
+			end
 			local hp = math.max(0, (enemy:GetAttribute("HP") or 0) - damage)
 			enemy:SetAttribute("HP", hp)
 			DamageDealtRemote:FireAllClients(enemy:GetPivot().Position, damage, true)
@@ -746,18 +808,19 @@ return function(deps)
 		addPush(target, toSource.Unit * math.min(plan.distance, math.max(0, gap - 4)))
 	end
 
-	-- Подброс (Атмосфера): сторона и расстояние случайные, поэтому жук иногда
-	-- оказывается ближе к выходу, чем был. Так в документе и задумано.
+	-- Подброс (Атмосфера): жук улетает в случайную точку карты на случайной высоте,
+	-- поэтому иногда оказывается ближе к выходу, чем был. Так в документе и задумано.
+	-- Куда можно приземлиться и как лететь, знает сервер (EnemySpawner, Effects.OnToss).
 	local function applyToss(target, elementData)
-		local plan = elementData.toss
-		local angle = math.random() * 2 * math.pi
-		local distance = plan.min + math.random() * (plan.max - plan.min)
-		addPush(target, Vector3.new(math.cos(angle), 0, math.sin(angle)) * distance)
+		if Effects.OnToss then
+			Effects.OnToss(target, elementData.toss)
+		end
 	end
 
 	-- Нарастание урона (Кирпич, Стена): множитель растёт за каждое попадание по одной и той
-	-- же цели и сбрасывается после plan.hits ступеней. Первый выстрел всегда обычный —
-	-- это награда за долгую цель, а не бесплатная прибавка к каждому выстрелу.
+	-- же цели, через plan.hits ступеней упирается в потолок и держится на нём до смерти цели —
+	-- «нет таймера сброса». Первый выстрел всегда обычный: это награда за долгую цель,
+	-- а не бесплатная прибавка к каждому выстрелу.
 	local function rampMultiplier(target, elementData)
 		local plan = elementData.damageRamp
 
@@ -766,10 +829,7 @@ return function(deps)
 		ramps[target][elementData] = entry
 
 		local multiplier = 1 + plan.step * entry.hits
-		entry.hits += 1
-		if entry.hits > plan.hits then
-			entry.hits = 0
-		end
+		entry.hits = math.min(entry.hits + 1, plan.hits)
 
 		return multiplier
 	end
@@ -791,6 +851,7 @@ return function(deps)
 		applyMark = applyMark,
 		applyKindMark = applyKindMark,
 		washMark = washMark,
+		extinguish = extinguish,
 		applyKnockback = applyKnockback,
 		applyPull = applyPull,
 		applyToss = applyToss,

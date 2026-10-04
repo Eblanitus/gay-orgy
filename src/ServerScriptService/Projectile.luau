@@ -232,7 +232,7 @@ local function dealDamage(shot, enemy)
 		-- Четвёртым — точка пуска: притяжение тянет жука к стрелявшей турели, а снаряд —
 		-- единственный, кто ещё помнит, откуда он вылетел. Отдача и подброс её не спрашивают:
 		-- их направление считается по самой цели.
-		Effects.Apply(enemy, shot.element, damage, shot.origin)
+		Effects.Apply(enemy, shot.element, damage, shot.origin, shot.owner)
 	end
 
 	return hp <= 0
@@ -251,7 +251,7 @@ local function burst(shot)
 	local list = Targeting.EnemiesInRange(center, shot.splash.radius, enemiesFolder, { targets = shot.targets })
 
 	-- Конструкции жуков: «все уничтожаются тяжёлым снарядом и горят»
-	-- (alchemy_td_enemies.md, Строитель). Тяжёлый — это именно навесной и дрон,
+	-- (Строитель). Тяжёлый — это именно навесной и дрон,
 	-- то есть всё, что доходит до burst; прямой снаряд их не берёт и не должен.
 	EnemyStructures.Blast(center, shot.splash.radius, shot.splash.damage, shot.element)
 
@@ -280,7 +280,7 @@ local function burst(shot)
 				DamageDealtRemote:FireAllClients(enemy:GetPivot().Position, damage, true)
 			end
 			if shot.element then
-				Effects.Apply(enemy, shot.element, damage, shot.origin)
+				Effects.Apply(enemy, shot.element, damage, shot.origin, shot.owner)
 			end
 		end
 	end
@@ -575,7 +575,7 @@ end
 -- (см. TowerBuilder.StartFiring), снаряд решает только одно: долетел он до кого-нибудь или нет.
 --
 -- shot: origin, aim, damage, ownerName (для лога) — обязательны;
---       speed, radius, maxDistance, color, element — по вкусу стреляющего.
+--       speed, radius, maxDistance, color, element, owner (сама турель) — по вкусу стреляющего.
 --
 -- Навес (Мортира, задача #53) — ещё три поля: arc = true, splash = { radius, damage }
 -- и targets ("ground"/"air"/"both") для фильтра взрыва. aim для него — не точка прицела
@@ -643,6 +643,9 @@ function Projectile.Fire(shot)
 		rig = rig, -- nil у обычного снаряда: там сносить нечего, кроме самой детали
 		color = color, -- нужен подрыву: картинка взрыва идёт в том же цвете, что и сам дрон
 		position = origin,
+		-- Точка пуска нужна при попадании: щиту Щитоносца (HitFrom), отдаче и притяжению.
+		-- Раньше её ставила только ветка навеса, и у прямого снаряда она была nil.
+		origin = origin,
 		direction = delta.Unit,
 		speed = speed,
 		radius = radius,
@@ -651,6 +654,7 @@ function Projectile.Fire(shot)
 		damage = shot.damage or 0,
 		element = shot.element,
 		ownerName = shot.ownerName or "Снаряд",
+		owner = shot.owner, -- турель-стрелок: зоны при убийстве живут одна на турель
 		orientation = orientation,
 		-- Доля урона, теряемая за каждый труп при пробитии. nil — пробития нет
 		-- вовсе, снаряд гаснет на первом же попадании, как и было.

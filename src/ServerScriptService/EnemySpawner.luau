@@ -13,13 +13,15 @@ local EnemyDiedRemote = Remotes:WaitForChild("EnemyDied")
 local DamageDealtRemote = Remotes:WaitForChild("DamageDealt")
 
 local Grid = require(ServerScriptService:WaitForChild("Grid"))
+local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
 local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
 local EnemyProgress = require(ServerScriptService:WaitForChild("EnemyProgress"))
 local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
--- Касты и особые механики (design: alchemy_td_enemies.md) — всё, что различает виды.
+local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
+-- Касты и особые механики — всё, что различает виды.
 -- Здесь осталось только общее: ходьба по маршруту, грызня, перелезание, смерть.
 local EnemyBehavior = require(ServerScriptService:WaitForChild("EnemyBehavior"))
 local LabTable = require(ServerScriptService:WaitForChild("LabTable"))
@@ -27,6 +29,19 @@ local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructure
 
 local enemiesFolder = Workspace:WaitForChild("Enemies")
 local towersFolder = Workspace:WaitForChild("Towers")
+
+-- Очищенные Мылом жуки — своя папка, а не атрибут в Enemies: всё, что ищет цели
+-- (прицел, снаряды, площадь, зоны, цепочки, паника), перебирает Enemies и очищенного
+-- не увидит без единой лишней проверки — «очищенный не получает урон от турелей».
+local alliesFolder = Workspace:FindFirstChild("Allies")
+if not alliesFolder then
+	alliesFolder = Instance.new("Folder")
+	alliesFolder.Name = "Allies"
+	alliesFolder.Parent = Workspace
+end
+
+-- state каждого жука, которого ведёт moveThroughArena: только таких Мыло и переманивает.
+local walkers = setmetatable({}, { __mode = "k" })
 
 local SPAWN_INTERVAL = 0.3 -- сек между спавном соседних юнитов в группе
 local SCATTER = 1.2 -- studs, разброс от точек маршрута (проход 4 studs — больше не влезает)
@@ -43,8 +58,13 @@ local WAYPOINT_REACH_SHARE = 1
 local WAYPOINT_PASS_BODIES = 4
 local ENEMY_Y = 1.5 -- studs над полом: на этой высоте пивота ноги жука касаются земли
 local REPATH_INTERVAL = 0.25 -- сек; чаще пересчитывать маршрут незачем даже при активной стройке
+-- Очищенный идёт к движущейся цели, поэтому маршрут у него стареет и без стройки.
+-- Это отдельный A* на каждого — их единицы, но каждый кадр его считать незачем.
+local ALLY_REPATH = 1
+-- Запас к сумме полудлин двух тел, на котором жуки уже достают друг друга жвалами.
+local BITE_MARGIN = 0.5
 local VELOCITY_EPSILON = 0.5 -- studs/сек: насколько должна измениться скорость, чтобы переписать атрибут
-local FACEHUGGER_HEIGHT = 3.6 -- studs над пивотом турели — над стеклянной сферой Колбы, не внутри неё
+local FACEHUGGER_HEIGHT = 3.6 -- studs над пивотом турели — над стеклянной сферой Колбы, не внутри неё (не ниже; выше — если корпус турели выше, см. clingPoint)
 -- Кровь на карте. Раненый жук капает не чаще BLEED_INTERVAL: без паузы тиковые
 -- турели (Испаритель — 5 тиков/сек) заливали бы пол целиком за одну волну. Смерть даёт
 -- отдельное большое пятно с брызгами — именно оно читается как «здесь кого-то убили».
@@ -52,6 +72,8 @@ local BLEED_INTERVAL = 0.5
 local BLEED_SIZE = 0.7 -- studs, диаметр капли от попадания
 local DEATH_SPLAT_SIZE = 2.2 -- studs, диаметр пятна на месте смерти
 local DEATH_SPLAT_DROPS = 4 -- брызг вокруг него
+-- Виды останков без крови на месте смерти (по вики): плавит, растворяет, уничтожает.
+local NO_BLOOD = { melt = true, dissolve = true, destroy = true }
 
 -- Атрибут Look переписывается, когда желаемый взгляд ушёл больше чем на ~3°: мельче голова
 -- жука не показывает, а писать его каждый кадр значит слать его всем клиентам каждый кадр.
@@ -123,7 +145,7 @@ end
 -- План перелезания: вверх по преграде, поверху и вниз с другой стороны. Собирается
 -- один раз в момент, когда жук упёрся, и дальше просто отыгрывается по таймеру.
 --
--- Таймер, а не поиск опоры каждый кадр — это прямое требование дизайна (раздел 1.1):
+-- Таймер, а не поиск опоры каждый кадр — это прямое требование дизайна:
 -- выбранный способ всегда завершается, жук не может застрять на весу или бесконечно
 -- пересчитывать. Поэтому же разрушенная по дороге преграда ничего не меняет: жук
 -- доводит движение до конца и просто оказывается по ту сторону.
@@ -225,6 +247,39 @@ local function advanceClimb(climb, dt)
 	return leg.from:Lerp(leg.to, fraction), direction.Unit, leg.up, direction.Magnitude / leg.duration
 end
 
+-- Ближайший живой наземный жук из folder, до которого enemy уже дотягивается жвалами.
+-- Им очищенный (Мыло) находит, кого кусать, а враги — его самого. Полудлина тела — та же
+-- 1.7 × масштаб, что и у bodyReach в moveThroughArena.
+local function rivalInReach(enemy, position, folder, bodyReach)
+	local best, bestDistance = nil, math.huge
+	for _, other in folder:GetChildren() do
+		if other ~= enemy and other:IsA("Model") and not other:GetAttribute("Flying")
+			and (other:GetAttribute("HP") or 0) > 0 then
+			local distance = flat(other:GetPivot().Position - position).Magnitude
+			local reach = bodyReach + 1.7 * (other:GetAttribute("Scale") or 1) + BITE_MARGIN
+			if distance <= reach and distance < bestDistance then
+				best, bestDistance = other, distance
+			end
+		end
+	end
+	return best
+end
+
+-- Укус жука жуком: тот же урон грызни, что и по постройке, ослабленный Кислотой, —
+-- и броня укушенного работает против него («броня работает против врагов»).
+local function biteRival(attacker, chewDamage, victim)
+	local weakened = math.clamp(attacker:GetAttribute("Weakened") or 0, 0, 0.9)
+	local bite = Effects.ApplyArmor(victim, chewDamage * (1 - weakened), nil)
+	if bite <= 0 then
+		return
+	end
+	local hp = victim:GetAttribute("HP") or 0
+	victim:SetAttribute("HitFrom", attacker:GetPivot().Position)
+	Effects.MarkHit(victim, nil) -- укус, не элемент: останется тело
+	victim:SetAttribute("HP", math.max(0, hp - bite))
+	DamageDealtRemote:FireAllClients(victim:GetPivot().Position, bite, false)
+end
+
 local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 	-- Высота пивота: у шаблонного жука ноги короче примитивных, он едет ниже
 	-- (см. RideHeight в EnemySpawner.buildTemplateModel/buildEnemyModel). Атрибут несёт
@@ -247,6 +302,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 		chewDps = chewDps,
 		climbSpeed = enemyData.climbSpeed or 0,
 		climbHeight = enemyData.climbHeight or 0,
+		-- Высота спины: пролезет ли жук под постройкой (подлаз, см. Grid.Crossing). Меряется
+		-- по ЭТОМУ экземпляру — у Мини масштаб случайный, и мелкий проползает там, где крупный грызёт.
+		bodyHeight = EnemyBody.TopHeight(enemy),
 	}
 
 	-- Идущее перелезание (см. planClimb). Пока оно не кончилось, жук не идёт по маршруту
@@ -301,13 +359,13 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 	local function rebuild()
 		local cx, cz = Grid.ToCell(enemy:GetPivot().Position)
 
-		-- Куда идти, решает каста (design: alchemy_td_enemies.md): разведчики и солдаты —
+		-- Куда идти, решает каста: разведчики и солдаты —
 		-- к лаборатории, Хмурый брон — по периметру, группа работяг — на турель.
 		local goalX, goalZ, mode = EnemyBehavior.Goal(enemy, enemyData, state)
 		goalMode = mode
 
 		local path
-		if mode == "turret" then
+		if mode == "turret" or mode == "ally" then
 			-- Точечная цель ОДНОГО жука — отдельный A*, а не поле волн: поле на 75 тысяч
 			-- клеток стоит около 120 мс, и заводить его под каждую турель значило бы вешать
 			-- сервер на каждую смену фокуса. Таких жуков единицы, а не вся волна.
@@ -318,8 +376,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			path = Grid.GetRouteTo(cx, cz, profile, goalX, goalZ)
 		end
 
-		if not path then
+		if not path and mode ~= "ally" then
 			-- Пути к выходу нет совсем — идём к ближайшей постройке (правило из ТЗ).
+			-- Не для очищенного: постройки он не грызёт, и идти к ним ему незачем.
 			local nearest = Grid.FindNearestBuilding(cx, cz)
 			path = nearest and Grid.FindPath(cx, cz, nearest.x, nearest.z, profile)
 		end
@@ -361,6 +420,37 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 		end
 
 		local now = os.clock()
+
+		-- Несёт Медик: ставит жука он сам (EnemyBehavior.carry), а этот цикл ждёт.
+		-- Положили — маршрут считается заново от того места, куда положили.
+		local carrier = EnemyBehavior.CarriedBy(enemy)
+		if carrier then
+			state.pathPosition = nil
+			climb = nil -- сняли со стены — перелезание не продолжается с чужой спины
+			dirty = true
+			setVelocity(carrier:GetAttribute("Velocity") or Vector3.zero)
+			continue
+		end
+
+		-- Подброс Атмосферы (Effects.OnToss): жук летит по дуге в выбранную точку и сам
+		-- не идёт. Приземлился — маршрут считается заново оттуда, где он упал.
+		local toss = state.toss
+		if toss then
+			local t = math.min((now - toss.start) / toss.duration, 1)
+			local position = toss.from:Lerp(toss.to, t) + Vector3.new(0, toss.height * 4 * t * (1 - t), 0)
+			enemy:PivotTo(CFrame.new(position) * enemy:GetPivot().Rotation)
+			setVelocity((toss.to - toss.from) / toss.duration)
+			if t >= 1 then
+				state.toss = nil
+				state.pathPosition = toss.to
+				climb = nil
+				dirty = true
+				lastRepath = 0
+				enemy:SetAttribute("Tossed", nil)
+			end
+			continue
+		end
+
 		-- Цель сменилась не из-за стройки, а по приказу Координатора или потому, что вышла
 		-- группа работяг (см. EnemyBehavior). Занятость клеток при этом не меняется, и
 		-- Grid.Changed не срабатывает — пометить маршрут устаревшим некому, кроме этого флага.
@@ -370,7 +460,21 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			lastRepath = 0
 		end
 
-		if dirty and now - lastRepath >= REPATH_INTERVAL then
+		-- Очищенный (Мыло) стены не грызёт: маршрут ему считается как жуку без жвал,
+		-- то есть только в обход построек. Цель у него движется — путь стареет сам.
+		local ally = state.ally
+		if ally then
+			if profile.chewDps ~= 0 then
+				profile.chewDps = 0
+				dirty = true
+			elseif now - lastRepath >= ALLY_REPATH then
+				dirty = true
+			end
+		end
+
+		-- Очищенному — реже: его A* до врага, отрезанного постройками, обходит всю сетку
+		-- впустую, и повторять это четыре раза в секунду незачем.
+		if dirty and now - lastRepath >= (ally and ALLY_REPATH or REPATH_INTERVAL) then
 			rebuild()
 			lastRepath = now
 			dirty = points == nil -- маршрута не нашлось — пробуем снова на следующем интервале
@@ -383,6 +487,19 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			local position = state.pathPosition or enemy:GetPivot().Position
 			local blocker = Grid.GetBlocker(cells[index].x, cells[index].z)
 			local desired = position
+
+			-- Подлаз: постройка, под которой жук пролезает, ему не преграда — он не грызёт её
+			-- и не лезет, а ползёт дальше по маршруту, медленнее обычного (Arena.crawlSpeed).
+			-- Ползёт он, пока сам стоит под постройкой или упирается в такую впереди.
+			if blocker and Grid.FitsUnder(blocker, profile.bodyHeight) then
+				blocker = nil
+			end
+			local overhead = Grid.GetBlocker(Grid.ToCell(position))
+			local crawling = overhead ~= nil and Grid.FitsUnder(overhead, profile.bodyHeight)
+			if crawling ~= (enemy:GetAttribute("Crawling") or false) then
+				-- Клиенту: лапы ищут опору только на полу, а не на днище постройки (EnemyGait).
+				enemy:SetAttribute("Crawling", crawling)
+			end
 
 			-- Пол под ногами: хитин ускоряет, окоп прячет от турелей. Спрашивается четыре
 			-- раза в секунду, а не каждый кадр: конструкций на поле бывают десятки, и полный
@@ -405,7 +522,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			-- жвалами. Признак ставится здесь же, где решается, есть ли перед ним преграда,
 			-- и только на смене состояния: атрибут реплицируется, и писать его каждый кадр
 			-- значило бы слать его всем клиентам шестьдесят раз в секунду на каждого жука.
-			local chewing = blocker ~= nil and not climb
+			local chewing = blocker ~= nil and not climb and not ally
 			if chewing ~= (enemy:GetAttribute("Chewing") or false) then
 				enemy:SetAttribute("Chewing", chewing)
 			end
@@ -440,6 +557,18 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			-- маршрут, поэтому решение на месте не может разойтись с решением поиска пути.
 			-- Для Мини climb не выпадет никогда (стена выше его climbHeight) — он либо обойдёт
 			-- по маршруту, либо встанет грызть, как и до задачи.
+			-- Драка очищенного с врагами (Мыло). Очищенный кусает врага, до которого достал;
+			-- враг кусает очищенного, если тот рядом. Папку очищенных враг проверяет без
+			-- перебора, когда она пуста, — то есть почти всегда.
+			local rival = nil
+			if chewDamage > 0 and not climb then
+				if ally then
+					rival = rivalInReach(enemy, position, enemiesFolder, bodyReach)
+				elseif alliesFolder:FindFirstChildWhichIsA("Model") then
+					rival = rivalInReach(enemy, position, alliesFolder, bodyReach)
+				end
+			end
+
 			if blocker and not climb and not stunned and not confused then
 				local mode = Grid.Crossing(blocker, profile)
 				if mode == "climb" then
@@ -485,7 +614,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				end
 			elseif behavior == "hold" then
 				-- Копает, маскируется, нацеливается, строит или ждёт группу. Стоит на месте
-				-- и от этого уязвим — ровно то, чего требует документ от Окопщика и Тарана.
+				-- и от этого уязвим — ровно то, чего требует документ от Строителя и Тарана.
 				setVelocity(Vector3.zero)
 			elseif behavior == "flee" then
 				-- Паника: отходит от того, кто в него стреляет. Клетку маршрута не проходит
@@ -548,6 +677,26 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				local confusedSpeed = speed * (1 - slowPercent)
 				desired = position + heading * confusedSpeed * dt
 				setVelocity(heading * confusedSpeed)
+			elseif rival then
+				-- Сцепились: стоит и кусает в своём темпе грызни — Холод и Кислота
+				-- действуют на укус так же, как на грызню постройки.
+				setVelocity(Vector3.zero)
+				pose = "chew"
+
+				local toRival = flat(rival:GetPivot().Position - position)
+				if toRival.Magnitude > 1e-3 then
+					heading = toRival.Unit
+				end
+
+				local attackSlow = math.clamp(enemy:GetAttribute("AttackSlowPercent") or 0, 0, 0.9)
+				if now - lastChew >= 1 / (chewRate * (1 - attackSlow)) then
+					lastChew = now
+					biteRival(enemy, chewDamage, rival)
+				end
+			elseif blocker and ally then
+				-- Очищенный упёрся в постройку (её поставили поперёк уже посчитанного пути):
+				-- не грызёт, а ждёт пересчёта маршрута в обход.
+				setVelocity(Vector3.zero)
 			elseif blocker then
 				-- Упёрлись в постройку: стоим на месте и грызём. Жук останавливается на клетку
 				-- раньше, а не влезает внутрь постройки. Остановка сразу видна снарядам: выстрелы,
@@ -610,6 +759,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			else
 				local slowPercent = enemy:GetAttribute("SlowPercent") or 0
 				local step = speed * (1 - slowPercent) * groundScale * dt
+				if crawling then
+					step *= Arena.crawlSpeed
+				end
 
 				local delta = flat(points[index] - position)
 				local distance = delta.Magnitude
@@ -642,7 +794,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				else
 					heading = delta.Unit
 					desired = position + heading * step
-					setVelocity(heading * speed * (1 - slowPercent) * groundScale)
+					setVelocity(heading * step / math.max(dt, 1e-3))
 				end
 			end
 
@@ -726,7 +878,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 
 	connection:Disconnect()
 
-	if enemy.Parent then
+	if enemy.Parent and not state.ally then
 		onBreach(enemy)
 	end
 end
@@ -760,7 +912,7 @@ local function findFreeTurret(fromPosition)
 	return best
 end
 
--- Лицехват (design: alchemy_td_enemies_t0.md): летит по прямой к свободной на момент вылета
+-- Лицехват: летит по прямой к свободной на момент вылета
 -- турели, минуя Grid (не ищет путь по сетке) и Crowd (не толкается с другими жуками) —
 -- поэтому свой цикл движения, а не moveThroughArena. Если цель разрушена по дороге или
 -- свободных больше нет вовсе, просто выбирает новую свободную и летит дальше (или ждёт, если
@@ -773,6 +925,24 @@ end
 -- одинаково, отдельно летающих не выделяет. В момент смерти enemy.Destroying снимает и Claimed,
 -- и Suppressed с той, что за ним числилась — «турель немедленно возвращается к работе», как и требует ТЗ,
 -- независимо от того, успел он физически долететь или нет.
+-- Куда Лицехват садится на турель: на её верх над пивотом (луч сверху по самой турели),
+-- но не ниже FACEHUGGER_HEIGHT. Без луча высокая постройка (Станция FPV-дронов, ~19 студов)
+-- глотала его: точка присоски оказывалась внутри корпуса (задача #331).
+local function clingPoint(enemy, target)
+	local pivot = target:GetPivot().Position
+	local lowest = pivot + Vector3.new(0, FACEHUGGER_HEIGHT, 0)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = { target }
+	local from = Vector3.new(pivot.X, EnemyBehavior.AboveTower(enemy, target) + 5, pivot.Z)
+	local hit = Workspace:Raycast(from, Vector3.new(0, pivot.Y - from.Y, 0), params)
+	if not hit then
+		return lowest
+	end
+	local onTop = hit.Position.Y + enemy:GetExtentsSize().Y / 2
+	return Vector3.new(pivot.X, math.max(onTop, lowest.Y), pivot.Z)
+end
+
 local function flyToTurret(enemy, enemyData)
 	local reserved = nil -- турель, которую жук занял: Claimed на подлёте, Suppressed после присасывания
 
@@ -797,13 +967,13 @@ local function flyToTurret(enemy, enemyData)
 			-- друг к другу, выбрали бы одну и ту же ещё свободную турель — именно такой был баг.
 			target:SetAttribute("Claimed", true)
 			reserved = target
-			local targetPosition = target:GetPivot().Position + Vector3.new(0, FACEHUGGER_HEIGHT, 0)
+			local targetPosition = clingPoint(enemy, target)
 
+			-- Сквозь постройки не летит (задача #331): облетает их поверху и садится на свою
+			-- турель сверху — сначала в точку над ней, потом отвесно вниз на присоску.
 			while enemy.Parent and target.Parent do
 				local position = enemy:GetPivot().Position
-				local delta = targetPosition - position
-				local distance = delta.Magnitude
-				if distance <= FACEHUGGER_ATTACH_RANGE then
+				if (targetPosition - position).Magnitude <= FACEHUGGER_ATTACH_RANGE then
 					break
 				end
 
@@ -811,11 +981,14 @@ local function flyToTurret(enemy, enemyData)
 				if not enemy.Parent then
 					return
 				end
-				local heading = delta.Unit
-				local step = math.min(enemyData.speed * dt, distance)
-				local nextPosition = position + heading * step
-				enemy:PivotTo(CFrame.lookAt(nextPosition, nextPosition + heading) * CFrame.Angles(0, math.pi, 0))
-				enemy:SetAttribute("Velocity", heading * enemyData.speed)
+				local offset = targetPosition - position
+				if Vector3.new(offset.X, 0, offset.Z).Magnitude > 1 then
+					local above = Vector3.new(targetPosition.X,
+						math.max(EnemyBehavior.AboveTower(enemy, target), targetPosition.Y), targetPosition.Z)
+					EnemyBehavior.FlyStep(enemy, above, enemyData.speed, dt, 0.2, true)
+				else
+					EnemyBehavior.FlyStep(enemy, targetPosition, enemyData.speed, dt, 0.2, target)
+				end
 			end
 
 			if enemy.Parent and target.Parent then
@@ -824,7 +997,7 @@ local function flyToTurret(enemy, enemyData)
 				enemy:SetAttribute("Velocity", Vector3.zero)
 
 				-- «После того как присосался к турели, получает минимальный урон сам по себе»
-				-- (alchemy_td_enemies.md, каста 3). Броня появляется именно здесь, а не при спавне:
+				-- (каста 3). Броня появляется именно здесь, а не при спавне:
 				-- на подлёте он по-прежнему стеклянный, иначе его не сбить вообще никогда.
 				if enemyData.clingArmor then
 					enemy:SetAttribute("Armor", enemyData.clingArmor)
@@ -858,6 +1031,7 @@ local function flyToTurret(enemy, enemyData)
 							lastDecay += ticks
 							local bite = decay * ticks
 							local left = math.max(0, (enemy:GetAttribute("HP") or 0) - bite)
+							Effects.MarkHit(enemy, nil)
 							enemy:SetAttribute("HP", left)
 							-- Цифра над жуком — не базовый урон турели, а тик: тот же оранжевый
 							-- цвет, что у горения, — без неё игрок не видит вовсе, отчего тот умирает.
@@ -963,6 +1137,11 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 	if enemyData.swarm then
 		enemy:SetAttribute("Swarm", true)
 	end
+	-- Скорость регена — наружу числом: кровотечение бьёт тем сильнее, чем быстрее
+	-- жук заживает (Effects), а про Enemies тот не знает.
+	if enemyData.regen then
+		enemy:SetAttribute("Regen", enemyData.regen.amount)
+	end
 	if enemyData.flying then
 		-- Атрибутом, а не только полем в Enemies: по нему турели отличают воздушные цели
 		-- от наземных (Towers[тип].targets, задача #53), а Targeting таблицу врагов не требует
@@ -1011,12 +1190,26 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 
 		if enemy.Parent and currentHp <= 0 then
 			print(("[Манекен] %s уничтожен"):format(enemy.Name))
-			EnemyDiedRemote:FireAllClients(enemy:GetPivot().Position)
-			Matter.Add(enemyData.matter or 0)
-			Plutonium.AwardEnemyKill(enemyType)
-			ProfileStats.Kill(enemyType, enemy:GetAttribute("LastElement"))
+			-- Застывший статуей Глины (TowerBuilder.OnPetrify) не умирает, а стоит на поле
+			-- керамикой: ни вспышки смерти, ни трупа, ни последействий.
+			local petrified = enemy:GetAttribute("Petrified")
+			if not petrified then
+				EnemyDiedRemote:FireAllClients(enemy:GetPivot().Position)
+			end
+			-- Погибший очищенный — потеря игрока, а не его добыча: ни материи, ни плутония,
+			-- ни строки в журнале убийств.
+			if not enemy:GetAttribute("Ally") then
+				Matter.Add(enemyData.matter or 0)
+				Plutonium.AwardEnemyKill(enemyType)
+				ProfileStats.Kill(enemyType, enemy:GetAttribute("LastElement"))
+			end
 
-			-- Последействия смерти отдельных видов (design: alchemy_td_enemies.md). Все три —
+			if petrified then
+				enemy:Destroy()
+				return
+			end
+
+			-- Последействия смерти отдельных видов. Все три —
 			-- до трупа и Destroy: модель ещё цела и стоит там, где её убили.
 			--
 			-- Подрывник: «Попадание в заряд — преждевременная детонация.» Тот же взрыв,
@@ -1053,13 +1246,27 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 			-- её клон в позе смерти (см. Corpses). Кровь — отдельным пятном покрупнее: она
 			-- останется на карте, даже когда сам труп растворится по лимиту.
 			local deathPoint = enemy:GetPivot().Position
-			Corpses.Splat(deathPoint, DEATH_SPLAT_SIZE * (enemy:GetAttribute("Scale") or enemyData.scale or 1), DEATH_SPLAT_DROPS)
+
+			-- Метки при смерти (Облако, Гора, Растение и другие, по вики) срабатывают от любой
+			-- смерти. Сработала хоть одна — труп превратился в эффект, и тела не остаётся.
+			-- Иначе вид останков решает добивающий удар (Effects.RemainsOf).
+			local transformed = Effects.OnDeath(enemy)
+			local remains = transformed and "transform" or Effects.RemainsOf(enemy)
+			print(("[Останки] %s: добил %s%s — %s"):format(enemy.Name,
+				tostring(enemy:GetAttribute("LastHit") or "не элемент"),
+				enemy:GetAttribute("LastHitTick") and " (тик)" or "", remains))
+
+			-- Кровь — там, где тело было телом: расплавленный, растворённый и сгоревший
+			-- в свет жук крови не оставляет.
+			if not NO_BLOOD[remains] then
+				Corpses.Splat(deathPoint, DEATH_SPLAT_SIZE * (enemy:GetAttribute("Scale") or enemyData.scale or 1), DEATH_SPLAT_DROPS)
+			end
 
 			-- Гора вырастает из трупа и поглощает его (Corpses.Absorb в TowerBuilder.BuildBarrier),
 			-- но она вполне может встать РАНЬШЕ, чем сюда дойдёт очередь — тогда труп появился бы
 			-- уже внутри неё. Поэтому клетка проверяется и здесь: занята постройкой — останков нет.
 			local deathX, deathZ = Grid.ToCell(deathPoint)
-			if not Grid.GetOccupant(deathX, deathZ) then
+			if not transformed and not Grid.GetOccupant(deathX, deathZ) then
 				-- Добивающий удар в долях макс. HP (с перебоем) решает, сколько конечностей отлетит,
 				-- HitFrom (ставит Projectile) — куда.
 				local maxHp = math.max(enemy:GetAttribute("MaxHP") or hp, 1)
@@ -1067,6 +1274,10 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 				Corpses.Leave(enemy, {
 					fraction = math.max(previousHp - currentHp, 0) / maxHp,
 					from = typeof(from) == "Vector3" and from or nil,
+					remains = remains,
+					throw = remains == "crush" and Effects.ThrowOf(enemy) or nil,
+					-- Умер Болотным — труп тоже болотный и заражает прошедших по нему (по вики).
+					swampy = enemy:GetAttribute("Infected") == true,
 				})
 			end
 
@@ -1126,8 +1337,8 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 		return
 	end
 
-	-- Свой цикл движения у Моли, Матки, Личинки, летающего координатора и Пеликана.
-	-- Первые четверо ведут себя до конца сами; Пеликан наедается, садится и отдаёт
+	-- Свой цикл движения у Моли, Матки, Личинки и Пеликана.
+	-- Первые трое ведут себя до конца сами; Пеликан наедается, садится и отдаёт
 	-- управление общему циклу — «и идёт в бой».
 	if EnemyBehavior.OwnLoop(enemy, enemyData, state) then
 		Crowd.Remove(enemy)
@@ -1140,6 +1351,9 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 		Crowd.Add(enemy)
 	end
 
+	-- Только тех, кто ходит этим циклом, Мыло может переманить (см. Effects.OnCleanse ниже):
+	-- у Лицехвата и у своих циклов Моли, Матки и Личинки стороны игрока нет.
+	walkers[enemy] = state
 	moveThroughArena(enemy, enemyData, offset, function(reachedEnemy)
 		-- Прорыв теперь случается не только на выходе: дошёдший до лаборатории жук,
 		-- который не умеет грызть стол (Спринтер, Координатор, Тень), считается так же —
@@ -1190,8 +1404,6 @@ end
 -- у Effects.OnKillBarrier в TowerBuilder: те, кому надо спавнить жуков, не могут требовать
 -- спавнер напрямую — он уже требует их, и require зациклился бы.
 
-local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
-
 -- Личинка Матки, высыпавшиеся из Носителя, вылупившиеся из личинки.
 EnemyBehavior.Spawn = function(enemyType, position)
 	task.spawn(function()
@@ -1219,8 +1431,61 @@ end
 -- Литосфера меняет рельеф на месте смерти. Тот же мост, что и у Горы: элемент
 -- считает числа, а бетон двигает серверный модуль.
 local Lithosphere = require(ServerScriptService:WaitForChild("Lithosphere"))
-Effects.OnTerrain = function(position, plan)
-	Lithosphere.Erupt(position, plan)
+Effects.OnTerrain = function(position, plan, _elementData, owner)
+	Lithosphere.Erupt(position, plan, owner)
+end
+
+-- Атмосфера: подброс в случайную точку карты на случайной высоте. Точка — любая
+-- клетка, где жук может стоять (без постройки); летящих и уже подброшенных не трогаем.
+local TOSS_TRIES = 20
+Effects.OnToss = function(enemy, plan)
+	local state = walkers[enemy]
+	if not state or state.toss or state.ally or enemy:GetAttribute("Flying")
+		or EnemyBehavior.CarriedBy(enemy) then
+		return
+	end
+	local from = state.pathPosition or enemy:GetPivot().Position
+	for _ = 1, TOSS_TRIES do
+		local cx, cz = math.random(1, Grid.Cols), math.random(1, Grid.Rows)
+		if Grid.GetBlocker(cx, cz) == nil then
+			local cell = Grid.ToWorld(cx, cz)
+			local to = Vector3.new(cell.X, from.Y, cell.Z)
+			local height = plan.minHeight + math.random() * (plan.maxHeight - plan.minHeight)
+			-- Путь по дуге примерно вдвое длиннее высоты плюс прямая: от него и время.
+			local length = (to - from).Magnitude + height * 2
+			state.toss = {
+				from = from,
+				to = to,
+				height = height,
+				start = os.clock(),
+				duration = math.max(length / plan.speed, 0.5),
+			}
+			enemy:SetAttribute("Tossed", true)
+			enemy:SetAttribute("Push", nil)
+			print(("[Атмосфера] %s подброшен в клетку (%d,%d) на высоту %.1f"):format(enemy.Name, cx, cz, height))
+			return
+		end
+	end
+end
+
+-- Мыло: жук переходит на сторону игрока навсегда (документ дебаффов v2, «Очищение»).
+-- Переход — это переезд в папку Allies: оттуда его не видят турели, а сам цикл движения
+-- по state.ally ведёт его к врагам вместо выхода. Эффекты снимает уже Effects.Cleanse.
+Effects.OnCleanse = function(enemy)
+	local state = walkers[enemy]
+	if not state or state.ally or enemy.Parent ~= enemiesFolder then
+		return false
+	end
+	state.ally = true
+	state.dash = nil
+	state.focusTurret = nil
+	state.repath = true
+	enemy:SetAttribute("Ally", true)
+	enemy:SetAttribute("Chewing", false)
+	EnemyProgress.Set(enemy, 1e9)
+	enemy.Parent = alliesFolder
+	print(("[Мыло] %s очищен и перешёл на сторону игрока"):format(enemy.Name))
+	return true
 end
 
 return EnemySpawner

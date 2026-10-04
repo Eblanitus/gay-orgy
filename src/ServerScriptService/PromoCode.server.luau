@@ -13,6 +13,8 @@ local Matter = require(ServerScriptService:WaitForChild("Matter"))
 local Crafting = require(ServerScriptService:WaitForChild("Crafting"))
 local TowerUnlocks = require(ServerScriptService:WaitForChild("TowerUnlocks"))
 local WaveEditor = require(ServerScriptService:WaitForChild("WaveEditor"))
+local WaveState = require(ServerScriptService:WaitForChild("WaveState"))
+local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
 
 -- Регистр не важен: "a500" и "A500" — один и тот же код.
 -- Смените на свой, если этот где-то засветится.
@@ -34,6 +36,13 @@ local UNLOCK_TURRETS_CODE = "TWR"
 -- Открытие действует на весь сервер до его перезапуска — это инструмент для проверки
 -- видов, а не награда, и перевводить код каждый забег было бы мучением.
 local WAVE_EDITOR_CODE = "WAVE"
+
+-- Обрывает идущую волну: все жуки на поле исчезают, недосланные группы не выходят.
+-- Жуки убираются тихо, без смерти: смерть дала бы материю и плутоний за каждого, а
+-- Сплиттер, Носитель и Подрывник ещё и наплодили бы осколков и взрывов. Волна после
+-- этого засчитывается как зачищенная — иначе забег встал бы.
+local STOP_WAVE_CODE = "STOP"
+local enemiesFolder = game:GetService("Workspace"):WaitForChild("Enemies")
 
 RedeemCode.OnServerEvent:Connect(function(player, code)
 	if typeof(code) ~= "string" then
@@ -71,6 +80,24 @@ RedeemCode.OnServerEvent:Connect(function(player, code)
 		else
 			Notify:FireClient(player, "Промокод принят: конструктор волн уже был открыт")
 		end
+		return
+	end
+
+	if upperCode == STOP_WAVE_CODE then
+		if not WaveState.IsActive() then
+			Notify:FireClient(player, "Промокод принят, но волна сейчас не идёт")
+			return
+		end
+		WaveState.Stop()
+		-- Жуки волны, уже ждущие места у пролома, вышли бы на поле после зачистки.
+		Crowd.CancelPending()
+		local count = 0
+		for _, enemy in enemiesFolder:GetChildren() do
+			enemy:Destroy()
+			count += 1
+		end
+		print(("[Промокод] STOP: волна оборвана, убрано жуков — %d"):format(count))
+		Notify:FireClient(player, ("Промокод принят: волна остановлена, жуков убрано — %d"):format(count))
 		return
 	end
 

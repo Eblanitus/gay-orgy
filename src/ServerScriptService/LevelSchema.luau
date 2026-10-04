@@ -1,6 +1,6 @@
 -- Схема уровня и локации: что обязано быть в описании, чтобы в него можно было войти.
 --
--- Уровень (alchemy_td_lobby.md: «номер, название, состав волн, карта») — строка ReplicatedStorage.Levels:
+-- Уровень («номер, название, состав волн, карта») — строка ReplicatedStorage.Levels:
 --   number — равен ключу в Levels
 --   name   — строка
 --   waves  — непустой массив { number = n, groups = { { enemyType, count, hp }, ... } }

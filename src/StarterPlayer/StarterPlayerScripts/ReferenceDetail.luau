@@ -613,6 +613,11 @@ function Detail.Element(scroll, key, ctx)
 			end
 		end
 	end
+	-- Что остаётся от добитого жука (по вики). У Антиматерии строки нет.
+	local remains = open("stats") and EntityInfo.ElementRemains(key, element) or nil
+	if remains then
+		reading(head, 60, "останки", Theme.Caps(remains))
+	end
 	if recipe and open("crafts") and ctx.craftable and ctx.craftable(key) then
 		text(head, 70, Theme.Caps("● можно скрафтить сейчас — ингредиенты есть"), SMALL, Theme.color.action,
 			Theme.font.strong)

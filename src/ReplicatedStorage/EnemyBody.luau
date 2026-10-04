@@ -148,6 +148,12 @@ function EnemyBody.HalfHeight(enemy)
 	return part.Size.Y / 2
 end
 
+-- Высота спины над полом: пивот едет на RideHeight, тело торчит над ним на полувысоту.
+-- По ней решается, пролезет ли жук под постройкой (Grid.FitsUnder, Towers.crawlGap).
+function EnemyBody.TopHeight(enemy)
+	return (enemy:GetAttribute("RideHeight") or 0) + EnemyBody.HalfHeight(enemy)
+end
+
 -- Расстояние от точки до поверхности тела и до его центра — оба сразу, потому что нужны
 -- оба и считаются из одной разности.
 --

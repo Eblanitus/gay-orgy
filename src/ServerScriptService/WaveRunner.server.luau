@@ -1,5 +1,5 @@
 -- Жизненный цикл забега: очередь волн, прочность лабораторного стола, победа/поражение,
--- лобби и переход в уровень (alchemy_td_lobby.md, шаг 3).
+-- лобби и переход в уровень.
 --
 -- Начальное состояние забега собирается здесь целиком (пустая арена, стартовая материя,
 -- стартовая башня) в startRun — её вызывает каждый вход в уровень через прибор в лобби,
@@ -29,7 +29,7 @@ local Plutonium = require(ServerScriptService:WaitForChild("Plutonium"))
 -- и досылка плутония/уровней в лобби по PlayerData.Loaded.
 local PlayerData = require(ServerScriptService:WaitForChild("PlayerData"))
 -- Лабораторный стол и конструкции жуков — такая же часть арены, как трупы и башни:
--- разбираются вместе со всей ареной (design: alchemy_td_enemies.md).
+-- разбираются вместе со всей ареной.
 local LabTable = require(ServerScriptService:WaitForChild("LabTable"))
 -- Справочник и производитель элементов — та же мебель арены, что и стол.
 local LabStations = require(ServerScriptService:WaitForChild("LabStations"))
@@ -37,6 +37,7 @@ local LabStations = require(ServerScriptService:WaitForChild("LabStations"))
 -- волна идёт им, а не тем, что выписан в Waves.
 local WaveEditor = require(ServerScriptService:WaitForChild("WaveEditor"))
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
+local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
 -- Рельеф бетонного пола — такая же часть арены, как постройки и трупы: новый
 -- забег начинается с ровного пола, а не с ям прошлого.
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
@@ -86,7 +87,7 @@ local runEnded = true
 -- общее число волн догнавшему игроку и не имеет доступа к локалям runWaves.
 local activeLevelWaves = nil
 
--- Уровень, который откроет прибор входа игроку (alchemy_td_lobby.md, шаг 4) — выбирается
+-- Уровень, который откроет прибор входа игроку — выбирается
 -- в лобби кликом по строке (RequestSelectLevel), по умолчанию первый. Клиенту здесь ничего
 -- не доверяется: выбор перепроверяется заново в момент входа, см. Triggered ниже.
 local selectedLevel = {}
@@ -106,8 +107,8 @@ local pendingWave = nil
 -- потому что local виден local только с точки своего объявления и ниже.
 local returnToLobby
 
--- Уничтожение лабораторного стола — поражение (design: alchemy_td_enemies_v1.1.md,
--- «Лабораторный стол»: «Если стол уничтожен — комбинирование невозможно»).
+-- Уничтожение лабораторного стола — поражение
+-- («Если стол уничтожен — комбинирование невозможно»).
 LabTable.OnDestroyed(function()
 	if runEnded then
 		return
@@ -131,6 +132,17 @@ local function clearArena()
 		enemy:Destroy()
 	end
 
+	-- Очищенные Мылом — тоже жуки этого забега: в новый они не переходят.
+	-- Ростки Растения и их плоды (Plants) — тоже.
+	for _, name in { "Allies", "Plants" } do
+		local folder = Workspace:FindFirstChild(name)
+		if folder then
+			for _, child in folder:GetChildren() do
+				child:Destroy()
+			end
+		end
+	end
+
 	for _, tower in towersFolder:GetChildren() do
 		tower:Destroy()
 	end
@@ -144,7 +156,7 @@ local function clearArena()
 	-- способ оставить в новом забеге призрака, об которого расталкиваются живые.
 	Crowd.Clear()
 
-	-- Трупы и кровь живут до конца ЗАБЕГА (дизайн, раздел 3): поле зарастает останками
+	-- Трупы и кровь живут до конца ЗАБЕГА: поле зарастает останками
 	-- всю его длину и чистится ровно здесь, вместе со всей остальной ареной.
 	Corpses.Clear()
 
@@ -152,6 +164,9 @@ local function clearArena()
 	-- Архитектора, который «меняет карту навсегда»: навсегда — это до конца забега,
 	-- ремонту он не подлежит.
 	EnemyStructures.Clear()
+
+	-- Обломки разрушенных турелей.
+	TowerDebris.Clear()
 
 	-- Сначала забываются участки Литосферы, потом выравнивается пол: наоборот
 	-- живой сторож ямы успел бы заказать её обратно уже после выравнивания.
@@ -167,7 +182,7 @@ local function clearArena()
 	Grid.Reset()
 end
 
--- Лобби и арена — одна комната в том же плейсе (alchemy_td_lobby.md, шаг 3): переход
+-- Лобби и арена — одна комната в том же плейсе: переход
 -- между ними — перемещение персонажа, а не загрузка или межсерверный телепорт.
 local function teleportToLobby(player)
 	local character = player.Character
@@ -240,9 +255,14 @@ local function runWaves(myGeneration, levelNumber)
 		-- Каждая группа — свой вызов SpawnGroup в отдельном task.spawn: SpawnGroup сам блокируется
 		-- на task.wait(SPAWN_INTERVAL) между юнитами внутри группы — без этого вторая группа ждала бы
 		-- первую целиком, и волна была бы не смешанной, а последовательной внутри одной кнопки.
+		-- Промокод STOP обрывает только эту волну, а не забег: досылка групп прекращается,
+		-- а сама волна дальше засчитывается как зачищенная.
+		local function spawnCancelled()
+			return cancelled() or WaveState.IsStopped()
+		end
 		for _, group in groups do
 			task.spawn(function()
-				EnemySpawner.SpawnGroup(group.enemyType, group.count, group.hp, cancelled)
+				EnemySpawner.SpawnGroup(group.enemyType, group.count, group.hp, spawnCancelled)
 			end)
 		end
 
@@ -345,8 +365,8 @@ Players.PlayerAdded:Connect(function(player)
 	end
 end)
 
--- Вышел посреди забега — арену нельзя оставлять досыпаться впустую (alchemy_td_lobby.md, шаг 3:
--- «забег не восстанавливается») — без этого тот же сервер без перезахода держал бы чужую
+-- Вышел посреди забега — арену нельзя оставлять досыпаться впустую
+-- («забег не восстанавливается») — без этого тот же сервер без перезахода держал бы чужую
 -- волну живой до самого конца, хотя игрок её уже не видит.
 Players.PlayerRemoving:Connect(function(player)
 	selectedLevel[player] = nil
@@ -363,7 +383,7 @@ PlayerData.Loaded.Event:Connect(function(player, data)
 	ProfileSyncedRemote:FireClient(player, data.plutonium, data.levels, data.recipes, data.killedTypes, data.settings)
 end)
 
--- Выбор уровня (alchemy_td_lobby.md, шаг 4): лобби-панель шлёт номер кликом по строке,
+-- Выбор уровня: лобби-панель шлёт номер кликом по строке,
 -- сервер запоминает его как намерение игрока и ничего больше — какой уровень реально
 -- откроется, решает Triggered ниже в момент входа, тем же набором проверок заново.
 RequestSelectLevelRemote.OnServerEvent:Connect(function(player, levelNumber)
@@ -409,7 +429,7 @@ local function enterLevel(player)
 	startRun(levelNumber)
 end
 
--- Точка входа в уровень — прибор в лобби (alchemy_td_lobby.md, шаг 3). Triggered реплицируется
+-- Точка входа в уровень — прибор в лобби. Triggered реплицируется
 -- движком только после проверки дистанции/удержания на настоящем ProximityPrompt — это такой
 -- же надёжный источник, как OnServerEvent, отдельный RemoteEvent для него не нужен.
 local levelEntrancePrompt = Instance.new("ProximityPrompt")

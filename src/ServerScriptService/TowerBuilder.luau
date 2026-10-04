@@ -26,8 +26,10 @@ local WaveState = require(ServerScriptService:WaitForChild("WaveState"))
 -- Только за Absorb: выросшая Гора забирает труп, из которого выросла.
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 -- Только за Ruin: разрушенная постройка оставляет руину, из которой строит
--- Строитель (design: alchemy_td_enemies.md, каста 1).
+-- Строитель (каста 1).
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
+local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
+require(ServerScriptService:WaitForChild("Plants")) -- ростки Растения: назначает Effects.OnKillPlant
 
 local towersFolder = Workspace:WaitForChild("Towers")
 local enemiesFolder = Workspace:WaitForChild("Enemies")
@@ -224,9 +226,15 @@ local function placeTower(cx, cz, towerType, turn)
 	if towerData.climbHeight then
 		tower:SetAttribute("Height", towerData.climbHeight)
 	end
+	-- Просвет под платформой: мелкий жук под ней проползает, а не грызёт (см. Grid.Crossing).
+	if towerData.crawlGap then
+		tower:SetAttribute("CrawlGap", towerData.crawlGap)
+	end
 	tower.Parent = towersFolder
 
 	Grid.Occupy(cx, cz, tower, reachOf(towerType))
+	-- Новая постройка встаёт на чистый пол: обломки прежней под ней убираются.
+	TowerDebris.ClearUnder(tower:GetPivot().Position, (towerData.footprint or Grid.BuildSize) / 2)
 
 	-- Разрушенная постройка освобождает клетку. Grid.Free шлёт Changed, и все живые враги
 	-- пересчитывают маршрут: проход, который они грызли, только что открылся. Порядок важен:
@@ -235,10 +243,13 @@ local function placeTower(cx, cz, towerType, turn)
 		if tower.Parent and (tower:GetAttribute("HP") or 0) <= 0 then
 			print(("[Постройка] %s разрушена, клетка (%d, %d) снова свободна")
 				:format(tower.Name, cx, cz))
-			-- Руина на месте постройки: Строитель «ест обломки стены или мебели» и строит
-			-- из них (design: alchemy_td_enemies.md, каста 1). Размер кучи и запас материала
-			-- в ней считаются от прочности снесённого: Стена оставляет больше, чем Испаритель.
-			EnemyStructures.Ruin(tower:GetPivot().Position, tower:GetAttribute("MaxHP"))
+			-- Постройка распадается на свои детали (TowerDebris): по ним жуки ходят, а часть
+			-- деталей — материал. Строитель «ест обломки стены или мебели» и строит из них
+			-- (каста 1), Работяга носит их ему. Сколько деталей несут материал — от прочности
+			-- снесённого, как было у руины: Стена даёт больше, чем Испаритель. Детали берутся
+			-- с модели, поэтому — до Destroy.
+			TowerDebris.Leave(tower, towerData.footprint,
+				EnemyStructures.MaterialFor(tower:GetAttribute("MaxHP")))
 			tower:Destroy()
 			Grid.Free(cx, cz)
 		end
@@ -360,7 +371,7 @@ function TowerBuilder.BuildBarrier(cx, cz, hp, scale)
 	tower.Name = ("Гора (%d,%d)"):format(cx, cz)
 	tower:PivotTo(CFrame.new(Grid.ToWorld(cx, cz) + Vector3.new(0, TOWER_Y, 0)))
 	tower:SetAttribute("Type", "MountainBarrier")
-	-- Крошка от Мини — и низкая, и хлипкая (дизайн, раздел 1.3): обе метрики идут от HP
+	-- Крошка от Мини — и низкая, и хлипкая: обе метрики идут от HP
 	-- убитого. Прочность — это hp выше, высота — это scale, и отсюда же время перелезания.
 	tower:SetAttribute("Height", MOUNTAIN_HEIGHT * scale)
 	tower:SetAttribute("CellX", cx)
@@ -402,6 +413,73 @@ Effects.OnKillBarrier = function(position, hp, scale)
 	-- ровно постройкой, и свисать было нечему.
 	local cx, cz = Grid.ClampBuildCell(Grid.ToCell(position))
 	TowerBuilder.BuildBarrier(cx, cz, hp, scale)
+end
+
+-- Керамическая статуя (Глина + огонь, вики effects v4): жук застывает на своей клетке
+-- и становится стеной — не движется, лечится, при смерти ничего не делает, при разрушении
+-- просто исчезает (без руины). Сервер ставит только невидимый корпус с HP; видимое тело —
+-- копия тела жука в керамике, её собирает клиент (EnemyRender, событие "statue").
+function TowerBuilder.BuildStatue(cx, cz, hp, height)
+	if not Grid.FitsBuilding(cx, cz) or Grid.IsEntranceCell(cx, cz) or Grid.IsExitCell(cx, cz)
+		or Grid.IsTableCell(cx, cz)
+		or not Grid.IsFree(cx, cz) then
+		return false
+	end
+
+	local statue = Instance.new("Model")
+	statue.Name = ("Статуя (%d,%d)"):format(cx, cz)
+	local hull = Instance.new("Part")
+	hull.Name = "Hull"
+	hull.Size = Vector3.new(Grid.BuildSize - 0.4, height, Grid.BuildSize - 0.4)
+	hull.Anchored = true
+	hull.CanCollide = true
+	hull.CanTouch = false
+	hull.Transparency = 1
+	hull.CFrame = CFrame.new(Grid.ToWorld(cx, cz) + Vector3.new(0, height / 2, 0))
+	hull.Parent = statue
+	statue.PrimaryPart = hull
+	statue:SetAttribute("Type", "ClayStatue")
+	statue:SetAttribute("Height", height)
+	statue:SetAttribute("CellX", cx)
+	statue:SetAttribute("CellZ", cz)
+	statue:SetAttribute("MaxHP", hp)
+	statue:SetAttribute("HP", hp)
+	statue.Parent = towersFolder
+
+	Grid.Occupy(cx, cz, statue)
+
+	statue:GetAttributeChangedSignal("HP"):Connect(function()
+		if statue.Parent and (statue:GetAttribute("HP") or 0) <= 0 then
+			print(("[Постройка] %s рассыпалась, клетка (%d, %d) снова свободна"):format(statue.Name, cx, cz))
+			statue:Destroy()
+			Grid.Free(cx, cz)
+		end
+	end)
+
+	print(("[Глина] статуя в клетке (%d, %d): %d HP"):format(cx, cz, hp))
+	return true, statue
+end
+
+-- Поджог застаненного Глиной (Effects): только наземный жук своей волны — летуну
+-- и очищенному стоять статуей негде. Клетки нет — огонь бьёт как обычно.
+Effects.OnPetrify = function(enemy, plan)
+	if enemy.Parent ~= enemiesFolder or enemy:GetAttribute("Flying") then
+		return false
+	end
+	local cx, cz = Grid.ClampBuildCell(Grid.ToCell(enemy:GetPivot().Position))
+	local hp = math.max(1, math.floor((enemy:GetAttribute("MaxHP") or 1) * plan.hpScale + 0.5))
+	local height = math.max(enemy:GetExtentsSize().Y, 1.5)
+	local ok, statue = TowerBuilder.BuildStatue(cx, cz, hp, height)
+	if not ok then
+		return false
+	end
+	-- Тело уходит в статую до смерти жука: событие обгоняет Destroy, как и у трупа.
+	Corpses.Statue(enemy, statue)
+	-- Petrified читает EnemySpawner: награда как за убийство, но без трупа и без
+	-- последействий смерти — жук не умер, а застыл.
+	enemy:SetAttribute("Petrified", true)
+	enemy:SetAttribute("HP", 0)
+	return true
 end
 
 return TowerBuilder

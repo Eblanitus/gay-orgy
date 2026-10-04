@@ -324,20 +324,36 @@ end
 -- Профиль преодоления: чем жук грызёт и как лезет. Один и тот же набор нужен цене клетки,
 -- полю волн и самому жуку в момент, когда он упёрся — поэтому разбирается в одном месте.
 -- Число вместо таблицы — старый вызов с одним chewDps: такой жук не лезет вовсе.
+--
+-- bodyHeight — высота спины жука над полом (EnemyBody.TopHeight). По ней решается, пролезет ли
+-- он под постройкой (подлаз, см. Crossing). 0 — неизвестна: такой жук под постройки не лезет.
 local function traversal(profile)
 	if type(profile) == "number" then
-		return profile, 0, 0
+		return profile, 0, 0, 0
 	end
 	if not profile then
-		return Arena.chewDps, 0, 0
+		return Arena.chewDps, 0, 0, 0
 	end
-	return profile.chewDps or Arena.chewDps, profile.climbSpeed or 0, profile.climbHeight or 0
+	return profile.chewDps or Arena.chewDps, profile.climbSpeed or 0, profile.climbHeight or 0,
+		profile.bodyHeight or 0
+end
+
+-- Пролезет ли жук с такой высотой спины под этой постройкой. Просвет — атрибут CrawlGap
+-- (ставит TowerBuilder по Towers.crawlGap); нет атрибута — под постройкой не пролезть.
+-- Отдельной функцией: то же спрашивает толкучка (Crowd) — не выталкивать из-под постройки
+-- того, кто под ней ползёт.
+function Grid.FitsUnder(building, bodyHeight)
+	if not bodyHeight or bodyHeight <= 0 then
+		return false
+	end
+	local gap = building:GetAttribute("CrawlGap")
+	return gap ~= nil and bodyHeight <= gap
 end
 
 -- Вертикальный интеллект целиком: как именно этот жук будет преодолевать эту преграду
 -- и во сколько ему это обойдётся. Возвращает "climb" или "chew" и цену без шага в клетку.
 --
--- Здесь живёт весь выбор из дерева решений (дизайн, раздел 1.1). Обход считает сам поиск
+-- Здесь живёт весь выбор из дерева решений. Обход считает сам поиск
 -- пути: стоит ли преграда того, чтобы её трогать, видно по тому, какой маршрут выиграл по сумме.
 -- А вот «лезть или грызть» — выбор внутри одной клетки, и он обязан быть ОДИН и тот же
 -- у цены клетки и у самого жука (см. EnemySpawner): разойдись они — и маршрут был бы посчитан
@@ -347,14 +363,23 @@ end
 -- как у грызни. Обе цены в одних единицах и считаются одинаково — по клетке; это шкала
 -- сравнения, а не секундомер, и важно ровно то, что они меряются одной линейкой.
 -- Цена клетки тому, кто грызть не умеет вовсе (chewDamage = 0 у Мини, Моли, Спринтера
--- и прочих по design: alchemy_td_enemies.md). Деление на ноль дало бы inf, а inf в поле волн
+-- и прочих по вики). Деление на ноль дало бы inf, а inf в поле волн
 -- разъедает всю арифметику сравнений (inf < inf ложно, и скатывание перестаёт выбирать
 -- соседа вовсе). Большое конечное число даёт тот же смысл — «обходи любой ценой», —
 -- но оставляет маршрут сквозь стену крайним вариантом, если другого нет совсем.
 local NO_CHEW_COST = 1e6
 
+-- Подлаз — третий способ, кроме «перелезть» и «прогрызть»: мелкий жук проползает под
+-- платформой, большой туда не влезает и грызёт. Если пролезает — это всегда дешевле обоих:
+-- он не останавливается, только ползёт медленнее (Arena.crawlSpeed). Цена — сколько
+-- лишнего времени займёт клетка под постройкой по сравнению с обычным шагом.
+local CRAWL_COST = 1 / Arena.crawlSpeed - 1
+
 function Grid.Crossing(building, profile)
-	local chewDps, climbSpeed, climbHeight = traversal(profile)
+	local chewDps, climbSpeed, climbHeight, bodyHeight = traversal(profile)
+	if Grid.FitsUnder(building, bodyHeight) then
+		return "under", CRAWL_COST, building:GetAttribute("CrawlGap")
+	end
 	local chew = chewDps > 0
 		and (Grid.ChewTime(building) / chewDps + Arena.chewPenalty)
 		or NO_CHEW_COST
@@ -535,7 +560,7 @@ end
 -- цена клетки зависит от того, как быстро грызёт и как высоко лезет тот, для кого ищется путь. Поле строится лениво:
 -- класс, которого нет на арене, не стоит ничего.
 -- goalKey — клетка, к которой считается поле. Раньше это всегда был выход; с кастами
--- (design: alchemy_td_enemies.md) целей стало две: выход и лабораторный стол. Обе общие
+-- целей стало две: выход и лабораторный стол. Обе общие
 -- для всех жуков сразу, поэтому обе остаются полями — по одному на цель и профиль,
 -- а не по полю на жука.
 --
@@ -616,14 +641,37 @@ end
 -- Ключ поля — весь профиль, а не один chewDps: цена клетки теперь зависит ещё и от того,
 -- как жук лезет. Полей по-прежнему столько, сколько разных видов на арене (обычно два-три).
 local function fieldFor(profile, goalKey)
-	local chewDps, climbSpeed, climbHeight = traversal(profile)
-	local cacheKey = string.format("%g|%g|%g|%d", chewDps, climbSpeed, climbHeight, goalKey)
+	local chewDps, climbSpeed, climbHeight, bodyHeight = traversal(profile)
+	-- Высота спины — только «пролезает ли под каждой постройкой»: жуки разной высоты, которые
+	-- пролезают под одними и теми же постройками, делят одно поле. Иначе Мини со случайным
+	-- масштабом заводили бы по полю на каждого.
+	-- Пролезает он ровно под теми, у кого просвет не ниже его спины, — и этот набор целиком
+	-- задаётся самым низким из таких просветов. Он и идёт в ключ.
+	local under = 0
+	if bodyHeight > 0 then
+		under = math.huge
+		for building in buildings do
+			local gap = building:GetAttribute("CrawlGap")
+			if gap and gap >= bodyHeight and gap < under then
+				under = gap
+			end
+		end
+		if under == math.huge then
+			under = 0
+		end
+	end
+	local cacheKey = string.format("%g|%g|%g|%g|%d", chewDps, climbSpeed, climbHeight, under, goalKey)
 
 	local field = fields[cacheKey]
 	if not field then
 		-- Первый запрос этого профиля и цели — считаем сразу: отдавать жуку нечего,
 		-- а без маршрута он просто стоит на месте.
-		field = buildField(profile, goalKey)
+		-- Поле считается и хранится по профилю КЛЮЧА, а не по профилю спросившего: высота
+		-- спины в нём — тот самый просвет из ключа. Иначе фоновый пересчёт после новой
+		-- постройки считал бы его по росту первого спросившего, а делят поле жуки разного роста.
+		field = buildField({
+			chewDps = chewDps, climbSpeed = climbSpeed, climbHeight = climbHeight, bodyHeight = under,
+		}, goalKey)
 		fields[cacheKey] = field
 		-- Если этот же ключ ждал в очереди, считать его второй раз незачем.
 		stale[cacheKey] = nil

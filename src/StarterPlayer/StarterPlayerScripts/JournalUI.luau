@@ -487,7 +487,8 @@ function Journal.Mount(parent, onStatus)
 					shown += 1
 					local base = shown * 10
 					statsSection(base, rows.name, scroll)
-					for i, row in rows do
+					-- ipairs: в rows есть ещё ключ name — общий обход дал бы i = "name".
+					for i, row in ipairs(rows) do
 						local cap, val = statsRow(base + i, scroll)
 						cap.Text = Theme.Caps(row[1])
 						val.Text = tostring(row[2])
