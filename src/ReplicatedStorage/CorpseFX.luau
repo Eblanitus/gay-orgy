@@ -33,7 +33,6 @@
 -- поле из трупов не должно читаться как толпа застывших живых.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
 local CollectionService = game:GetService("CollectionService")
@@ -41,14 +40,14 @@ local CollectionService = game:GetService("CollectionService")
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local EnemyGait = require(ReplicatedStorage:WaitForChild("EnemyGait"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
-local Impulse = require(ReplicatedStorage:WaitForChild("ImpulseFX"))
+local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 
--- Группы столкновений (заводит и связывает серверный Corpses, клиенту они реплицируются). Труп обязан ловить толчок от жука, но только его: тело жука
+-- Группы столкновений (заводит общий слой Loose на сервере, клиенту они реплицируются). Труп обязан ловить толчок от жука, но только его: тело жука
 -- анкорнуто и физикой не двигается вовсе, поэтому столкновение здесь одностороннее —
 -- сдвигается только труп. Оттого и правило дизайна остаётся в силе: труп не преграда,
 -- путь и плотность колонны он не меняет, потому что жука он не тормозит ни на кадр.
-local ENEMY_GROUP = "Enemies"
-local CORPSE_GROUP = "Corpses"
+local ENEMY_GROUP = Loose.Groups.Enemies
+local CORPSE_GROUP = Loose.Groups.Corpses
 
 -- Плотный, но не каменный, с высоким трением и без отскока: сдвинутый труп проезжает
 -- полстуда и встаёт, а не укатывается через всю арену от одного задевшего его жука.
@@ -73,9 +72,6 @@ local TUMBLE = 3
 
 local Corpses = {}
 
--- Физику останков считает этот же клиент: детали локальные, отдавать их некому.
-local function giveOwner(root) end
-
 -- Сколько трупов держим на поле одновременно. Цифра не из дизайна — он её нарочно
 -- не задаёт и отдаёт оптимизации. 60 трупов по 6 частей — 360 анкорнутых деталей,
 -- которые ничего не считают и не двигаются.
@@ -84,8 +80,6 @@ local MAX_CORPSES = 60
 -- Сколько пятен крови. Их много больше, чем трупов (каждое попадание — капли),
 -- но каждое — одна плоская деталь без тени и без запросов.
 local MAX_STAINS = 220
-
-local FADE_TIME = 1.2 -- секунд на растворение самого старого
 
 -- Насколько труп выцветает к серому: дешёвый и ясный сигнал «мёртв», который не
 -- конфликтует ни с одной меткой индикации (индикация с трупа снята вместе с моделью).
@@ -107,49 +101,10 @@ local pieces = {} -- оторванные конечности (см. detachPiec
 -- Слабые значения: растворённая по лимиту туша уходит и отсюда сама.
 local byId = setmetatable({}, { __mode = "v" })
 
-local function container(name)
-	local folder = Workspace:FindFirstChild(name)
-	if not folder then
-		folder = Instance.new("Folder")
-		folder.Name = name
-		folder.Parent = Workspace
-	end
-	return folder
-end
-
--- Растворяет и сносит. Не мгновенный Destroy нарочно: труп, пропавший на глазах
--- в один кадр, читается как поломка. На геймплей растворение не влияет никак: Гора
--- и зона Землетрясения сработали в момент смерти и от трупа больше не зависят.
-local function dissolve(instance)
-	if not instance or not instance.Parent then
-		return
-	end
-
-	local info = TweenInfo.new(FADE_TIME, Enum.EasingStyle.Linear)
-	for _, part in instance:GetDescendants() do
-		if part:IsA("BasePart") then
-			TweenService:Create(part, info, { Transparency = 1 }):Play()
-		end
-	end
-	if instance:IsA("BasePart") then
-		TweenService:Create(instance, info, { Transparency = 1 }):Play()
-	end
-
-	task.delay(FADE_TIME, function()
-		if instance.Parent then
-			instance:Destroy()
-		end
-	end)
-end
-
--- Общее для трупов и крови: список с потолком, самые старые уходят первыми.
-local function remember(list, instance, limit)
-	table.insert(list, instance)
-	while #list > limit do
-		local oldest = table.remove(list, 1)
-		dissolve(oldest)
-	end
-end
+-- Папки, растворение и список с потолком — общие, из физического слоя Loose.
+local container = Loose.Folder
+local dissolve = Loose.Dissolve
+local remember = Loose.Remember
 
 -- Останки жука на месте смерти. Зовётся ДО enemy:Destroy() — модель ещё целая
 -- и стоит там, где его убили.
@@ -398,8 +353,7 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 		part.Anchored = false
 	end
 	piece.Parent = container("Debris")
-	CollectionService:AddTag(piece, Impulse.Tag)
-	giveOwner(root)
+	CollectionService:AddTag(piece, Loose.Tag)
 
 	-- Летит от удара и от тела сразу: только «от удара» сбило бы все куски в одну кучу,
 	-- только «от тела» — потеряло бы направление выстрела.
@@ -419,8 +373,7 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 	end
 	direction = (direction.Unit + Vector3.yAxis * plan.lift).Unit
 	local speed = plan.speedMin + (plan.speed - plan.speedMin) * math.clamp(fraction, 0, 1.5)
-	Impulse.Kick(root, direction * speed + (carry or Vector3.zero), Impulse.RandomSpin(plan.spin))
-	giveOwner(root) -- Kick забирает сборку серверу: вернуть тому, кто её считает
+	Loose.Kick(root, direction * speed + (carry or Vector3.zero), Loose.RandomSpin(plan.spin))
 
 	Corpses.Splat(root.Position, plan.splatSize * scale, 1, floorY)
 	remember(pieces, piece, plan.fieldLimit)
@@ -636,7 +589,7 @@ function Corpses.Leave(enemy, hit, id)
 
 	-- Досадка на брюхо — общий цикл перед Corpses.Splat, для всех трупов сразу.
 
-	CollectionService:AddTag(corpse, Impulse.Tag)
+	CollectionService:AddTag(corpse, Loose.Tag)
 	remember(corpses, corpse, MAX_CORPSES)
 	scaleOf[corpse] = scale
 	if id then
@@ -713,7 +666,6 @@ local function flipUpright(corpse, root)
 		root.Anchored = false
 		root.AssemblyLinearVelocity = Vector3.zero
 		root.AssemblyAngularVelocity = Vector3.zero
-		giveOwner(root)
 	end
 end
 

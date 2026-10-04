@@ -13,13 +13,13 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local PhysicsService = game:GetService("PhysicsService")
 
 local Balance = require(ReplicatedStorage:WaitForChild("Arcade"))
 -- Жук аркады на сервере — невидимый якорь (EnemyModel.Strip); модель и походку рисует клиент
 -- (StarterPlayerScripts.EnemyRender), как и у жуков арены.
 local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
+local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestEnterArcadeRemote = Remotes:WaitForChild("RequestEnterArcade")
@@ -78,23 +78,10 @@ local SPLAT_DROPS = Balance.splat.drops
 -- Корпус сталкивается с полем, ограждением и трупами — это настоящая физика, — но не с жуками:
 -- давку считает код, и жук под колёсами не должен подбрасывать машину. Колёса — своя группа:
 -- пол держат лучи подвески (клиент), а сами колёса только расшвыривают трупы и куски,
--- в которые въехали. Группы заводятся в коде, как в Corpses.
-local CAR_GROUP = "ArcadeCar"
-local WHEEL_GROUP = "ArcadeWheel"
-for _, group in { CAR_GROUP, WHEEL_GROUP } do
-	if not PhysicsService:IsCollisionGroupRegistered(group) then
-		PhysicsService:RegisterCollisionGroup(group)
-	end
-end
-PhysicsService:CollisionGroupSetCollidable(CAR_GROUP, "Default", true)
-PhysicsService:CollisionGroupSetCollidable(CAR_GROUP, CAR_GROUP, false)
-PhysicsService:CollisionGroupSetCollidable(CAR_GROUP, WHEEL_GROUP, false)
-PhysicsService:CollisionGroupSetCollidable(CAR_GROUP, Corpses.EnemyCollisionGroup, false)
-PhysicsService:CollisionGroupSetCollidable(CAR_GROUP, Corpses.CorpseCollisionGroup, true)
-PhysicsService:CollisionGroupSetCollidable(WHEEL_GROUP, "Default", false)
-PhysicsService:CollisionGroupSetCollidable(WHEEL_GROUP, WHEEL_GROUP, false)
-PhysicsService:CollisionGroupSetCollidable(WHEEL_GROUP, Corpses.EnemyCollisionGroup, false)
-PhysicsService:CollisionGroupSetCollidable(WHEEL_GROUP, Corpses.CorpseCollisionGroup, true)
+-- в которые въехали. Группы и кто с кем сталкивается — в общем физическом слое (Loose).
+Loose.SetupGroups()
+local CAR_GROUP = Loose.Groups.Car
+local WHEEL_GROUP = Loose.Groups.Wheel
 
 local function randomEdge()
 	return (math.random() * 2 - 1) * HALF
