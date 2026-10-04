@@ -13,6 +13,9 @@
 --     Детали турелей твёрдые с #382 (TowerBuilder.solidify), но форму столкновения меша
 --     движок считает только в Studio: без неё каждая деталь сталкивается своим ящиком.
 -- Мелочь на полках и столах (колбы, пробирки, ручки, швы) остаётся без коллизии нарочно.
+-- CanCollide мебели и комнат наблюдения теперь ставит и сам сервер при загрузке локации
+-- (ServerScriptService.MapCollision) — без этого скрипта и без сохранения места. Здесь
+-- незаменима только форма столкновения мешей турелей: из игры её менять нельзя.
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local location = workspace:FindFirstChild("Location")
 assert(location, "нет Workspace.Location")
