@@ -2,7 +2,10 @@
 -- стояли серые, рыжие, салатовые и сиреневые жуки — ни касты, ни веса по цвету не прочесть.
 --
 -- Правило теперь одно:
---   * цвет панциря задаёт КАСТА (одно семейство на касту) — роль видно издалека;
+--   * цвет панциря задаёт КАСТА (одно семейство на касту) — роль видно издалека:
+--     разведчики зелёные, работяги жёлтые, солдаты красные, особые синие;
+--   * оттенок (поле hue вида, градусы) сдвигает цвет внутри семейства — виды одной касты
+--     различимы, но остаются «своими» (Хмурый брон — бирюзовый край зелёных);
 --   * тон (поле tone вида, -1..1) — вес: мелкие и быстрые светлее, тяжёлые темнее;
 --   * лапы и суставы у всех одной тёмной смолой — силуэт ног читается одинаково;
 --   * голова темнее панциря — видно, куда жук смотрит;
@@ -23,12 +26,12 @@ BugPalette.Colors = {
 	olive = hex("#66703F"), -- каста 0: разведчики
 	ochre = hex("#9A7238"), -- каста 1: работяги
 	brick = hex("#8C3B2A"), -- каста 2: солдаты
-	plum = hex("#5B3F63"), -- каста 3: особые
+	blue = hex("#3F5573"), -- каста 3: особые
 	bone = hex("#D3C7A6"), -- светлое: бледные и летучие (Моль, Личинка), мимикрия
 	tar = hex("#2A2522"), -- лапы, суставы, Тень
 }
 
-BugPalette.ByCaste = { [0] = "olive", [1] = "ochre", [2] = "brick", [3] = "plum" }
+BugPalette.ByCaste = { [0] = "olive", [1] = "ochre", [2] = "brick", [3] = "blue" }
 
 -- Кровь (гемолимфа) и выцветание трупа — из той же палитры: тёмная олива, а не салатовая
 -- краска поверх светлого пола.
@@ -48,6 +51,10 @@ function BugPalette.Paint(data)
 	local family = data.family or BugPalette.ByCaste[data.caste or 0] or "olive"
 	local base = BugPalette.Colors[family]
 	assert(base, ("[BugPalette] нет семейства %s"):format(tostring(family)))
+	if data.hue and data.hue ~= 0 then
+		local h, sat, v = base:ToHSV()
+		base = Color3.fromHSV((h + data.hue / 360) % 1, sat, v)
+	end
 	local tone = math.clamp(data.tone or 0, -1, 1)
 	local shell = tone >= 0 and base:Lerp(BugPalette.Colors.bone, tone * LIGHTEN)
 		or base:Lerp(BugPalette.Colors.tar, -tone * DARKEN)
