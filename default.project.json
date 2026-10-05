@@ -45,6 +45,12 @@
         "$ignoreUnknownInstances": true,
         "Music": {
           "$path": "src/SoundService/Master/Music.model.json"
+        },
+        "Combat": {
+          "$path": "src/SoundService/Master/Combat.model.json"
+        },
+        "Ambient": {
+          "$path": "src/SoundService/Master/Ambient.model.json"
         }
       }
     }

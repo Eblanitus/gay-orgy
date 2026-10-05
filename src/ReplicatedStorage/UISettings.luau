@@ -8,9 +8,9 @@
 --
 -- Сюда попадает ТОЛЬКО то, что действительно на что-то влияет: каждая строка ниже
 -- имеет ровно одно место в коде, которое её читает, и оно указано в поле affects.
--- Громкость звука — четыре ползунка на вкладке «Звук». Их читает UISound и ставит
--- громкость групп SoundService.Master (общая) и её дочерних Buttons, Draw и Music
--- по кривой UISettings.Gain.
+-- Громкость звука — шесть ползунков на вкладке «Звук». Их читает UISound и ставит
+-- громкость групп SoundService.Master (общая) и её дочерних Buttons, Draw, Combat,
+-- Ambient и Music по кривой UISettings.Gain.
 local UISettings = {}
 
 -- Новая настройка добавляется строкой сюда и одной проверкой Settings.Get там,
@@ -145,9 +145,38 @@ UISettings.List = {
 		default = 100,
 	},
 	{
+		key = "volumeCombat",
+		name = "Бой",
+		note = "Выстрелы, взрывы, жуки, сирена волны (GameAudio)",
+		affects = "UISound (SoundService.Master.Combat)",
+		tab = "sound",
+		min = 0,
+		max = 150,
+		step = 1,
+		knee = 100,
+		curve = 3,
+		hyper = 3,
+		-- Без sample: звуки боя лежат не в UISounds, образец — сам бой.
+		default = 100,
+	},
+	{
+		key = "volumeAmbient",
+		name = "Атмосфера",
+		note = "Гул и вытяжка бункера",
+		affects = "UISound (SoundService.Master.Ambient)",
+		tab = "sound",
+		min = 0,
+		max = 150,
+		step = 1,
+		knee = 100,
+		curve = 3,
+		hyper = 3,
+		default = 100,
+	},
+	{
 		key = "volumeMusic",
 		name = "Музыка",
-		note = "Фоновая музыка",
+		note = "Фоновая музыка, победа и поражение",
 		affects = "UISound (SoundService.Master.Music)",
 		tab = "sound",
 		min = 0,
@@ -156,7 +185,7 @@ UISettings.List = {
 		knee = 100,
 		curve = 3,
 		hyper = 3,
-		-- Без sample: музыки пока нет, образцом ей станет сам трек.
+		-- Без sample: образец музыки — сам трек, он играет всё время.
 		default = 100,
 	},
 }
