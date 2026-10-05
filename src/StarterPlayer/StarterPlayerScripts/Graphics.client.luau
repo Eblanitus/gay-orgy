@@ -58,6 +58,17 @@ local lampMode = "map"
 local lampLight = 1
 local lampGlow = 1
 
+-- Общая заливка места, от неё считается множитель ambient уровня.
+local mapLighting = {
+	Ambient = Lighting.Ambient,
+	OutdoorAmbient = Lighting.OutdoorAmbient,
+	Brightness = Lighting.Brightness,
+}
+
+local function scaled(c, k)
+	return Color3.new(c.R * k, c.G * k, c.B * k)
+end
+
 local function applyLamp(light)
 	if mapShadows[light] == nil then
 		mapShadows[light] = light.Shadows
@@ -76,7 +87,7 @@ local function applyLamp(light)
 			mapGlow[diffuser] = diffuser.Color
 		end
 		local c = mapGlow[diffuser]
-		diffuser.Color = Color3.new(c.R * lampGlow, c.G * lampGlow, c.B * lampGlow)
+		diffuser.Color = scaled(c, lampGlow)
 	end
 end
 
@@ -107,6 +118,9 @@ end
 local function apply()
 	local p = GraphicsPresets.Levels[level()]
 	Lighting.ExposureCompensation = p.exposure
+	Lighting.Ambient = scaled(mapLighting.Ambient, p.ambient)
+	Lighting.OutdoorAmbient = scaled(mapLighting.OutdoorAmbient, p.ambient)
+	Lighting.Brightness = mapLighting.Brightness * p.ambient
 	Lighting.GlobalShadows = p.globalShadows
 	Lighting.ShadowSoftness = p.shadowSoftness
 	Lighting.EnvironmentSpecularScale = p.specular
