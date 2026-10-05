@@ -43,10 +43,12 @@ resultGui.Parent = playerGui
 -- ============ Рамка забега ============
 
 local INSET = MobileUI.FRAME_INSET
-local HEADER_H = MobileUI.HEADER_H
 
 -- Рамка видна только во время забега: появляется на WaveReady/WaveChanged,
 -- прячется на RunEnded. В лобби экран занимает главное меню.
+-- Полос во всю ширину (тени от края, черты под шапкой и над подвалом) больше нет
+-- (просьба автора): тёмная подложка только под самими надписями — плашкой того же
+-- вида, что кнопки Roblox в его полосе сверху.
 local frame = Instance.new("Frame")
 frame.Name = "RunFrame"
 frame.Position = UDim2.fromOffset(INSET, INSET)
@@ -57,135 +59,99 @@ frame.Visible = false
 frame.Parent = screenGui
 Theme.Corner(frame, Theme.radius.panel)
 Theme.Stroke(frame, Theme.color.frame, 1, 0.3)
-
--- Тень от края экрана вместо плашки: тёмный градиент цвета ink под шапкой и подвалом.
--- Над ареной любой яркости текст в ней читается, а середина экрана остаётся чистой.
--- Тени — в своём ScreenGui во весь экран, ВКЛЮЧАЯ полосу Roblox сверху (IgnoreGuiInset).
--- Внутри рамки верхняя тень начиналась ниже кнопок самого Roblox: его кнопки висели
--- на голой светлой арене над тёмной полосой шапки, и вышло две разные полосы одна
--- над другой (замечание автора). Теперь тень идёт от самого верха экрана, и кнопки
--- Roblox лежат в той же темноте, что и шапка забега. Слой на единицу ниже HUD.
-local shadeGui = Instance.new("ScreenGui")
-shadeGui.Name = "GameHudShade"
-shadeGui.ResetOnSpawn = false
-shadeGui.IgnoreGuiInset = true
-shadeGui.DisplayOrder = MobileUI.Layer.Hud - 1
-shadeGui.Enabled = false
-shadeGui.Parent = playerGui
-
-local function edgeShade(top)
-	local shade = Instance.new("Frame")
-	shade.Name = top and "ShadeTop" or "ShadeBottom"
-	shade.AnchorPoint = Vector2.new(0, top and 0 or 1)
-	shade.Position = UDim2.fromScale(0, top and 0 or 1)
-	shade.BackgroundColor3 = Theme.color.ink
-	shade.BackgroundTransparency = 0
-	shade.BorderSizePixel = 0
-	shade.Parent = shadeGui
-
-	local fade = Instance.new("UIGradient")
-	fade.Rotation = top and 90 or -90
-	-- Плавный спад без ступеньки: плотная полоса с видимым краем резала светлую арену.
-	fade.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.25),
-		NumberSequenceKeypoint.new(0.3, 0.45),
-		NumberSequenceKeypoint.new(0.65, 0.8),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	fade.Parent = shade
-	return shade
-end
-
-local shadeTop = edgeShade(true)
--- Подвал: две строки подсказок, кнопка волны на ПК и запас под тень.
-local shadeBottom = edgeShade(false)
-shadeBottom.Size = UDim2.new(1, 0, 0, MobileUI.FOOTER_BOTTOM + 2 * MobileUI.FOOTER_LINE + (mobile and 60 or 110))
-
--- Высота верхней тени — от верха экрана: полоса Roblox (своя у каждого устройства и
--- меняется в полноэкранном режиме), отступ рамки, шапка и запас на спад.
-local function fitShade()
-	shadeTop.Size = UDim2.new(1, 0, 0, MobileUI.TopInset + INSET + HEADER_H + (mobile and 40 or 80))
-end
-MobileUI.OnViewportChanged(fitShade)
-
--- Уголки рамки.
 Theme.Brackets(frame)
 
-local function rule(y, fromBottom)
-	local line = Instance.new("Frame")
-	line.AnchorPoint = Vector2.new(0, fromBottom and 1 or 0)
-	line.Position = UDim2.new(0, 18, fromBottom and 1 or 0, fromBottom and -y or y)
-	line.Size = UDim2.new(1, -36, 0, 1)
-	line.Parent = frame
-	Theme.Rule(line)
-	return line
+-- ============ Шапка в полосе Roblox ============
+
+-- Шапка стоит на самом верху экрана, на одной линии с кнопками Roblox, а не под ними
+-- (просьба автора): своя ScreenGui с IgnoreGuiInset, место — свободная часть полосы
+-- Roblox (MobileUI.Topbar). Слева «> ЗАБЕГ» сразу за кнопками Roblox, по центру
+-- показания. На телефоне полоса узкая — там только показания.
+local headerGui = Instance.new("ScreenGui")
+headerGui.Name = "GameHudHeader"
+headerGui.ResetOnSpawn = false
+headerGui.IgnoreGuiInset = true
+headerGui.DisplayOrder = MobileUI.Layer.Hud
+headerGui.Enabled = false
+headerGui.Parent = playerGui
+
+local PILL_H = 44
+local PILL_GAP = 12
+
+local function pill(name)
+	local plate = Instance.new("Frame")
+	plate.Name = name
+	plate.Parent = headerGui
+	Theme.ArenaBacking(plate)
+	return plate
 end
 
--- Черта под шапкой и черта над подвалом, как в главном меню.
-rule(HEADER_H, false)
-rule(MobileUI.FOOTER_BOTTOM + 2 * MobileUI.FOOTER_LINE + 18 - INSET, true)
+-- ---- Где игрок ----
 
--- ---- Шапка: где игрок ----
+local titlePill = pill("Title")
+titlePill.Size = UDim2.fromOffset(0, PILL_H)
+titlePill.AutomaticSize = Enum.AutomaticSize.X
+titlePill.Visible = not mobile
+
+local titlePad = Instance.new("UIPadding")
+titlePad.PaddingLeft = UDim.new(0, 12)
+titlePad.PaddingRight = UDim.new(0, 12)
+titlePad.Parent = titlePill
+
+local titleList = Instance.new("UIListLayout")
+titleList.SortOrder = Enum.SortOrder.LayoutOrder
+titleList.VerticalAlignment = Enum.VerticalAlignment.Center
+titleList.Parent = titlePill
 
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Position = UDim2.fromOffset(mobile and 16 or 22, mobile and 10 or 14)
-titleLabel.Size = UDim2.fromOffset(mobile and 120 or 200, mobile and 20 or 24)
-titleLabel.TextSize = mobile and 16 or 20
+titleLabel.LayoutOrder = 1
+titleLabel.Size = UDim2.fromOffset(0, 20)
+titleLabel.AutomaticSize = Enum.AutomaticSize.X
+titleLabel.TextSize = 18
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Text = "> " .. Theme.Caps("забег")
-titleLabel.Parent = frame
+titleLabel.BackgroundTransparency = 1
+titleLabel.Parent = titlePill
 Theme.Title(titleLabel)
-Theme.ArenaLabel(titleLabel)
 
 local levelLabel = Instance.new("TextLabel")
-levelLabel.Position = UDim2.fromOffset(mobile and 16 or 22, mobile and 34 or 44)
-levelLabel.Size = UDim2.fromOffset(mobile and 120 or 340, 20)
+levelLabel.LayoutOrder = 2
+levelLabel.Size = UDim2.fromOffset(0, 18)
+levelLabel.AutomaticSize = Enum.AutomaticSize.X
+levelLabel.BackgroundTransparency = 1
 levelLabel.FontFace = Theme.font.body
--- Крупнее минимума и светлее: в 14 приглушённым на светлой стене строка терялась.
-levelLabel.TextSize = mobile and Theme.MIN_TEXT or 16
+levelLabel.TextSize = 15
 levelLabel.TextXAlignment = Enum.TextXAlignment.Left
-levelLabel.TextTruncate = Enum.TextTruncate.AtEnd
-levelLabel.TextColor3 = Theme.color.text
+levelLabel.TextColor3 = Theme.color.textDim
 levelLabel.Text = ""
-levelLabel.Parent = frame
-Theme.ArenaLabel(levelLabel)
+levelLabel.Parent = titlePill
 
--- Номер уровня кладёт сервер атрибутом RunLevel (WaveRunner.startRun). На телефоне
--- шапка узкая — там только номер.
+-- Номер уровня кладёт сервер атрибутом RunLevel (WaveRunner.startRun).
 local function updateLevel()
 	local number = ReplicatedStorage:GetAttribute("RunLevel")
 	local level = typeof(number) == "number" and Levels[number]
-	if not level then
-		levelLabel.Text = ""
-	elseif mobile then
-		levelLabel.Text = ("УР. %d"):format(number)
-	else
-		levelLabel.Text = ("УРОВЕНЬ %d  //  %s"):format(number, Theme.Caps(level.name))
-	end
+	levelLabel.Text = level and ("УРОВЕНЬ %d  //  %s"):format(number, Theme.Caps(level.name)) or ""
+	levelLabel.Visible = level ~= nil and level ~= false
 end
 ReplicatedStorage:GetAttributeChangedSignal("RunLevel"):Connect(updateLevel)
 updateLevel()
 
--- ---- Шапка: показания ----
+-- ---- Показания ----
 
--- Три показания по центру шапки: волна посередине крупно, материя слева от неё
--- (прижата вправо), прочность справа (прижата влево). Подпись сверху приглушённым,
--- число под ней. Без рамок и плашек: показания не нажимаются.
-local GROUP_W = mobile and 340 or 520
-local WAVE_W = mobile and 140 or 200
-local SIDE_W = mobile and 80 or 120
-local SIDE_GAP = mobile and 90 or 130 -- от центра до ближнего края бокового показания
+-- Три показания одной плашкой: волна посередине, материя слева от неё (прижата
+-- вправо), прочность справа (прижата влево). Подпись сверху, число под ней.
+-- Плашка не нажимается — у неё нет канта, как у кнопок.
+local GROUP_W = mobile and 300 or 420
+local WAVE_W = mobile and 110 or 140
+local SIDE_W = mobile and 80 or 110
+local SIDE_GAP = mobile and 65 or 80 -- от центра до ближнего края бокового показания
 
-local readouts = Instance.new("Frame")
-readouts.Name = "Readouts"
+local readouts = pill("Readouts")
 readouts.AnchorPoint = Vector2.new(0.5, 0)
-readouts.Position = UDim2.fromScale(0.5, 0)
-readouts.Size = UDim2.fromOffset(GROUP_W, HEADER_H)
-readouts.BackgroundTransparency = 1
-readouts.Parent = frame
+readouts.Size = UDim2.fromOffset(GROUP_W, PILL_H)
 
-local CAPTION_Y = mobile and 8 or 12
-local VALUE_Y = mobile and 24 or 30
+local CAPTION_Y = 2
+local VALUE_Y = 18
 
 local function makeStat(caption, x, width, align, valueSize)
 	local cap = Instance.new("TextLabel")
@@ -195,14 +161,13 @@ local function makeStat(caption, x, width, align, valueSize)
 	cap.Text = Theme.Caps(caption)
 	cap.Parent = readouts
 	Theme.StatCaption(cap)
-	-- Подпись светлее обычной (textDim, а не textMute): под ней арена, а не тёмное окно.
 	cap.TextColor3 = Theme.color.textDim
 	cap.TextXAlignment = align
-	Theme.ArenaLabel(cap)
 
 	local value = Instance.new("TextLabel")
 	value.Position = UDim2.fromOffset(x, VALUE_Y)
-	value.Size = UDim2.fromOffset(width, valueSize + 4)
+	value.Size = UDim2.fromOffset(width, valueSize + 2)
+	value.BackgroundTransparency = 1
 	value.TextSize = valueSize
 	value.TextColor3 = Theme.color.text
 	value.TextXAlignment = align
@@ -210,19 +175,17 @@ local function makeStat(caption, x, width, align, valueSize)
 	value.Parent = readouts
 	-- Приборный шрифт только у числа: подпись живёт обычным начертанием (Theme.StatCaption).
 	Theme.Display(value)
-	Theme.ArenaLabel(value)
 	return value
 end
 
 local center = GROUP_W / 2
-local valueSize = mobile and 18 or 22
+local valueSize = mobile and 18 or 20
 
 local matterLabel = makeStat("материя", center - SIDE_GAP - SIDE_W, SIDE_W, Enum.TextXAlignment.Right, valueSize)
 matterLabel.Text = "0"
 matterLabel.TextColor3 = Theme.color.energy
 
-local waveLabel = makeStat("волна", center - WAVE_W / 2, WAVE_W, Enum.TextXAlignment.Center, mobile and 22 or 26)
-waveLabel.Position -= UDim2.fromOffset(0, 4)
+local waveLabel = makeStat("волна", center - WAVE_W / 2, WAVE_W, Enum.TextXAlignment.Center, valueSize)
 waveLabel.Text = "- / -"
 
 local hpLabel = makeStat("прочность", center + SIDE_GAP, SIDE_W, Enum.TextXAlignment.Left, valueSize)
@@ -232,10 +195,10 @@ hpLabel.Text = "-"
 -- только у полосок и кнопок.
 local waveTrack = Instance.new("Frame")
 waveTrack.Name = "WaveTrack"
-waveTrack.Position = UDim2.fromOffset(center - WAVE_W / 2, HEADER_H - (mobile and 8 or 10))
-waveTrack.Size = UDim2.fromOffset(WAVE_W, 3)
-waveTrack.BackgroundColor3 = Theme.color.ink
-waveTrack.BackgroundTransparency = 0.4
+waveTrack.Position = UDim2.fromOffset(center - WAVE_W / 2, PILL_H - 4)
+waveTrack.Size = UDim2.fromOffset(WAVE_W, 2)
+waveTrack.BackgroundColor3 = Theme.color.hairline
+waveTrack.BackgroundTransparency = 0.3
 waveTrack.BorderSizePixel = 0
 waveTrack.Parent = readouts
 
@@ -244,6 +207,19 @@ waveFill.Size = UDim2.fromScale(0, 1)
 waveFill.BackgroundColor3 = Theme.color.accent
 waveFill.BorderSizePixel = 0
 waveFill.Parent = waveTrack
+
+-- Раскладка по полосе Roblox: плашки по её высоте, «ЗАБЕГ» сразу за кнопками Roblox,
+-- показания по центру экрана — но не налезая на «ЗАБЕГ» (на узком окне сдвигаются вправо).
+local function layoutHeader()
+	local bar = MobileUI.Topbar
+	local y = math.max(0, math.floor((bar.height - PILL_H) / 2))
+	titlePill.Position = UDim2.fromOffset(bar.left + PILL_GAP, y)
+	local leftEdge = titlePill.Visible and (bar.left + PILL_GAP + titlePill.AbsoluteSize.X) or bar.left
+	local x = math.max(MobileUI.viewportX / 2, leftEdge + PILL_GAP + GROUP_W / 2)
+	readouts.Position = UDim2.fromOffset(math.floor(x), y)
+end
+MobileUI.OnViewportChanged(layoutHeader)
+titlePill:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutHeader)
 
 local function showWave(waveNumber, totalWaves)
 	waveLabel.Text = ("%d / %d"):format(waveNumber, totalWaves)
@@ -401,7 +377,7 @@ local function placeJournal()
 	else
 		journal.AnchorPoint = Vector2.new(0, 0)
 		-- Вне забега (аркада) — ниже бейджа плутония лобби (20 + 76, LobbyUI).
-		local top = inRun and (INSET + HEADER_H + 8) or 108
+		local top = inRun and (INSET + 10) or 108
 		journal.Position = UDim2.fromOffset(INSET + 4, top)
 		journalFade.Rotation = 0
 	end
@@ -419,7 +395,7 @@ placeJournal()
 local function setInRun(value)
 	inRun = value
 	frame.Visible = value
-	shadeGui.Enabled = value
+	headerGui.Enabled = value
 	placeJournal()
 end
 

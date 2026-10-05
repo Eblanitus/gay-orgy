@@ -57,6 +57,28 @@ end
 
 MobileUI.TopInset = readTopInset()
 
+-- Свободная часть полосы Roblox сверху (GuiService.TopbarInset): слева от неё — кнопки
+-- самого Roblox (меню, чат, микрофон), их число и ширина у каждого игрока свои.
+-- Шапка забега (Hud) встаёт в эту полосу, на одну линию с кнопками Roblox.
+-- Координаты — от верхнего левого угла экрана, для ScreenGui с IgnoreGuiInset.
+-- Если движок полосу не сообщил — запас по прежней раскладке Roblox.
+local function readTopbar()
+	local left, height = 0, 0
+	pcall(function()
+		local rect = GuiService.TopbarInset
+		left, height = rect.Min.X, rect.Height
+	end)
+	if height <= 0 then
+		height = math.max(MobileUI.TopInset, 36)
+	end
+	if left <= 0 then
+		left = 200
+	end
+	return { left = left, height = height }
+end
+
+MobileUI.Topbar = readTopbar()
+
 -- Телефон определяется по КОРОТКОЙ стороне вьюпорта, а не по ширине: при повороте
 -- ширина с высотой меняются местами, и планшет 1024x768 в портрете считался бы
 -- мобильным, а в альбоме — уже нет, то есть весь мобильный макет переключался от поворота.
@@ -85,15 +107,29 @@ MobileUI.HEADER_H = MobileUI.isMobile and 62 or 80 -- шапка рамки, о�
 -- обучение. Боковой отступ оставляет место кнопке волны справа и джойстику и панели
 -- стройки слева (телефон), иначе длинный шаг обучения ушёл бы под кнопку.
 MobileUI.FOOTER_BOTTOM = MobileUI.isMobile and 18 or 26 -- низ строки 0 от низа экрана
-MobileUI.FOOTER_LINE = MobileUI.isMobile and 24 or 30 -- шаг между строками
+MobileUI.FOOTER_LINE = MobileUI.isMobile and 28 or 32 -- шаг между строками
 MobileUI.FOOTER_SIDE = MobileUI.isMobile and 180 or 330
 
--- Ставит строку подвала: по центру, низом на своей строке, растёт вверх по тексту.
-function MobileUI.FooterLine(gui, line)
+-- Ставит строку подвала: по центру, низом на своей строке, ширина и высота — по тексту
+-- (подложка только под самой надписью, без полосы во всю ширину). Не шире места между
+-- боковыми отступами: длиннее — переносится и растёт вверх. side — свой боковой отступ.
+function MobileUI.FooterLine(gui, line, side)
 	gui.AnchorPoint = Vector2.new(0.5, 1)
 	gui.Position = UDim2.new(0.5, 0, 1, -(MobileUI.FOOTER_BOTTOM + line * MobileUI.FOOTER_LINE))
-	gui.Size = UDim2.new(1, -2 * MobileUI.FOOTER_SIDE, 0, 0)
-	gui.AutomaticSize = Enum.AutomaticSize.Y
+	gui.Size = UDim2.new(0, 0, 0, 0)
+	gui.AutomaticSize = Enum.AutomaticSize.XY
+	local limit = gui:FindFirstChild("FooterLimit")
+	if not limit then
+		limit = Instance.new("UISizeConstraint")
+		limit.Name = "FooterLimit"
+		limit.Parent = gui
+		MobileUI.OnViewportChanged(function()
+			local margin = gui:GetAttribute("FooterSide") or MobileUI.FOOTER_SIDE
+			limit.MaxSize = Vector2.new(math.max(200, MobileUI.viewportX - 2 * margin), math.huge)
+		end)
+	end
+	gui:SetAttribute("FooterSide", side or MobileUI.FOOTER_SIDE)
+	limit.MaxSize = Vector2.new(math.max(200, MobileUI.viewportX - 2 * (side or MobileUI.FOOTER_SIDE)), math.huge)
 	return gui
 end
 
@@ -114,9 +150,8 @@ MobileUI.CORNER_GAP = 8
 -- (48 высоты против отступа 46) — теперь зазор считается от общей высоты.
 MobileUI.CornerSlot = {
 	-- Кнопки инвентаря в углу больше нет: инвентарь открывается из главного меню
-	-- и клавишей I (просьба автора — в углу забега только меню).
-	Menu = 0,
-	WaveEditor = 1, -- открывается промокодом: у большинства его нет вовсе
+	-- и клавишей I. Кнопка меню переехала в полосу Roblox сверху (MainMenu).
+	WaveEditor = 0, -- открывается промокодом: у большинства его нет вовсе
 }
 
 function MobileUI.TopRight(gui, slot)
@@ -147,6 +182,7 @@ local function refresh()
 	MobileUI.viewportY = size.Y
 	MobileUI.isMobile = computeIsMobile(size)
 	MobileUI.TopInset = readTopInset()
+	MobileUI.Topbar = readTopbar()
 	for _, fn in listeners do
 		task.spawn(fn, size)
 	end
