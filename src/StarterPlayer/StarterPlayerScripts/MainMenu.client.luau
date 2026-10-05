@@ -599,14 +599,13 @@ local function addItem(key, name, action)
 	return item
 end
 
--- Выбранный пункт показан дважды: и скобкой «>» в самой строке, и вывороткой плашки
--- (вид active). Одной скобки мало на телефоне — там палец закрывает левый край кнопки;
--- одной выворотки мало на ПК — там выбор ездит стрелками, и глаз ищет каретку.
+-- Выбранный пункт показан вывороткой плашки (вид active). Печатной скобки «>» перед
+-- ним больше нет: декоративные «>» и «//» убраны из всех интерфейсов (решение автора).
 local function paintItems()
 	for index, item in items do
 		local on = index == selected
 		Theme.Button(item.button, on and "active" or "ghost")
-		item.button.Text = (on and "> " or "  ") .. Theme.Caps(item.name)
+		item.button.Text = Theme.Caps(item.name)
 	end
 end
 
@@ -663,16 +662,16 @@ local function showPage(name)
 	promoPage.Visible = name == "promo"
 
 	if name == "journal" then
-		pathLabel.Text = "> " .. Theme.Caps("Журнал")
+		pathLabel.Text = Theme.Caps("Журнал")
 		setStatus("Журнал", journal.Status())
 	elseif name == "settings" then
-		pathLabel.Text = "> " .. Theme.Caps("Настройки")
+		pathLabel.Text = Theme.Caps("Настройки")
 		setStatus("Настройки", settings.status)
 	elseif name == "promo" then
-		pathLabel.Text = "> " .. Theme.Caps("Промокод")
+		pathLabel.Text = Theme.Caps("Промокод")
 		setStatus("Промокод", "ответ появится в журнале на экране")
 	else
-		pathLabel.Text = "> " .. Theme.Caps(inRun and "забег идёт" or "лобби")
+		pathLabel.Text = Theme.Caps(inRun and "забег идёт" or "лобби")
 		setStatus("Главное меню", rootHint())
 	end
 
