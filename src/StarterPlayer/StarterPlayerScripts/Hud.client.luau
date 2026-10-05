@@ -49,10 +49,9 @@ frame.Parent = screenGui
 -- в лобби, появляется на WaveReady/WaveChanged, прячется обратно на RunEnded.
 frame.Visible = false
 
--- Весь внешний вид панели — в UITheme: плотная тёмная плашка со скруглением
--- и нейтральной границей. Геометрию (220x110 в углу) сборщик не трогает — она
--- выверена замерами мобильного экрана (задача #78).
-Theme.Panel(frame, { scene = "run" })
+-- Весь внешний вид панели — в UITheme: плашка языком рамки главного меню (Theme.Plate).
+-- Геометрию сборщик не трогает — она выверена замерами мобильного экрана (задача #78).
+Theme.Plate(frame)
 
 -- Колонка показания: подпись сверху мелким, число под ней крупным. Возвращается только
 -- число: подпись ставится один раз и больше не меняется.
@@ -61,6 +60,16 @@ local statOrder = 0
 local function makeStat(caption)
 	local x = 14 + statOrder * (STAT_W + STAT_GAP)
 	statOrder += 1
+
+	-- Колонки разделены вертикальной чертой, как подпись и число плутония в шапке меню:
+	-- три числа без раздела сливались в одну строку цифр.
+	if statOrder > 1 then
+		local rule = Instance.new("Frame")
+		rule.Size = UDim2.new(0, 1, 0, 34)
+		rule.Position = UDim2.new(0, x - 8, 0, 12) -- числа до пяти знаков кончаются раньше
+		rule.Parent = frame
+		Theme.Rule(rule)
+	end
 
 	local cap = Instance.new("TextLabel")
 	cap.Size = UDim2.new(0, STAT_W, 0, 16)
@@ -115,11 +124,14 @@ hpLabel.TextColor3 = Theme.color.accent
 local hpBar = Instance.new("Frame")
 hpBar.Size = UDim2.new(1, -28, 0, 6)
 hpBar.Position = UDim2.new(0, 14, 0, 56)
-hpBar.BackgroundColor3 = Theme.color.danger:Lerp(Theme.color.panel, 0.72)
+-- Пустая часть шкалы — углубление, как поле ввода, с волоском по краю: красная подложка
+-- горела тревогой и при полном столе.
+hpBar.BackgroundColor3 = Theme.color.field
 hpBar.BackgroundTransparency = 0
 hpBar.BorderSizePixel = 0
 hpBar.Parent = frame
 Theme.Corner(hpBar, 2)
+Theme.Hairline(hpBar, 0.2)
 
 local hpFill = Instance.new("Frame")
 hpFill.BorderSizePixel = 0
@@ -152,7 +164,7 @@ promoButton.TextSize = 14
 promoButton.Text = "ПРОМОКОД"
 promoButton.Parent = screenGui
 
-Theme.Button(promoButton, "ghost")
+Theme.HudButton(promoButton)
 
 local promoFrame = Instance.new("Frame")
 -- На телефоне панель не висит под кнопкой, а встаёт по центру экрана. Под кнопкой она
@@ -170,7 +182,8 @@ promoPadding.PaddingLeft = UDim.new(0, 10)
 promoPadding.PaddingRight = UDim.new(0, 10)
 promoPadding.Parent = promoFrame
 
-Theme.Panel(promoFrame, { scene = "dialog" })
+-- Без скобок: поле ввода стоит в углу плашки, и уголки легли бы на его кант.
+Theme.Plate(promoFrame, { brackets = false })
 
 local promoInput = Instance.new("TextBox")
 promoInput.Size = UDim2.new(1, 0, 0, PROMO_FIELD_H)
@@ -235,6 +248,11 @@ local resultLabel = Instance.new("TextLabel")
 resultFrame.AnchorPoint = Vector2.new(0.5, 0)
 resultFrame.Size = MobileUI.isMobile and UDim2.new(0.9, 0, 0, 56) or UDim2.new(0, 500, 0, 90)
 resultFrame.Position = MobileUI.isMobile and UDim2.new(0.5, 0, 0.59, 0) or UDim2.new(0.5, 0, 0.25, 0)
+-- Плашка — до надписей: сетка точек должна лечь под них. Скобки и кант красит исход (RunEnded).
+-- На телефоне баннер 56px — скобки там сошлись бы, их нет.
+Theme.Plate(resultFrame, { brackets = not MobileUI.isMobile })
+resultLabel.Size = UDim2.new(1, 0, 1, 0)
+resultLabel.BackgroundTransparency = 1
 resultLabel.TextWrapped = true
 resultLabel.TextSize = MobileUI.isMobile and 40 or 52
 resultLabel.TextStrokeTransparency = 1
@@ -298,6 +316,8 @@ startWaveButton.Parent = screenGui
 -- Пульсирующей обводки здесь больше нет: что игра ждёт именно этого нажатия, говорит
 -- само появление кнопки — она видна только между волнами, по WaveReady.
 Theme.Button(startWaveButton, "action")
+-- Уголки-скобки, как у рамки меню: главная кнопка забега — тоже окно терминала.
+Theme.Brackets(startWaveButton, Theme.color.accent)
 
 local startSize = Instance.new("UISizeConstraint")
 startSize.MaxSize = Vector2.new(240, 56)
@@ -466,9 +486,11 @@ Remotes.RunEnded.OnClientEvent:Connect(function(won, levelNumber)
 	waveReady = false
 	local tone = won and Theme.color.action or Theme.color.danger
 	resultLabel.Text = won and "ПОБЕДА" or "ПОРАЖЕНИЕ"
-	-- Корпус и начинка — теми же сборщиками, что и ячейки элементов.
-	Theme.ElementFill(resultFrame, tone)
-	Theme.Inner(resultLabel)
+	-- Плашка языком меню, исход — цветом канта, скобок и слова.
+	Theme.Stroke(resultFrame, Theme.Shadowed(tone, 0.35), 1, 0)
+	if resultFrame:FindFirstChild("Brackets") then
+		Theme.Brackets(resultFrame, tone)
+	end
 	resultLabel.TextColor3 = Theme.Legible(tone)
 	if resultCaption then
 		resultCaption.Text = won and "ЗАБЕГ ОКОНЧЕН  //  прочность стола сохранена"

@@ -318,6 +318,79 @@ function Theme.Display(textObject)
 	return textObject
 end
 
+-- ============ Плашки забега ============
+
+-- Плашка HUD тем же языком, что рамка главного меню (просьба автора: меню «очень
+-- устраивает», а интерфейс забега рядом с ним «не вписывается»). Глубокая заливка ink,
+-- кант окна, уголки-скобки и редкая сетка точек — ровно как у рамки MainMenu. Решётки-сот
+-- (Theme.Backdrop) здесь нет: на маленькой плашке она читалась мельтешением, а у меню
+-- её и нет внутри рамки — соты там только фон экрана за ней.
+--
+-- opts.edge — свой цвет канта, opts.transparency — прозрачность заливки,
+-- opts.brackets = false — без скобок (низкая плашка: при высоте меньше 2 × (6 + 14)
+-- уголки сходятся; или содержимое стоит у самого угла), opts.dots = false — без
+-- сетки (у TextLabel дети рисуются поверх его текста, и точки легли бы на буквы).
+-- Как и прочие сборщики, Size и Position не трогает.
+function Theme.Plate(frame, opts)
+	opts = opts or {}
+	frame.BackgroundColor3 = Theme.color.ink
+	frame.BackgroundTransparency = opts.transparency or 0
+	frame.BorderSizePixel = 0
+	Theme.Corner(frame, Theme.radius.panel)
+	Theme.Stroke(frame, opts.edge or Theme.color.frame, 1, 0)
+	if opts.brackets ~= false then
+		Theme.Brackets(frame)
+	end
+	if opts.dots ~= false and not frame:FindFirstChild("Dots") then
+		-- Те же числа, что у рамки меню: тусклые точки с пропусками.
+		local paint = Theme.Dots(frame, { transparency = 0.65, keep = 0.6 })
+		local function repaint()
+			-- Во время Theme.Open плашка меряется меньше настоящей — замер пропускается.
+			local open = frame:FindFirstChild("OpenScale")
+			if open and open.Scale < 1 then
+				return
+			end
+			local size = frame.AbsoluteSize
+			if size.X > 0 and size.Y > 0 then
+				paint(size.X, size.Y)
+			end
+		end
+		frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(repaint)
+		task.defer(repaint)
+	end
+	return frame
+end
+
+-- Кнопка на краю экрана в забеге (Инвентарь, Меню, Промокод): та же глубокая заливка
+-- и кант окна, что у плашек, и бирюзовая надпись, как заголовок меню. Вид ghost
+-- поверх арены был чёрным прямоугольником с серым текстом — без канта окна он
+-- не читался частью того же терминала. Наведение — как у любой кнопки темы.
+function Theme.HudButton(button)
+	Theme.Button(button, "ghost")
+	button.BackgroundColor3 = Theme.color.ink
+	button:SetAttribute("ThemeBase", Theme.color.ink)
+	button.TextColor3 = Theme.color.accent
+	Theme.Stroke(button, Theme.color.frame, 1, 0).ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	Theme.Corner(button, Theme.radius.panel)
+	return button
+end
+
+-- Строка в RichText как есть: сообщения сервера и тексты подсказок не размечены,
+-- и случайный «<» в них сломал бы всю строку.
+function Theme.Escape(text)
+	return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
+end
+
+-- Строка статуса для плашки: «РАЗДЕЛ  //  текст» — как подвал главного меню
+-- (Theme.Status), но без настройки самой надписи: плашки забега переносят строки.
+function Theme.StatusText(section, detail)
+	return ('<font color="%s">%s  //</font>  %s'):format(
+		Theme.Hex(Theme.color.accentDim),
+		Theme.Caps(section),
+		Theme.Escape(detail)
+	)
+end
+
 -- Заголовок окна: заглавными и с печатной скобкой «>» — строка приглашения, а не название
 -- раздела. Прежняя вертикальная засечка-Frame слева сносится: маркер теперь печатный
 -- знак внутри самой строки, и два маркера подряд читались бы как мусор.

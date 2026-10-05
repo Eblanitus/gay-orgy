@@ -75,9 +75,9 @@ end
 MobileUI.OnViewportChanged(applyPickerHeight)
 pickerGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyPickerHeight)
 
--- Выбор заливки — карточка поверх арены и поверх окон, поэтому решётка на ней
--- плотнее и быстрее, чем у Лаборатории (см. Theme.scene.build).
-Theme.Panel(pickerFrame, { scene = "build" })
+-- Выбор заливки — карточка поверх арены и поверх окон, тем же языком, что рамка главного меню.
+-- Скобок нет: в верхнем углу стоит крестик, и уголок лёг бы на его кант.
+Theme.Plate(pickerFrame, { brackets = false })
 
 local title = Instance.new("TextLabel")
 -- Поля по бокам под ширину крестика: заголовок остаётся по центру окна и не заходит под него.
@@ -246,12 +246,25 @@ local notifyLabel = Instance.new("TextLabel")
 -- ширине подобрана так, чтобы не доставать до панели лобби (та — 0.62 слева)
 -- ни на одной ширине вьюпорта.
 notifyLabel.AnchorPoint = MobileUI.isMobile and Vector2.new(1, 0) or Vector2.new(0.5, 0)
-notifyLabel.Size = MobileUI.isMobile and UDim2.new(0.3, 0, 0, 60) or UDim2.new(0.9, 0, 0, 36)
+-- На ПК плашка по ширине текста, а не на 90% экрана: короткое «надо подойти к столу»
+-- в чёрной полосе через весь экран читалось как сбой отрисовки.
+notifyLabel.Size = MobileUI.isMobile and UDim2.new(0.3, 0, 0, 60) or UDim2.new(0, 0, 0, 36)
+if not MobileUI.isMobile then
+	notifyLabel.AutomaticSize = Enum.AutomaticSize.X
+	local notifyLimit = Instance.new("UISizeConstraint")
+	notifyLimit.Parent = notifyLabel
+	local function applyNotifyLimit()
+		notifyLimit.MaxSize = Vector2.new(math.max(200, MobileUI.viewportX * 0.9), math.huge)
+	end
+	applyNotifyLimit()
+	MobileUI.OnViewportChanged(applyNotifyLimit)
+end
 notifyLabel.Position = MobileUI.isMobile and UDim2.new(1, -12, 0, 74) or UDim2.new(0.5, 0, 0.72, 0)
-notifyLabel.TextWrapped = true
-notifyLabel.FontFace = Theme.font.strong
+notifyLabel.TextWrapped = MobileUI.isMobile -- на ПК плашка растёт под строку
+notifyLabel.RichText = true
+notifyLabel.FontFace = Theme.font.body
 notifyLabel.TextSize = MobileUI.isMobile and 17 or 20
-notifyLabel.TextColor3 = Theme.color.danger
+notifyLabel.TextColor3 = Theme.color.text
 notifyLabel.TextStrokeTransparency = 1
 notifyLabel.TextTransparency = 1
 notifyLabel.Parent = notifyGui
@@ -264,18 +277,22 @@ notifyLabel.Parent = notifyGui
 -- кант и засечка — отдельные объекты со своей прозрачностью: они остались бы висеть
 -- на экране красной рамкой и до первого сообщения, и после его угасания. Кантом
 -- при этом ведает своя переменная — её гасит тот же Tween, что и текст.
-notifyLabel.BackgroundColor3 = Theme.Shadowed(Theme.color.danger, 0.9)
+-- Сейчас — плашка языком рамки главного меню (Theme.Plate) с кантом цвета отказа
+-- и строкой как подвал меню: «СИСТЕМА  //  сообщение». Скобок и сетки нет —
+-- они отдельные кадры и не гасли бы вместе с текстом.
+Theme.Plate(notifyLabel, { brackets = false, dots = false, edge = Theme.Shadowed(Theme.color.danger, 0.35) })
 notifyLabel.BackgroundTransparency = 1
-Theme.Corner(notifyLabel, Theme.radius.mark)
-local notifyEdge = Theme.Stroke(notifyLabel, Theme.Shadowed(Theme.color.danger, 0.35), 1, 1)
+local notifyEdge = notifyLabel:FindFirstChildOfClass("UIStroke")
+notifyEdge.Transparency = 1
 
 local notifyPad = Instance.new("UIPadding")
-notifyPad.PaddingLeft = UDim.new(0, 10)
-notifyPad.PaddingRight = UDim.new(0, 10)
+notifyPad.PaddingLeft = UDim.new(0, 14)
+notifyPad.PaddingRight = UDim.new(0, 14)
 notifyPad.Parent = notifyLabel
 
 Notify.OnClientEvent:Connect(function(message)
-	notifyLabel.Text = tostring(message)
+	-- На телефоне плашка узкая (0.3 экрана) — метка раздела съела бы целую строку из трёх.
+	notifyLabel.Text = MobileUI.isMobile and Theme.Escape(message) or Theme.StatusText("система", tostring(message))
 	notifyLabel.TextTransparency = 0
 	-- Гаснет вместе с текстом и плашка: иначе тёмный прямоугольник остался бы висеть
 	-- на экране навсегда после первого же сообщения.
@@ -642,20 +659,17 @@ buildHint.Parent = controlsGui
 -- «СТРОЙКА». Теперь это тёмная плашка с кантом и засечкой у самого левого края
 -- (Theme.Swatch сам выходит за отступ, см. Theme.Bleed); текст приглушённый, а цветом
 -- выделены раздел и выбранная постройка — их красит сама строка (refreshBuildChoice).
-buildHint.BackgroundColor3 = Theme.color.panel
-buildHint.BackgroundTransparency = 0.06
-buildHint.BorderSizePixel = 0
+-- Плашка — языком рамки главного меню (Theme.Plate): засечка ячейки слева ушла,
+-- строка состояния у меню её не носит. Скобок и сетки нет: плашка в 28 пикселей,
+-- и это TextLabel — его дети легли бы на текст.
 buildHint.TextStrokeTransparency = 1
 buildHint.TextColor3 = Theme.color.textDim
 buildHint.ClipsDescendants = true
-Theme.Corner(buildHint, Theme.radius.control)
-Theme.Stroke(buildHint, Theme.color.accentDim, 1, 0)
-Theme.Swatch(buildHint, Theme.color.accent)
+Theme.Plate(buildHint, { brackets = false, dots = false })
 
 local buildHintPad = Instance.new("UIPadding")
--- Слева ещё и ширина засечки: текст на неё не налезает.
-buildHintPad.PaddingLeft = UDim.new(0, 10 + Theme.EDGE_W)
-buildHintPad.PaddingRight = UDim.new(0, 10)
+buildHintPad.PaddingLeft = UDim.new(0, 12)
+buildHintPad.PaddingRight = UDim.new(0, 12)
 buildHintPad.Parent = buildHint
 
 -- На ПК плашка растёт под свой текст, а не держит фиксированную ширину: хвост строки

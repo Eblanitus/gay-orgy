@@ -734,7 +734,7 @@ openButton.FontFace = Theme.font.strong
 openButton.TextSize = Theme.MIN_TEXT
 openButton.Text = Theme.Caps("Меню")
 openButton.Parent = openGui
-Theme.Button(openButton, "ghost")
+Theme.HudButton(openButton)
 
 openButton.MouseButton1Click:Connect(showMenu)
 
