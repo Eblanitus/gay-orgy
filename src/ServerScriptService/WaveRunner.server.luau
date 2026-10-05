@@ -322,6 +322,8 @@ local function startRun(levelNumber)
 	end
 
 	runEnded = false
+	-- Номер уровня — для шапки рамки забега на клиенте (Hud): «УРОВЕНЬ 1  //  ОБУЧЕНИЕ».
+	ReplicatedStorage:SetAttribute("RunLevel", levelNumber)
 	ProfileStats.Add("runs")
 	activeLevelWaves = Levels[levelNumber].waves
 	WaveState.SetActive(false)
@@ -341,7 +343,7 @@ end
 
 RequestStartWaveRemote.OnServerEvent:Connect(function(player)
 	if not Tutorial.WaveAllowed() then
-		Remotes.Notify:FireClient(player, "сначала пройди шаги обучения — подсказка сверху")
+		Remotes.Notify:FireClient(player, "сначала пройди шаги обучения — подсказка внизу")
 		-- Hud прячет кнопку сразу после удержания: без досылки она бы не вернулась.
 		if pendingWave then
 			WaveReadyRemote:FireClient(player, pendingWave, #activeLevelWaves)

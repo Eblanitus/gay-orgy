@@ -5,7 +5,6 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
@@ -20,7 +19,6 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestBuildTower = Remotes:WaitForChild("RequestBuildTower")
 local RequestPourElement = Remotes:WaitForChild("RequestPourElement")
 local InventoryChanged = Remotes:WaitForChild("InventoryChanged")
-local Notify = Remotes:WaitForChild("Notify")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -220,88 +218,14 @@ end)
 
 refreshElementList()
 
--- Короткое сообщение от сервера (например, не хватает материи)
-local notifyGui = Instance.new("ScreenGui")
-notifyGui.Name = "Notify"
-notifyGui.ResetOnSpawn = false
-notifyGui.DisplayOrder = MobileUI.Layer.Notify
-notifyGui.Parent = playerGui
-
--- Экранные кнопки (панель стройки и подсказка режима) вынесены из notifyGui в свой слой:
--- сообщение сервера («не хватает материи» при покупке) должно быть видно поверх открытого
--- окна Лаборатории, а панель стройки — наоборот, прятаться под ним. В одном ScreenGui
--- эти два правила не уживаются — DisplayOrder общий на весь ScreenGui.
+-- Сообщения сервера (Notify) показывает журнал в левом верхнем углу (Hud).
+-- Экранные кнопки (панель стройки и подсказка режима) живут на своём слое Controls:
+-- поверх открытого окна Лаборатории им делать нечего — они прячутся под ним.
 local controlsGui = Instance.new("ScreenGui")
 controlsGui.Name = "BuildControls"
 controlsGui.ResetOnSpawn = false
 controlsGui.DisplayOrder = MobileUI.Layer.Controls
 controlsGui.Parent = playerGui
-
-local notifyLabel = Instance.new("TextLabel")
--- На телефоне сообщение уехало в единственный прямоугольник, свободный и в лобби, и в забеге:
--- справа от верхней панели, ниже кнопки инвентаря, выше подсказки стройки.
--- На прежних 0.72 высоты оно ложилось ровно на нижний ряд управления (замерено на
--- 750x322: 37,231..712,267 — перекрывало кнопку волны на 214x13 и панель стройки
--- на 254x21), а слой Notify выше обоих — текст печатался поверх кнопок. Доля 0.3 по
--- ширине подобрана так, чтобы не доставать до панели лобби (та — 0.62 слева)
--- ни на одной ширине вьюпорта.
-notifyLabel.AnchorPoint = MobileUI.isMobile and Vector2.new(1, 0) or Vector2.new(0.5, 0)
--- На ПК плашка по ширине текста, а не на 90% экрана: короткое «надо подойти к столу»
--- в чёрной полосе через весь экран читалось как сбой отрисовки.
-notifyLabel.Size = MobileUI.isMobile and UDim2.new(0.3, 0, 0, 60) or UDim2.new(0, 0, 0, 36)
-if not MobileUI.isMobile then
-	notifyLabel.AutomaticSize = Enum.AutomaticSize.X
-	local notifyLimit = Instance.new("UISizeConstraint")
-	notifyLimit.Parent = notifyLabel
-	local function applyNotifyLimit()
-		notifyLimit.MaxSize = Vector2.new(math.max(200, MobileUI.viewportX * 0.9), math.huge)
-	end
-	applyNotifyLimit()
-	MobileUI.OnViewportChanged(applyNotifyLimit)
-end
-notifyLabel.Position = MobileUI.isMobile and UDim2.new(1, -12, 0, 74) or UDim2.new(0.5, 0, 0.72, 0)
-notifyLabel.TextWrapped = MobileUI.isMobile -- на ПК плашка растёт под строку
-notifyLabel.RichText = true
-notifyLabel.FontFace = Theme.font.body
-notifyLabel.TextSize = MobileUI.isMobile and 17 or 20
-notifyLabel.TextColor3 = Theme.color.text
-notifyLabel.TextStrokeTransparency = 1
-notifyLabel.TextTransparency = 1
-notifyLabel.Parent = notifyGui
-
--- Сообщение собрано той же ячейкой, что и строки списков: тёмный красный корпус,
--- кант и засечка слева — в референсе автора строка журнала выглядит ровно так же,
--- как строка списка. Прозрачность начальная — полная: до первого сообщения никакой
--- плашки на экране быть не должно.
--- Собрано вручную, а не Theme.ElementFill: сообщение гаснет прозрачностью, а у ячейки
--- кант и засечка — отдельные объекты со своей прозрачностью: они остались бы висеть
--- на экране красной рамкой и до первого сообщения, и после его угасания. Кантом
--- при этом ведает своя переменная — её гасит тот же Tween, что и текст.
--- Сейчас — плашка языком рамки главного меню (Theme.Plate) с кантом цвета отказа
--- и строкой как подвал меню: «СИСТЕМА  //  сообщение». Скобок и сетки нет —
--- они отдельные кадры и не гасли бы вместе с текстом.
-Theme.Plate(notifyLabel, { brackets = false, dots = false, edge = Theme.Shadowed(Theme.color.danger, 0.35) })
-notifyLabel.BackgroundTransparency = 1
-local notifyEdge = notifyLabel:FindFirstChildOfClass("UIStroke")
-notifyEdge.Transparency = 1
-
-local notifyPad = Instance.new("UIPadding")
-notifyPad.PaddingLeft = UDim.new(0, 14)
-notifyPad.PaddingRight = UDim.new(0, 14)
-notifyPad.Parent = notifyLabel
-
-Notify.OnClientEvent:Connect(function(message)
-	-- На телефоне плашка узкая (0.3 экрана) — метка раздела съела бы целую строку из трёх.
-	notifyLabel.Text = MobileUI.isMobile and Theme.Escape(message) or Theme.StatusText("система", tostring(message))
-	notifyLabel.TextTransparency = 0
-	-- Гаснет вместе с текстом и плашка: иначе тёмный прямоугольник остался бы висеть
-	-- на экране навсегда после первого же сообщения.
-	notifyLabel.BackgroundTransparency = 0
-	notifyEdge.Transparency = 0
-	local fade = TweenInfo.new(2.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In, 0, false, 1.5)
-	TweenService:Create(notifyLabel, fade, { TextTransparency = 1, BackgroundTransparency = 1 }):Play()
-	TweenService:Create(notifyEdge, fade, { Transparency = 1 }):Play()
-end)
 
 -- Режим стройки (ТЗ v2.1). Площадок больше нет, строить можно в любую свободную клетку, поэтому
 -- постройка идёт кликом по арене. Режим включается отдельно (B): иначе любой случайный клик
@@ -634,62 +558,21 @@ minRangeIndicator.Transparency = 1
 minRangeIndicator.Parent = Workspace
 
 local buildHint = Instance.new("TextLabel")
--- На мобильном подсказка уезжает под HUD: тот занимает левый верхний угол (220x110
--- от точки 20,20), и на узком экране центрированная строка накрывала бы его.
--- Прижата к правому краю, а не по центру: кнопка промокода под HUD стала шире и выше
--- (MIN_TAP), и центрированная строка на той же высоте начала бы на неё налезать.
-buildHint.AnchorPoint = MobileUI.isMobile and Vector2.new(1, 0) or Vector2.new(0.5, 0)
-buildHint.Size = MobileUI.isMobile and UDim2.new(0.62, 0, 0, 26) or UDim2.new(0, 0, 0, 28)
-buildHint.Position = MobileUI.isMobile and UDim2.new(1, -12, 0, 138) or UDim2.new(0.5, 0, 0, 12)
-buildHint.FontFace = Theme.font.strong
-buildHint.TextSize = 17
+-- Строка стройки — нижняя строка подвала рамки забега (MobileUI.FooterLine), под шагом
+-- обучения. Плашки нет: текст лежит на арене под тенью от края (Hud), раздел светло-серым,
+-- выбранная постройка белым — бирюза на светлой арене не читалась (замечание автора).
+-- Переноса нет: хвост с клавишами длинный, и строка в две строки налезла бы на обучение.
+MobileUI.FooterLine(buildHint, 0)
+buildHint.AutomaticSize = Enum.AutomaticSize.None
+buildHint.Size = UDim2.new(1, -2 * MobileUI.FOOTER_SIDE, 0, MobileUI.FOOTER_LINE - 4)
+buildHint.FontFace = Theme.font.body
+buildHint.TextSize = MobileUI.isMobile and Theme.MIN_TEXT or 15
 buildHint.RichText = true
+buildHint.TextColor3 = Theme.color.textDim
 buildHint.TextTruncate = Enum.TextTruncate.AtEnd
 buildHint.Visible = false
 buildHint.Parent = controlsGui
-
--- Подсказка лежит на тёмной плашке, а не висит голой надписью с обводкой поверх арены:
--- её читаемость не зависит от того, что под ней на поле.
---
--- Это строка состояния терминала, а не ячейка элемента. До задачи #129 она собиралась
--- Theme.ElementFill цветом интерфейса — бирюзовая дымка во всю строку и бирюзовый текст
--- на ней, — а отступ, поставленный ПОСЛЕ сборщика, сдвигал дымку и засечку внутрь
--- (замерено: строка 659,12 шириной 596, засечка и дымка — от 669 шириной 576). По краям
--- плашки оставались тёмные зазоры в десять пикселей, засечка висела поверх слова
--- «СТРОЙКА». Теперь это тёмная плашка с кантом и засечкой у самого левого края
--- (Theme.Swatch сам выходит за отступ, см. Theme.Bleed); текст приглушённый, а цветом
--- выделены раздел и выбранная постройка — их красит сама строка (refreshBuildChoice).
--- Плашка — языком рамки главного меню (Theme.Plate): засечка ячейки слева ушла,
--- строка состояния у меню её не носит. Скобок и сетки нет: плашка в 28 пикселей,
--- и это TextLabel — его дети легли бы на текст.
-buildHint.TextStrokeTransparency = 1
-buildHint.TextColor3 = Theme.color.textDim
-buildHint.ClipsDescendants = true
-Theme.Plate(buildHint, { brackets = false, dots = false })
-
-local buildHintPad = Instance.new("UIPadding")
-buildHintPad.PaddingLeft = UDim.new(0, 12)
-buildHintPad.PaddingRight = UDim.new(0, 12)
-buildHintPad.Parent = buildHint
-
--- На ПК плашка растёт под свой текст, а не держит фиксированную ширину: хвост строки
--- («1–N — выбор · R — поворот · B — выйти») меняется вместе с числом открытых построек,
--- и любая заранее выбранная ширина рано или поздно обрезала его многоточием — так и было
--- при семи постройках. TextTruncate остаётся страховкой: он сработает, только если строка
--- упрётся в ограничитель по ширине экрана. На телефоне клавиш в строке нет, она короткая,
--- и там ширина по-прежнему долевая от экрана.
-if not MobileUI.isMobile then
-	buildHint.AutomaticSize = Enum.AutomaticSize.X
-
-	local hintLimit = Instance.new("UISizeConstraint")
-	hintLimit.Parent = buildHint
-
-	local function applyHintLimit()
-		hintLimit.MaxSize = Vector2.new(math.max(200, MobileUI.viewportX - 40), math.huge)
-	end
-	applyHintLimit()
-	MobileUI.OnViewportChanged(applyHintLimit)
-end
+Theme.ArenaLabel(buildHint)
 
 -- Что можно строить, в порядке цифровых клавиш. Имена и цены берутся из таблицы Towers:
 -- добавить постройку = добавить строку туда и ключ сюда, подсказка подстроится сама.
@@ -765,8 +648,7 @@ local function refreshBuildChoice()
 		Theme.Hex(Theme.color.text), Theme.Caps(data.name), data.cost, buildTurn * 90)
 	local keys = MobileUI.isMobile and ""
 		or (("  ·  1–%d — выбор · R — поворот · B — выйти"):format(#BUILD_ORDER))
-	buildHint.Text = ('<font color="%s">СТРОЙКА  //</font>  %s%s'):format(
-		Theme.Hex(Theme.color.accentDim), what, keys)
+	buildHint.Text = Theme.ArenaText("стройка", what .. keys)
 
 	-- Турель и стена подсвечиваются разным цветом — выбранное видно на поле, а не только
 	-- в подсказке наверху, куда во время стройки не смотрят. Запоминается в переменную,
@@ -982,7 +864,9 @@ if MobileUI.isMobile then
 	-- видно и на скриншоте). 180 берётся с запасом на планшет: там джойстик крупнее
 	-- (120px против 70) и его правый край уходит за 160.
 	buildPanel.AnchorPoint = Vector2.new(0, 1)
-	buildPanel.Position = UDim2.new(0, 180, 1, -12)
+	-- Снизу — подвал рамки забега: две строки подсказок (MobileUI.FooterLine), панель
+	-- стоит над ними.
+	buildPanel.Position = UDim2.new(0, 180, 1, -(MobileUI.FOOTER_BOTTOM + 2 * MobileUI.FOOTER_LINE + 26))
 	buildPanel.BackgroundTransparency = 1
 	buildPanel.Parent = controlsGui
 

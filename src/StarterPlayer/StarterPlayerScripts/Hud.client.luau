@@ -1,10 +1,19 @@
--- Экранный HUD: номер волны, материя, прочность лабораторного стола. Состояние только на сервере,
+-- Экранный HUD забега: рамка по краю экрана с шапкой (волна, материя, прочность стола),
+-- журнал сообщений сервера и кнопка вызова волны. Состояние только на сервере,
 -- этот скрипт лишь отображает то, что пришло через RemoteEvent.
+--
+-- ВИД (переработка по макету, согласованному с автором): тот же язык, что у рамки
+-- главного меню, — кант в пиксель с отступом от края экрана, уголки-скобки, шапка
+-- и подвал под чертой. Но без чёрных плашек: показания и подсказки лежат прямо на арене,
+-- а читаемость держит тень от края экрана (тёмный градиент сверху и снизу). Рамка —
+-- только у того, что нажимается (кнопки меню и волны): у показаний её нет, чтобы их
+-- не принимали за кнопки (замечание автора). Текст на арене белый, бирюза — только
+-- у кнопок и полосок: на светлой арене бирюзовый текст не читался.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
 
 local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
 local Theme = require(script.Parent:WaitForChild("UITheme"))
@@ -14,6 +23,8 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+
+local mobile = MobileUI.isMobile
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "GameHud"
@@ -29,205 +40,363 @@ resultGui.ResetOnSpawn = false
 resultGui.DisplayOrder = MobileUI.Layer.Notify
 resultGui.Parent = playerGui
 
--- Показания стояли тремя строками в столбик и занимали 110 пикселей высоты. Теперь
--- это три колонки в одну полосу: подпись мелким и под ней крупное число. Три числа
--- рядом считываются одним взглядом, а панель перестала занимать четверть высоты экрана
--- на телефоне.
-local STAT_W = 78 -- «ПРОЧНОСТЬ» в 14px моноширинным — 76px
-local STAT_GAP = 6
+-- ============ Рамка забега ============
 
--- Ширина панели вынесена в имя: по ней равняется кнопка промокода под ней.
--- Прежде кнопка была 130 при панели в 232, и левый столбец шёл уступом.
-local PANEL_W = 276
+local INSET = MobileUI.FRAME_INSET
+local HEADER_H = MobileUI.HEADER_H
 
+-- Рамка видна только во время забега: появляется на WaveReady/WaveChanged,
+-- прячется на RunEnded. В лобби экран занимает главное меню.
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, PANEL_W, 0, 72)
-frame.Position = UDim2.new(0, MobileUI.EDGE, 0, MobileUI.EDGE)
+frame.Name = "RunFrame"
+frame.Position = UDim2.fromOffset(INSET, INSET)
+frame.Size = UDim2.new(1, -2 * INSET, 1, -2 * INSET)
+frame.BackgroundTransparency = 1
 frame.BorderSizePixel = 0
-frame.Parent = screenGui
--- Панель волны/материи/прочности стола имеет смысл только во время забега — скрыта, пока игрок
--- в лобби, появляется на WaveReady/WaveChanged, прячется обратно на RunEnded.
 frame.Visible = false
+frame.Parent = screenGui
+Theme.Corner(frame, Theme.radius.panel)
+Theme.Stroke(frame, Theme.color.frame, 1, 0.3)
 
--- Весь внешний вид панели — в UITheme: плашка языком рамки главного меню (Theme.Plate).
--- Геометрию сборщик не трогает — она выверена замерами мобильного экрана (задача #78).
-Theme.Plate(frame)
+-- Тень от края экрана вместо плашки: тёмный градиент цвета ink под шапкой и подвалом.
+-- Над ареной любой яркости текст в ней читается, а середина экрана остаётся чистой.
+local function edgeShade(top, height)
+	local shade = Instance.new("Frame")
+	shade.Name = top and "ShadeTop" or "ShadeBottom"
+	shade.AnchorPoint = Vector2.new(0, top and 0 or 1)
+	shade.Position = UDim2.fromScale(0, top and 0 or 1)
+	shade.Size = UDim2.new(1, 0, 0, height)
+	shade.BackgroundColor3 = Theme.color.ink
+	shade.BackgroundTransparency = 0
+	shade.BorderSizePixel = 0
+	shade.Parent = frame
+	Theme.Corner(shade, Theme.radius.panel)
 
--- Колонка показания: подпись сверху мелким, число под ней крупным. Возвращается только
--- число: подпись ставится один раз и больше не меняется.
-local statOrder = 0
+	local fade = Instance.new("UIGradient")
+	fade.Rotation = top and 90 or -90
+	fade.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.12),
+		NumberSequenceKeypoint.new(0.55, 0.4),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	fade.Parent = shade
+	return shade
+end
 
-local function makeStat(caption)
-	local x = 14 + statOrder * (STAT_W + STAT_GAP)
-	statOrder += 1
+edgeShade(true, HEADER_H + (mobile and 24 or 40))
+-- Подвал: две строки подсказок, кнопка волны на ПК и запас под тень.
+edgeShade(false, MobileUI.FOOTER_BOTTOM + 2 * MobileUI.FOOTER_LINE + (mobile and 40 or 70) - INSET)
 
-	-- Колонки разделены вертикальной чертой, как подпись и число плутония в шапке меню:
-	-- три числа без раздела сливались в одну строку цифр.
-	if statOrder > 1 then
-		local rule = Instance.new("Frame")
-		rule.Size = UDim2.new(0, 1, 0, 34)
-		rule.Position = UDim2.new(0, x - 8, 0, 12) -- числа до пяти знаков кончаются раньше
-		rule.Parent = frame
-		Theme.Rule(rule)
+-- Скобки после теней: уголки должны лечь поверх них.
+Theme.Brackets(frame)
+
+local function rule(y, fromBottom)
+	local line = Instance.new("Frame")
+	line.AnchorPoint = Vector2.new(0, fromBottom and 1 or 0)
+	line.Position = UDim2.new(0, 18, fromBottom and 1 or 0, fromBottom and -y or y)
+	line.Size = UDim2.new(1, -36, 0, 1)
+	line.Parent = frame
+	Theme.Rule(line)
+	return line
+end
+
+-- Черта под шапкой и черта над подвалом, как в главном меню.
+rule(HEADER_H, false)
+rule(MobileUI.FOOTER_BOTTOM + 2 * MobileUI.FOOTER_LINE + 18 - INSET, true)
+
+-- ---- Шапка: где игрок ----
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Position = UDim2.fromOffset(mobile and 16 or 22, mobile and 10 or 14)
+titleLabel.Size = UDim2.fromOffset(mobile and 120 or 200, mobile and 20 or 24)
+titleLabel.TextSize = mobile and 16 or 20
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Text = "> " .. Theme.Caps("забег")
+titleLabel.Parent = frame
+Theme.Title(titleLabel)
+Theme.ArenaLabel(titleLabel)
+
+local levelLabel = Instance.new("TextLabel")
+levelLabel.Position = UDim2.fromOffset(mobile and 16 or 22, mobile and 34 or 44)
+levelLabel.Size = UDim2.fromOffset(mobile and 120 or 320, 18)
+levelLabel.FontFace = Theme.font.body
+levelLabel.TextSize = Theme.MIN_TEXT
+levelLabel.TextXAlignment = Enum.TextXAlignment.Left
+levelLabel.TextTruncate = Enum.TextTruncate.AtEnd
+levelLabel.TextColor3 = Theme.color.textDim
+levelLabel.Text = ""
+levelLabel.Parent = frame
+Theme.ArenaLabel(levelLabel)
+
+-- Номер уровня кладёт сервер атрибутом RunLevel (WaveRunner.startRun). На телефоне
+-- шапка узкая — там только номер.
+local function updateLevel()
+	local number = ReplicatedStorage:GetAttribute("RunLevel")
+	local level = typeof(number) == "number" and Levels[number]
+	if not level then
+		levelLabel.Text = ""
+	elseif mobile then
+		levelLabel.Text = ("УР. %d"):format(number)
+	else
+		levelLabel.Text = ("УРОВЕНЬ %d  //  %s"):format(number, Theme.Caps(level.name))
 	end
+end
+ReplicatedStorage:GetAttributeChangedSignal("RunLevel"):Connect(updateLevel)
+updateLevel()
 
+-- ---- Шапка: показания ----
+
+-- Три показания по центру шапки: волна посередине крупно, материя слева от неё
+-- (прижата вправо), прочность справа (прижата влево). Подпись сверху приглушённым,
+-- число под ней. Без рамок и плашек: показания не нажимаются.
+local GROUP_W = mobile and 340 or 520
+local WAVE_W = mobile and 140 or 200
+local SIDE_W = mobile and 80 or 120
+local SIDE_GAP = mobile and 90 or 130 -- от центра до ближнего края бокового показания
+
+local readouts = Instance.new("Frame")
+readouts.Name = "Readouts"
+readouts.AnchorPoint = Vector2.new(0.5, 0)
+readouts.Position = UDim2.fromScale(0.5, 0)
+readouts.Size = UDim2.fromOffset(GROUP_W, HEADER_H)
+readouts.BackgroundTransparency = 1
+readouts.Parent = frame
+
+local CAPTION_Y = mobile and 8 or 12
+local VALUE_Y = mobile and 24 or 30
+
+local function makeStat(caption, x, width, align, valueSize)
 	local cap = Instance.new("TextLabel")
-	cap.Size = UDim2.new(0, STAT_W, 0, 16)
-	cap.Position = UDim2.new(0, x, 0, 8)
+	cap.Position = UDim2.fromOffset(x, CAPTION_Y)
+	cap.Size = UDim2.fromOffset(width, 16)
 	cap.TextSize = Theme.MIN_TEXT
-	cap.TextXAlignment = Enum.TextXAlignment.Left
-	cap.Text = caption
-	cap.Parent = frame
+	cap.Text = Theme.Caps(caption)
+	cap.Parent = readouts
 	Theme.StatCaption(cap)
+	cap.TextXAlignment = align
+	Theme.ArenaLabel(cap)
 
 	local value = Instance.new("TextLabel")
-	value.Size = UDim2.new(0, STAT_W, 0, 26)
-	value.Position = UDim2.new(0, x, 0, 24)
-	value.BackgroundTransparency = 1
-	value.TextSize = 22
+	value.Position = UDim2.fromOffset(x, VALUE_Y)
+	value.Size = UDim2.fromOffset(width, valueSize + 4)
+	value.TextSize = valueSize
 	value.TextColor3 = Theme.color.text
-	value.TextXAlignment = Enum.TextXAlignment.Left
+	value.TextXAlignment = align
 	value.TextTruncate = Enum.TextTruncate.AtEnd
-	value.Parent = frame
+	value.Parent = readouts
 	-- Приборный шрифт только у числа: подпись живёт обычным начертанием (Theme.StatCaption).
 	Theme.Display(value)
+	Theme.ArenaLabel(value)
 	return value
 end
 
+local center = GROUP_W / 2
+local valueSize = mobile and 18 or 22
+
+local matterLabel = makeStat("материя", center - SIDE_GAP - SIDE_W, SIDE_W, Enum.TextXAlignment.Right, valueSize)
+matterLabel.Text = "0"
+matterLabel.TextColor3 = Theme.color.energy
+
+local waveLabel = makeStat("волна", center - WAVE_W / 2, WAVE_W, Enum.TextXAlignment.Center, mobile and 22 or 26)
+waveLabel.Position -= UDim2.fromOffset(0, 4)
+waveLabel.Text = "- / -"
+
+local hpLabel = makeStat("прочность", center + SIDE_GAP, SIDE_W, Enum.TextXAlignment.Left, valueSize)
+hpLabel.Text = "-"
+
+-- Полоска хода забега под числом волны: доля пройденных волн. Бирюза на арене —
+-- только у полосок и кнопок.
+local waveTrack = Instance.new("Frame")
+waveTrack.Name = "WaveTrack"
+waveTrack.Position = UDim2.fromOffset(center - WAVE_W / 2, HEADER_H - (mobile and 8 or 10))
+waveTrack.Size = UDim2.fromOffset(WAVE_W, 3)
+waveTrack.BackgroundColor3 = Theme.color.ink
+waveTrack.BackgroundTransparency = 0.4
+waveTrack.BorderSizePixel = 0
+waveTrack.Parent = readouts
+
+local waveFill = Instance.new("Frame")
+waveFill.Size = UDim2.fromScale(0, 1)
+waveFill.BackgroundColor3 = Theme.color.accent
+waveFill.BorderSizePixel = 0
+waveFill.Parent = waveTrack
+
+local function showWave(waveNumber, totalWaves)
+	waveLabel.Text = ("%d / %d"):format(waveNumber, totalWaves)
+	waveFill.Size = UDim2.fromScale(totalWaves > 0 and math.clamp(waveNumber / totalWaves, 0, 1) or 0, 1)
+	Theme.Blink(waveLabel)
+end
+
 -- Цвет Прочности считается от ДОЛИ оставшегося, а не от числа: максимум у стола
--- свой (LabTable.MAX_HP), и порог в долях проще менять баланс в одном месте, а не здесь.
+-- свой (LabTable.MAX_HP). Пока стол цел — белым, как прочие показания; тревога
+-- цветом только когда её пора замечать.
 local function hpColor(hp, limit)
 	local share = limit > 0 and hp / limit or 0
 	if share > 0.6 then
-		return Theme.color.accent
+		return Theme.color.text
 	elseif share > 0.3 then
 		return Theme.color.warn
 	end
 	return Theme.color.danger
 end
 
-local waveLabel = makeStat("ВОЛНА")
-waveLabel.Text = "-/-"
-waveLabel.TextColor3 = Theme.color.accent
+-- ============ Журнал ============
 
-local matterLabel = makeStat("МАТЕРИЯ")
-matterLabel.Text = "0"
-matterLabel.TextColor3 = Theme.color.energy
+-- Сообщения сервера (Notify: «не хватает материи», «надо подойти к столу», ответ на
+-- промокод) — столбиком последних строк, а не одной плашкой посреди экрана, которую
+-- следующее сообщение тут же затирало. В забеге — слева под шапкой рамки; пока открыто
+-- главное меню — в правом нижнем углу над его подвалом, где у меню пусто.
+-- Свой ScreenGui на слое Notify: сообщение должно быть видно и поверх открытого окна.
+local JOURNAL_LINES = mobile and 2 or 3
+local JOURNAL_LIFE = 8 -- секунд строка висит, потом гаснет
+local JOURNAL_FADE = 1.5
 
-local hpLabel = makeStat("ПРОЧНОСТЬ")
-hpLabel.Text = "-"
-hpLabel.TextColor3 = Theme.color.accent
+local journalGui = Instance.new("ScreenGui")
+journalGui.Name = "Journal"
+journalGui.ResetOnSpawn = false
+journalGui.DisplayOrder = MobileUI.Layer.Notify
+journalGui.Parent = playerGui
 
--- Шкала прочности: одна заливка по доле оставшегося HP, а не ячейки: прочность стола
--- («Лабораторный стол») считается сотнями очков (LabTable.MAX_HP),
--- по очку на ячейку панель не построишь.
-local hpBar = Instance.new("Frame")
-hpBar.Size = UDim2.new(1, -28, 0, 6)
-hpBar.Position = UDim2.new(0, 14, 0, 56)
--- Пустая часть шкалы — углубление, как поле ввода, с волоском по краю: красная подложка
--- горела тревогой и при полном столе.
-hpBar.BackgroundColor3 = Theme.color.field
-hpBar.BackgroundTransparency = 0
-hpBar.BorderSizePixel = 0
-hpBar.Parent = frame
-Theme.Corner(hpBar, 2)
-Theme.Hairline(hpBar, 0.2)
+local journal = Instance.new("Frame")
+journal.Name = "Journal"
+journal.Size = mobile and UDim2.new(0.42, 0, 0, 0) or UDim2.fromOffset(440, 0)
+journal.AutomaticSize = Enum.AutomaticSize.Y
+journal.BackgroundColor3 = Theme.color.ink
+journal.BackgroundTransparency = 0.35
+journal.BorderSizePixel = 0
+journal.Visible = false
+journal.Parent = journalGui
 
-local hpFill = Instance.new("Frame")
-hpFill.BorderSizePixel = 0
-hpFill.Parent = hpBar
-Theme.Corner(hpFill, 2)
+-- Подложка гаснет вправо: тень под строками, а не плашка с краем.
+local journalFade = Instance.new("UIGradient")
+journalFade.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0),
+	NumberSequenceKeypoint.new(0.6, 0.5),
+	NumberSequenceKeypoint.new(1, 1),
+})
+journalFade.Parent = journal
 
--- Прочность читается с атрибутов Workspace.CraftTable напрямую (см. ниже), а не через ремоут:
--- стол — обычный Instance в Workspace и реплицируется всем клиентам сам по себе.
-local function renderHpBar(hp, limit)
-	local share = limit > 0 and math.clamp(hp / limit, 0, 1) or 0
-	hpFill.Size = UDim2.new(share, 0, 1, 0)
-	hpFill.BackgroundColor3 = hpColor(hp, limit)
+local journalPad = Instance.new("UIPadding")
+journalPad.PaddingTop = UDim.new(0, 6)
+journalPad.PaddingBottom = UDim.new(0, 6)
+journalPad.PaddingLeft = UDim.new(0, mobile and 10 or 14)
+journalPad.PaddingRight = UDim.new(0, 10)
+journalPad.Parent = journal
+
+local journalList = Instance.new("UIListLayout")
+journalList.SortOrder = Enum.SortOrder.LayoutOrder
+journalList.Padding = UDim.new(0, 2)
+journalList.Parent = journal
+
+-- Подпись «ЖУРНАЛ» — только на ПК: на телефоне она съела бы строку из двух.
+if not mobile then
+	local journalCaption = Instance.new("TextLabel")
+	journalCaption.LayoutOrder = 0
+	journalCaption.Size = UDim2.new(1, 0, 0, 18)
+	journalCaption.TextSize = Theme.MIN_TEXT
+	journalCaption.TextXAlignment = Enum.TextXAlignment.Left
+	journalCaption.Text = Theme.Caps("журнал")
+	journalCaption.Parent = journal
+	Theme.StatCaption(journalCaption)
 end
 
--- Промокод: свёрнутая кнопка под инфо-панелью, разворачивает поле ввода и кнопку применения.
--- Сама проверка кода — на сервере (см. ServerScriptService.PromoCode), клиент лишь отправляет строку.
--- Высота элементов промокода на телефоне — MobileUI.MIN_TAP: прежние 28/30 пикселей
--- палец накрывает целиком, попасть в них не глядя нельзя (тот же порог, что у
--- InventoryUI.ROW_H и CraftingUI.BUY_ROW_H).
-local PROMO_FIELD_H = MobileUI.isMobile and MobileUI.MIN_TAP or 30
+local journalEntries = {} -- новые первыми: { label = TextLabel, text = string }
+local journalOrder = 0
+local inRun = false
 
-local promoButton = Instance.new("TextButton")
--- Шириной в панель над ней. y = 104 подходит обоим состояниям левого угла:
--- в забеге под панелью показаний (20 + 72), в лобби — под иконкой плутония
--- (20 + 76, см. LobbyUI.PANEL_SIZE).
-promoButton.Size = UDim2.new(0, PANEL_W, 0, MobileUI.isMobile and MobileUI.MIN_TAP or 28)
-promoButton.Position = UDim2.new(0, MobileUI.EDGE, 0, 104)
-promoButton.FontFace = Theme.font.strong
-promoButton.TextSize = 14
-promoButton.Text = "ПРОМОКОД"
-promoButton.Parent = screenGui
-
-Theme.HudButton(promoButton)
-
-local promoFrame = Instance.new("Frame")
--- На телефоне панель не висит под кнопкой, а встаёт по центру экрана. Под кнопкой она
--- упиралась в панель стройки в левом нижнем углу (замерено: пересечение 220x6 ещё при
--- полях в 30px), а с полями в MIN_TAP высотой налезала бы на неё целиком.
-promoFrame.AnchorPoint = MobileUI.isMobile and Vector2.new(0.5, 0.5) or Vector2.new(0, 0)
-promoFrame.Size = UDim2.new(0, MobileUI.isMobile and 260 or PANEL_W, 0, PROMO_FIELD_H * 2 + 20)
-promoFrame.Position = MobileUI.isMobile and UDim2.new(0.5, 0, 0.5, 0) or UDim2.new(0, MobileUI.EDGE, 0, 140)
-promoFrame.Visible = false
-promoFrame.Parent = screenGui
-
-local promoPadding = Instance.new("UIPadding")
-promoPadding.PaddingTop = UDim.new(0, 10)
-promoPadding.PaddingLeft = UDim.new(0, 10)
-promoPadding.PaddingRight = UDim.new(0, 10)
-promoPadding.Parent = promoFrame
-
--- Без скобок: поле ввода стоит в углу плашки, и уголки легли бы на его кант.
-Theme.Plate(promoFrame, { brackets = false })
-
-local promoInput = Instance.new("TextBox")
-promoInput.Size = UDim2.new(1, 0, 0, PROMO_FIELD_H)
-promoInput.FontFace = Theme.font.body
-promoInput.TextSize = 16
-promoInput.PlaceholderText = "Введите код…"
-promoInput.ClearTextOnFocus = false
-promoInput.Text = ""
-promoInput.Parent = promoFrame
-
-Theme.Field(promoInput)
-
-local promoApply = Instance.new("TextButton")
-promoApply.Size = UDim2.new(1, 0, 0, PROMO_FIELD_H)
-promoApply.Position = UDim2.new(0, 0, 0, PROMO_FIELD_H + 10)
-promoApply.FontFace = Theme.font.strong
-promoApply.TextSize = 16
-promoApply.Text = "ПРИМЕНИТЬ"
-promoApply.Parent = promoFrame
-
-Theme.Button(promoApply, "action")
-
-promoButton.MouseButton1Click:Connect(function()
-	promoFrame.Visible = not promoFrame.Visible
-	if promoFrame.Visible then
-		promoInput:CaptureFocus()
+-- Новая строка — белым с красной скобкой, старые тише: глаз сразу находит последнее.
+local function paintJournal()
+	for index, entry in journalEntries do
+		entry.label.LayoutOrder = index
+		local newest = index == 1
+		entry.label.TextColor3 = newest and Theme.color.text or (index == 2 and Theme.color.textDim or Theme.color.textMute)
+		entry.label.Text = ('<font color="%s">&gt;</font> %s'):format(
+			Theme.Hex(newest and Theme.color.danger or entry.label.TextColor3),
+			entry.text
+		)
 	end
-end)
-
-local function submitPromoCode()
-	local code = promoInput.Text
-	if code == "" then
-		return
-	end
-	Remotes.RedeemCode:FireServer(code)
-	promoInput.Text = ""
+	journal.Visible = #journalEntries > 0
 end
 
-promoApply.MouseButton1Click:Connect(submitPromoCode)
-promoInput.FocusLost:Connect(function(enterPressed)
-	if enterPressed then
-		submitPromoCode()
+local function removeEntry(entry)
+	local index = table.find(journalEntries, entry)
+	if index then
+		table.remove(journalEntries, index)
+		entry.label:Destroy()
+		paintJournal()
 	end
+end
+
+local function addJournal(message)
+	journalOrder += 1
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 0)
+	label.AutomaticSize = Enum.AutomaticSize.Y
+	label.FontFace = Theme.font.body
+	label.TextSize = mobile and Theme.MIN_TEXT or 15
+	label.TextWrapped = true
+	label.RichText = true
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = journal
+	Theme.ArenaLabel(label)
+
+	local entry = { label = label, text = Theme.Escape(message) }
+	table.insert(journalEntries, 1, entry)
+	while #journalEntries > JOURNAL_LINES do
+		removeEntry(journalEntries[#journalEntries])
+	end
+	paintJournal()
+	Theme.Blink(label)
+
+	task.delay(JOURNAL_LIFE, function()
+		if not label.Parent then
+			return -- строку уже вытеснили новые
+		end
+		local fade = TweenService:Create(label, TweenInfo.new(JOURNAL_FADE), {
+			TextTransparency = 1,
+			TextStrokeTransparency = 1,
+		})
+		fade.Completed:Connect(function()
+			removeEntry(entry)
+		end)
+		fade:Play()
+	end)
+end
+
+Remotes.Notify.OnClientEvent:Connect(addJournal)
+
+-- Место журнала зависит от того, что на экране: главное меню, рамка забега или ничего.
+local mainMenuGui = nil
+
+local function placeJournal()
+	if mainMenuGui and mainMenuGui.Enabled then
+		-- Над подвалом меню справа: колонка пунктов слева, справа внизу пусто.
+		journal.AnchorPoint = Vector2.new(1, 1)
+		journal.Position = UDim2.new(1, -(INSET + 24), 1, -(mobile and 56 or 84))
+		journalFade.Rotation = 180
+	else
+		journal.AnchorPoint = Vector2.new(0, 0)
+		-- Вне забега (аркада) — ниже бейджа плутония лобби (20 + 76, LobbyUI).
+		local top = inRun and (INSET + HEADER_H + 8) or 108
+		journal.Position = UDim2.fromOffset(INSET + 4, top)
+		journalFade.Rotation = 0
+	end
+end
+
+task.spawn(function()
+	mainMenuGui = playerGui:WaitForChild("MainMenu", 30)
+	if mainMenuGui then
+		mainMenuGui:GetPropertyChangedSignal("Enabled"):Connect(placeJournal)
+	end
+	placeJournal()
 end)
+placeJournal()
+
+local function setInRun(value)
+	inRun = value
+	frame.Visible = value
+	placeJournal()
+end
 
 -- Итог забега собран той же ячейкой, что и строки списков: тёмный корпус в цвете исхода
 -- (зелёный — победа, красный — поражение), кант и засечка. Раньше это была голая
@@ -290,8 +459,10 @@ end
 local startWaveButton = Instance.new("TextButton")
 -- На мобильном кнопка ушла к правому краю и стала уже: внизу теперь панель стройки
 -- (TowerInteraction) и родные кнопки Roblox, а прежние 90% ширины по центру накрывали панель целиком.
-startWaveButton.AnchorPoint = MobileUI.isMobile and Vector2.new(1, 1) or Vector2.new(0.5, 1)
-startWaveButton.Size = MobileUI.isMobile and UDim2.new(0.32, 0, 0, 56) or UDim2.new(0, 280, 0, 52)
+-- На ПК кнопка в правом нижнем углу рамки забега, справа от подсказок подвала (по макету,
+-- согласованному с автором); подвал оставляет ей место (MobileUI.FOOTER_SIDE).
+startWaveButton.AnchorPoint = Vector2.new(1, 1)
+startWaveButton.Size = MobileUI.isMobile and UDim2.new(0.32, 0, 0, 56) or UDim2.new(0, 260, 0, 52)
 -- Кнопка поднята над зоной родной кнопки прыжка Roblox. Та занимает правый нижний угол
 -- (замерено на вьюпорте 750x322: JumpButton 655,232..725,302 — 95px от правого края,
 -- 90px от нижнего), и в прежнем положении «1, -12» кнопка волны накрывала её целиком:
@@ -299,13 +470,15 @@ startWaveButton.Size = MobileUI.isMobile and UDim2.new(0.32, 0, 0, 56) or UDim2.
 -- чужим элементом. Доля 0.7 по высоте, а не пиксельный отступ снизу: на планшете
 -- Roblox рисует кнопку прыжка крупнее (120px против 70), и фиксированный отступ,
 -- подобранный по телефону, там снова дал бы пересечение.
-startWaveButton.Position = MobileUI.isMobile and UDim2.new(1, -12, 0.7, 0) or UDim2.new(0.5, 0, 1, -18)
+startWaveButton.Position = MobileUI.isMobile and UDim2.new(1, -12, 0.7, 0)
+	or UDim2.new(1, -(INSET + 12), 1, -(INSET + 12))
 startWaveButton.AutoButtonColor = true
 startWaveButton.FontFace = Theme.font.strong
 startWaveButton.TextSize = MobileUI.isMobile and 18 or 24
 startWaveButton.TextColor3 = Theme.buttonKind.action.text
 startWaveButton.TextTruncate = Enum.TextTruncate.AtEnd
-startWaveButton.Text = MobileUI.isMobile and "ВОЛНА ▶" or "НАЧАТЬ ВОЛНУ"
+-- «Начать», а не «Волна»: это действие, а номер волны и так в шапке (просьба автора).
+startWaveButton.Text = MobileUI.isMobile and "НАЧАТЬ ▶" or "НАЧАТЬ"
 startWaveButton.Visible = false
 -- Волна ждёт кнопки (WaveReady пришёл, удержания, WaveChanged и RunEnded ещё не было).
 -- Нужно обучению (задача #298): пока шаги не пройдены, кнопки нет, и появляется она
@@ -415,15 +588,9 @@ ReplicatedStorage:GetAttributeChangedSignal("TutorialWaveLocked"):Connect(functi
 end)
 
 Remotes.WaveReady.OnClientEvent:Connect(function(waveNumber, totalWaves)
-	frame.Visible = true
-	-- Готовность отмечена цветом числа, а не словом «готова»: под текст в панели есть
-	-- 186 пикселей, а полная строка с подписью занимает 187 (замерено GetTextBoundsAsync).
-	waveLabel.Text = ("%d/%d"):format(waveNumber, totalWaves)
-	waveLabel.TextColor3 = Theme.color.action
-	Theme.Blink(waveLabel)
-	-- На узкой мобильной кнопке полная надпись не помещается и обрезалась бы посередине слова.
-	startWaveButton.Text = MobileUI.isMobile and ("ВОЛНА %d ▶"):format(waveNumber)
-		or ("НАЧАТЬ ВОЛНУ %d"):format(waveNumber)
+	setInRun(true)
+	-- Готовность волны говорит сама кнопка «Начать»: номер — в шапке.
+	showWave(waveNumber, totalWaves)
 	waveReady = true
 	startWaveButton.Visible = not ReplicatedStorage:GetAttribute("TutorialWaveLocked")
 
@@ -434,10 +601,8 @@ end)
 
 Remotes.WaveChanged.OnClientEvent:Connect(function(waveNumber, totalWaves)
 	waveReady = false
-	frame.Visible = true
-	waveLabel.Text = ("%d/%d"):format(waveNumber, totalWaves)
-	waveLabel.TextColor3 = Theme.color.accent
-	Theme.Blink(waveLabel)
+	setInRun(true)
+	showWave(waveNumber, totalWaves)
 
 	-- Началась волна — значит забег идёт, и итоговый баннер убирается сам.
 	-- Отдельное событие «забег начался» для этого заводить не нужно.
@@ -462,7 +627,6 @@ local function updateTableHp()
 	hpLabel.Text = tostring(math.floor(hp))
 	hpLabel.TextColor3 = hpColor(hp, maxHp)
 	Theme.Blink(hpLabel)
-	renderHpBar(hp, maxHp)
 end
 
 local function watchTable()
@@ -509,7 +673,7 @@ Remotes.RunEnded.OnClientEvent:Connect(function(won, levelNumber)
 	Theme.Static()
 	startWaveButton.Visible = false
 	cancelWaveHold()
-	-- Сервер тут же возвращает игрока в лобби — панель забега прячем,
+	-- Сервер тут же возвращает игрока в лобби — рамку забега прячем,
 	-- баннер остаётся висеть поверх лобби до следующего WaveReady/WaveChanged.
-	frame.Visible = false
+	setInRun(false)
 end)
