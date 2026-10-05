@@ -238,8 +238,10 @@ local waveTrack = Instance.new("Frame")
 waveTrack.Name = "WaveTrack"
 waveTrack.Position = UDim2.fromOffset(center - WAVE_W / 2, PILL_H - 4)
 waveTrack.Size = UDim2.fromOffset(WAVE_W, 2)
-waveTrack.BackgroundColor3 = Theme.color.hairline
-waveTrack.BackgroundTransparency = 0.3
+-- Пустая часть полоски видна: без неё одна пятая бирюзы под числом читалась
+-- случайной чёрточкой, а не шкалой (скрин автора).
+waveTrack.BackgroundColor3 = Theme.color.textMute
+waveTrack.BackgroundTransparency = 0.45
 waveTrack.BorderSizePixel = 0
 waveTrack.Parent = readouts
 
