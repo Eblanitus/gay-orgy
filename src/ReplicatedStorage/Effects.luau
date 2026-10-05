@@ -934,7 +934,7 @@ end
 -- атрибут, оставшийся без записи в таблице, уже никто бы не погасил.
 local CLEANSED_ATTRIBUTES = {
 	"Amplified", "ArmorShred", "AttackSlowPercent", "Bleeding", "Blinded", "Burning",
-	"Confused", "ConfusedDirection", "ConfusedUntil", "DeathMarks", "Infected", "Molten", "Primed",
+	"Confused", "ConfusedDirection", "ConfusedUntil", "DeathMarks", "Drying", "Infected", "Molten", "Primed",
 	"Push", "RegenScale", "Scorched", "SlowPercent", "Stunned", "StunnedUntil",
 	"Weakened", "Wet",
 }
@@ -1275,6 +1275,7 @@ task.spawn(function()
 
 				if drying.remaining <= 0 then
 					dryings[target] = nil
+					target:SetAttribute("Drying", nil)
 					refreshSlow(target)
 					print(("[Эффект] %s на %s: засыхание спало"):format(drying.name, target.Name))
 				elseif drying.percent < plan.max then
