@@ -2,11 +2,33 @@
 (Import 3D теряет цвета материалов — prepare_beetles красит детали по имени)."""
 import re
 
-from species import SPECIES
+from species import SPECIES as SPECIES1
+from species2 import SPECIES2
+
+SPECIES = {**SPECIES1, **SPECIES2}
 
 TEMPLATES = {"standard_beetle": "NormalBeetleTemplate", "mini_beetle": "MiniBeetleTemplate", "hmuryi_bron": "ArmoredBeetleTemplate",
              "moth": "MothTemplate", "worker_beetle": "WorkerBeetleTemplate",
-             "builder_beetle": "BuilderBeetleTemplate", "pelican_beetle": "PelicanBeetleTemplate"}
+             "builder_beetle": "BuilderBeetleTemplate", "pelican_beetle": "PelicanBeetleTemplate",
+             "acid_spitter": "AcidSpitterTemplate",
+             "medic": "MedicTemplate",
+             "queen": "QueenTemplate",
+             "larva": "LarvaTemplate",
+             "bomber": "BomberTemplate",
+             "shield_bearer": "ShieldBearerTemplate",
+             "coordinator": "CoordinatorTemplate",
+             "ram": "RamTemplate",
+             "sprinter": "SprinterTemplate",
+             "giant": "GiantTemplate",
+             "knitter": "KnitterTemplate",
+             "facehugger": "FacehuggerTemplate",
+             "absorber": "AbsorberTemplate",
+             "evolver": "EvolverTemplate",
+             "carrier": "CarrierTemplate",
+             "puppeteer": "PuppeteerTemplate",
+             "hive_architect": "HiveArchitectTemplate",
+             "mimic": "MimicTemplate",
+             "shadow": "ShadowTemplate",}
 
 
 def key(name):
@@ -43,5 +65,25 @@ def lua():
     return "\n".join(out)
 
 
+
+
+def lengths():
+    """Длина для SPECS в prepare_beetles: перед HeadBase − зад брюшка (как меряет prepare_beetles)."""
+    out = []
+    for src, fn in SPECIES.items():
+        m = fn()
+        z = {}
+        for n in m.nodes:
+            if n["mesh"] is not None:
+                zs = [p[2] for t in n["mesh"].v for p in t]
+                z[re.sub(r"\d{3}$", "", n["name"])] = (min(zs), max(zs))
+        rear = (z.get("BeetleBodyInner") or z["abdomen"])[0]
+        if "BeetlePlate_05" in z:
+            rear = min(rear, z["BeetlePlate_05"][0])
+        out.append(f'{TEMPLATES[src]}: length = {z["HeadBase"][1] - rear:.2f}')
+    return "\n".join(out)
+
+
 if __name__ == "__main__":
-    print(lua())
+    import sys
+    print(lengths() if "--lengths" in sys.argv else lua())

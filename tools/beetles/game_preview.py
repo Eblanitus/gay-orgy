@@ -5,6 +5,9 @@ import re
 import sys
 
 from species import SPECIES
+from species2 import SPECIES2
+
+SPECIES = {**SPECIES, **SPECIES2}
 
 HEX = {"olive": "#66703F", "ochre": "#9A7238", "brick": "#8C3B2A", "plum": "#5B3F63", "bone": "#D3C7A6",
        "tar": "#2A2522"}
@@ -12,7 +15,13 @@ BY_CASTE = {0: "olive", 1: "ochre", 2: "brick", 3: "plum"}
 # Каста / семейство и тон — из src/ReplicatedStorage/Enemies.luau.
 ENEMY = {"standard_beetle": (0, None, 0), "worker_beetle": (1, None, 0), "mini_beetle": (0, None, 0.45),
          "hmuryi_bron": (0, None, -0.6), "moth": (0, "bone", 0), "builder_beetle": (1, None, -0.4),
-         "pelican_beetle": (1, None, 0.15)}
+         "pelican_beetle": (1, None, 0.15),
+         "acid_spitter": (1, None, 0), "medic": (1, None, 0.25), "queen": (1, None, -0.2), "larva": (1, "bone", 0),
+         "bomber": (2, None, 0), "shield_bearer": (2, None, -0.3), "coordinator": (2, None, 0.15),
+         "ram": (2, None, -0.5), "sprinter": (2, None, 0.4), "giant": (2, None, -0.7), "knitter": (2, None, 0.1),
+         "facehugger": (3, None, 0.3), "absorber": (3, None, 0), "evolver": (3, None, 0), "carrier": (3, None, -0.4),
+         "puppeteer": (3, None, 0.2), "hive_architect": (3, None, -0.3), "mimic": (3, "bone", -0.3),
+         "shadow": (3, "tar", 0)}
 ROLE = [("^BeetlePlate", "elytra"), ("^BeetleSternite", "chitin"), ("^BeetleBodyInner", "chitin"),
         ("^AbdomenCore", "chitin"), ("^ThoraxCore", "chitin"), ("^BeetleNeck", "chitin"), ("^ROOT", "joints"),
         ("^thorax", "chitin"), ("^neck$", "chitin"), ("^HeadBase", "head"), ("^AntNode", "head"),
