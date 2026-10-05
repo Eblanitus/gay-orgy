@@ -307,7 +307,9 @@ RunService.PreSimulation:Connect(function(dt)
 			if not squashed[bug] and bug:IsA("Model") then
 				local at = bug:GetPivot().Position
 				local dx, dz = at.X - carPos.X, at.Z - carPos.Z
-				if dx * dx + dz * dz <= reach * reach then
+				-- К радиусу машины — полуразмер именно этого жука: Гигант давится раньше Мини.
+				local r = reach + (bug:GetAttribute("Reach") or 0)
+				if dx * dx + dz * dz <= r * r then
 					squashed[bug] = true
 					table.insert(recentSquashes, { at = at, time = now })
 					SquashRemote:FireServer(bug, carPos, carry)
