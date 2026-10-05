@@ -237,6 +237,8 @@ class Model:
         for name, rgb, rough, metal, alpha in self.materials:
             m = {"name": name, "pbrMetallicRoughness": {
                 "baseColorFactor": [*rgb, alpha], "metallicFactor": metal, "roughnessFactor": rough}}
+            if name.endswith("_glow"):  # светится: в игре Neon (prepare_beetles), в превью — emissive
+                m["emissiveFactor"] = list(rgb)
             if alpha < 1:
                 m["alphaMode"] = "BLEND"
                 m["doubleSided"] = True

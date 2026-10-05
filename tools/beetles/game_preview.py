@@ -20,10 +20,10 @@ ENEMY = {"standard_beetle": (0, None, 0), "worker_beetle": (1, None, 0), "mini_b
          "bomber": (2, None, 0), "shield_bearer": (2, None, -0.3), "coordinator": (2, None, 0.15),
          "ram": (2, None, -0.5), "sprinter": (2, None, 0.4), "giant": (2, None, -0.7), "knitter": (2, None, 0.1),
          "facehugger": (3, None, 0.3), "absorber": (3, None, 0), "evolver": (3, None, 0), "carrier": (3, None, -0.4),
-         "puppeteer": (3, None, 0.2), "hive_architect": (3, None, -0.3), "mimic": (3, "bone", -0.3),
+         "puppeteer": (3, None, 0.2), "hive_architect": (3, None, -0.3), "mimic": (3, "bone", -0.6),
          "shadow": (3, "tar", 0)}
 ROLE = [("^BeetlePlate", "elytra"), ("^BeetleSternite", "chitin"), ("^BeetleBodyInner", "chitin"),
-        ("^AbdomenCore", "chitin"), ("^ThoraxCore", "chitin"), ("^BeetleNeck", "chitin"), ("^ROOT", "joints"),
+        ("^AbdomenCore", "chitin"), ("^ThoraxCore", "chitin"), ("^BeetleNeck", "chitin"), ("^ROOT", "chitin"),
         ("^thorax", "chitin"), ("^neck$", "chitin"), ("^HeadBase", "head"), ("^AntNode", "head"),
         ("^AntSeg", "head"), ("^Mandible", "head"), ("^Tooth", "head"), ("^cheek", "head"), ("^shovel", "head"),
         ("^labial_palp", "head"), ("^Femur", "head"), ("^KneeJoint", "head"), ("^AnkleJoint", "head"),
