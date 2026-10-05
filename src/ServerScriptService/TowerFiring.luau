@@ -586,7 +586,9 @@ return function(deps)
 		for _, building in folder:GetChildren() do
 			local hp = building:GetAttribute("HP")
 			local maxHp = building:GetAttribute("MaxHP")
+			-- Стена в хитине Архитектора не чинится: «обычный ремонт невозможен» (по вики).
 			if building ~= tower and hp and maxHp and hp > 0 and hp < maxHp
+				and not building:GetAttribute("Chitin")
 				and (building:GetPivot().Position - origin).Magnitude <= towerData.range then
 				local ratio = hp / maxHp
 				if not bestRatio or ratio < bestRatio then
