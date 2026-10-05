@@ -6,6 +6,7 @@
 --     разведчики зелёные, работяги жёлтые, солдаты красные, особые синие;
 --   * оттенок (поле hue вида, градусы) сдвигает цвет внутри семейства — виды одной касты
 --     различимы, но остаются «своими» (Хмурый брон — бирюзовый край зелёных);
+--   * насыщенность (поле sat вида, множитель, 1 — как у семейства): бледнее или ярче;
 --   * тон (поле tone вида, -1..1) — вес: мелкие и быстрые светлее, тяжёлые темнее;
 --   * лапы и суставы у всех одной тёмной смолой — силуэт ног читается одинаково;
 --   * голова темнее панциря — видно, куда жук смотрит;
@@ -51,9 +52,9 @@ function BugPalette.Paint(data)
 	local family = data.family or BugPalette.ByCaste[data.caste or 0] or "olive"
 	local base = BugPalette.Colors[family]
 	assert(base, ("[BugPalette] нет семейства %s"):format(tostring(family)))
-	if data.hue and data.hue ~= 0 then
+	if (data.hue and data.hue ~= 0) or (data.sat and data.sat ~= 1) then
 		local h, sat, v = base:ToHSV()
-		base = Color3.fromHSV((h + data.hue / 360) % 1, sat, v)
+		base = Color3.fromHSV((h + (data.hue or 0) / 360) % 1, math.clamp(sat * (data.sat or 1), 0, 1), v)
 	end
 	local tone = math.clamp(data.tone or 0, -1, 1)
 	local shell = tone >= 0 and base:Lerp(BugPalette.Colors.bone, tone * LIGHTEN)
