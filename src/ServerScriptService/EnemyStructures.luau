@@ -15,6 +15,9 @@
 --            «Обычный ремонт невозможен. Меняет карту навсегда.» Навсегда — то есть
 --            до конца забега: вся арена разбирается целиком (WaveRunner.clearArena).
 --   cocoon — Кокон Кукольника: через время выпускает жука следующей касты.
+--   coat   — хитиновая корка Архитектора на стене игрока (атрибут Chitin на ней): по такой
+--            стене забегают все, как по Пандусу (Grid.ClimbFor), а Жизнь её не чинит —
+--            «обычный ремонт невозможен». Живёт, пока стоит сама стена.
 --
 -- «Все из обломков, все уничтожаются тяжёлым снарядом и горят» — отсюда ровно два
 -- способа их снести, и оба ведут в Blast ниже: разрыв навесного снаряда (Projectile.burst)
@@ -63,7 +66,13 @@ local KINDS = {
 	feeder = { hp = 120, size = Vector3.new(4.4, 2.2, 4.4), color = Color3.fromRGB(138, 120, 66) },
 	chitin = { hp = 0, size = Vector3.new(9, 0.25, 9), color = Color3.fromRGB(64, 96, 88) },
 	cocoon = { hp = 40, size = Vector3.new(2.4, 3, 2.4), color = Color3.fromRGB(198, 190, 214) },
+	coat = { hp = 0, size = Vector3.new(1, 1, 1), color = Color3.fromRGB(64, 96, 88) },
 }
+
+-- Корка хитина чуть больше самой стены и полупрозрачна: стену под ней видно, а что она
+-- уже не обычная — тоже видно.
+local COAT_MARGIN = 0.3
+local COAT_TRANSPARENCY = 0.35
 
 -- Горение конструкции: сколько HP в секунду и сколько секунд горит от одного
 -- попадания огнём. Числа баланса — здесь, как и всё остальное.
@@ -90,7 +99,7 @@ local function build(kind, position, lift, facing, size)
 	part.Name = "Body"
 	part.Size = size or spec.size
 	part.Color = spec.color
-	part.Material = kind == "chitin" and Enum.Material.Glass or Enum.Material.Slate
+	part.Material = (kind == "chitin" or kind == "coat") and Enum.Material.Glass or Enum.Material.Slate
 	part.Anchored = true
 	-- Твёрдые: всё, что лежит на карте, игрок обходит или перелезает, а трупы и лапы ложатся
 	-- сверху. Жукам это не мешает (они анкорнуты, их группа с Default не сталкивается), линии
@@ -214,6 +223,22 @@ end
 -- так работяги и Строитель конкурируют за одну кучу без отдельной брони: кто успел, тот и взял.
 --
 -- Куча убывает и зрительно: иначе разобранная наполовину руина выглядела бы как целая.
+-- Где ближайшая куча с материалом в радиусе (или nil). Строитель идёт к ней есть,
+-- а не стоит на месте, ожидая, пока куча окажется у него под ногами.
+function EnemyStructures.NearestMaterial(position, radius)
+	local best, bestDistance = nil, radius
+	for _, record in live do
+		if record.kind == "ruin" and (record.material or 0) > 0 then
+			local at = record.part.Position
+			local distance = Vector3.new(at.X - position.X, 0, at.Z - position.Z).Magnitude
+			if distance <= bestDistance then
+				best, bestDistance = at, distance
+			end
+		end
+	end
+	return best
+end
+
 function EnemyStructures.TakeMaterial(position, radius)
 	local best, bestDistance = nil, math.huge
 	for _, record in live do
@@ -262,6 +287,8 @@ function EnemyStructures.Ramp(building)
 	local model, record = build("ramp", at, KINDS.ramp.size.Y / 2)
 	record.building = building
 	building:SetAttribute("Ramped", true)
+	-- Цена стены для поиска пути сменилась без смены занятости: поля волн устарели.
+	Grid.Touch()
 	print(("[Строитель] прислонил Пандус к %s — теперь через неё забегают все")
 		:format(building.Name))
 	return model
@@ -290,6 +317,28 @@ end
 
 -- Кокон: через hatch секунд выпускает enemyType. Расстрелянный до срока не выпускает
 -- никого — в этом весь смысл «нельзя оставлять раненых».
+-- Хитиновая корка на стене игрока. Вторую поверх первой не кладёт.
+function EnemyStructures.CoatChitin(building)
+	if not building or not building.Parent or building:GetAttribute("Chitin") then
+		return nil
+	end
+	local boxCF, boxSize = building:GetBoundingBox()
+	local at = boxCF.Position
+	local floor = ConcreteFloor.HeightAt(at.X, at.Z)
+	local model, record = build("coat", at, at.Y - floor, nil,
+		boxSize + Vector3.new(COAT_MARGIN, COAT_MARGIN, COAT_MARGIN))
+	record.part.CFrame = boxCF
+	record.part.CanCollide = false
+	record.part.CanQuery = false
+	record.part.Transparency = COAT_TRANSPARENCY
+	record.building = building
+	building:SetAttribute("Chitin", true)
+	Grid.Touch()
+	print(("[Архитектор] покрыл хитином %s — по ней забегают все, ремонт невозможен")
+		:format(building.Name))
+	return model
+end
+
 function EnemyStructures.Cocoon(position, enemyType, hatchAfter, hp)
 	local model, record = build("cocoon", position, 1.5)
 	if hp then
@@ -328,6 +377,10 @@ end
 function EnemyStructures.HeightAt(x, z)
 	local best = nil
 	for _, record in live do
+		-- Корка хитина — оболочка стены игрока, высоту там даёт сама стена.
+		if record.kind == "coat" then
+			continue
+		end
 		local part = record.part
 		local cf, size = part.CFrame, part.Size
 		local p = cf:PointToObjectSpace(Vector3.new(x, cf.Position.Y, z))
@@ -414,6 +467,7 @@ local function damage(record, amount)
 	if left <= 0 then
 		if record.building and record.building.Parent then
 			record.building:SetAttribute("Ramped", nil)
+			Grid.Touch()
 		end
 
 		-- Конструкции Строителя сами «из обломков» — значит обломками и рассыпаются,
@@ -451,6 +505,7 @@ function EnemyStructures.Clear()
 	for _, record in live do
 		if record.building and record.building.Parent then
 			record.building:SetAttribute("Ramped", nil)
+			record.building:SetAttribute("Chitin", nil)
 		end
 		if record.model.Parent then
 			record.model:Destroy()
@@ -479,7 +534,10 @@ RunService.Heartbeat:Connect(function(dt)
 	for index = #live, 1, -1 do
 		local record = live[index]
 
-		if not record.model.Parent then
+		if record.kind == "coat" and not (record.building and record.building.Parent) then
+			-- Стену снесли — корка уходит вместе с ней.
+			remove(record)
+		elseif not record.model.Parent then
 			table.remove(live, index)
 			if record.kind == "wall" then
 				wallCount -= 1

@@ -295,8 +295,13 @@ end
 -- ReplicatedStorage, а тот серверный; колбек — тот же приём, что и у OnKillBarrier.
 Effects.OnAreaBlast = nil
 
--- Жук впитал элемент (Разносчик). Тот же колбек-мост в серверный EnemyBehavior.
+-- Жук впитывает элемент (Разносчик). Тот же колбек-мост в серверный EnemyBehavior:
+-- function(target, elementName, damage): number — сколько урона ушло в заряд, а не в тело.
 Effects.OnAbsorb = nil
+
+-- Жук запоминает, чем его ранили (Эволюционер привыкает к тому, что бьёт больнее всего).
+-- function(target, elementName, damage)
+Effects.OnElementHit = nil
 
 -- Изменение рельефа на месте смерти (Литосфера). Тот же приём, что и у Горы
 -- через OnKillBarrier: Effects считает только числа элемента, а бетон двигает серверный
@@ -316,8 +321,19 @@ Effects.OnCleanse = nil -- function(target): boolean
 --   Нет HitFrom — щит не срабатывает вовсе (горение, яд, зоны — щитом не закрыть).
 --   Прикрытие за чужим щитом — CoveredUntil/CoverReduction, ставит сам Щитоносец.
 --   Привычка Эволюционера — ResistElement/ResistShare.
+--   Впитывание Разносчика — атрибут Absorbs: часть удара элементом уходит в его заряд
+--   (Effects.OnAbsorb) и до тела не доходит. Тоже свойство жука, поэтому тоже до брони.
 local function mitigate(target, damage, elementData)
 	local now = os.clock()
+
+	if elementData and damage > 0 then
+		if Effects.OnElementHit and target:GetAttribute("Learns") then
+			Effects.OnElementHit(target, elementData.name, damage)
+		end
+		if Effects.OnAbsorb and target:GetAttribute("Absorbs") then
+			damage -= math.clamp(Effects.OnAbsorb(target, elementData.name, damage) or 0, 0, damage)
+		end
+	end
 
 	local shieldArc = target:GetAttribute("ShieldArc")
 	if shieldArc then
@@ -959,13 +975,10 @@ end
 function Effects.Apply(target, elementData, damage, source, owner)
 	damage = damage or 0
 
-	-- Счёт оружия игрока и впитывание Разносчика — здесь, в единственном месте, через
+	-- Счёт оружия игрока — здесь, в единственном месте, через
 	-- которое проходит ЛЮБОЕ попадание элементом — снаряд, площадь, взрыв, цепочка.
 	if elementData and damage > 0 then
 		Effects.ElementUsage[elementData.name] = (Effects.ElementUsage[elementData.name] or 0) + damage
-		if Effects.OnAbsorb and target:GetAttribute("Absorbs") then
-			Effects.OnAbsorb(target, elementData.name, damage)
-		end
 	end
 
 	-- Площадь и цепочка — первыми и без проверки на живучесть цели: бомба срабатывает

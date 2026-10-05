@@ -129,6 +129,11 @@ local function suitable(enemy, targets)
 	return true
 end
 
+-- Тень: когда какая турель впервые её увидела и когда видела последний раз.
+-- enemy -> tower -> { first, last }. Ключи слабые с обеих сторон: убитый жук и снесённая
+-- турель не держатся в памяти.
+local shadowSeen = setmetatable({}, { __mode = "k" })
+
 local function enemiesInRange(towerPosition, range, enemiesFolder, filter)
 	local targets = filter and filter.targets
 	local minRange = filter and filter.minRange
@@ -162,17 +167,28 @@ local function enemiesInRange(towerPosition, range, enemiesFolder, filter)
 					-- горизонтального направления на неё нет вовсе.
 					inArc = angle ~= nil and math.abs(Aiming.Delta(arcCenter, angle)) <= arc
 				end
-				-- Тень: «турели реагируют с задержкой. Не иммунитет. Не маскировка.»
-				-- Счёт идёт от первого момента, когда его вообще увидели: держать свой
-				-- таймер на каждую пару «турель-жук» значило бы таблицу на сотни записей
-				-- ради того же самого ощущения — он проскакивает первую секунду любого огня.
+				-- Тень: «турели реагируют с задержкой... Пока турель определила цель — он уже
+				-- прошёл». Задержка у КАЖДОЙ турели своя: вторая турель на пути заново тратит
+				-- время, чтобы его распознать. Ушёл из её поля дольше чем на ShadowForget —
+				-- она его забыла и распознаёт заново. Без стреляющего (взрыв навесного снаряда)
+				-- задержки нет: площадь бьёт место, а не того, кого распознала.
 				local shadowDelay = enemy:GetAttribute("ShadowDelay")
-				if shadowDelay and inArc then
-					local seen = enemy:GetAttribute("SeenAt")
-					if not seen then
-						enemy:SetAttribute("SeenAt", os.clock())
-						inArc = false
-					elseif os.clock() - seen < shadowDelay then
+				local shooter = filter and filter.shooter
+				if shadowDelay and inArc and shooter then
+					local byTower = shadowSeen[enemy]
+					if not byTower then
+						byTower = setmetatable({}, { __mode = "k" })
+						shadowSeen[enemy] = byTower
+					end
+					local now = os.clock()
+					local seen = byTower[shooter]
+					local forget = enemy:GetAttribute("ShadowForget") or shadowDelay
+					if not seen or now - seen.last > forget then
+						seen = { first = now, last = now }
+						byTower[shooter] = seen
+					end
+					seen.last = now
+					if now - seen.first < shadowDelay then
 						inArc = false
 					end
 				end
