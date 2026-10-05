@@ -381,10 +381,10 @@ function Theme.Escape(text)
 	return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
 end
 
--- Строка статуса для плашки: «РАЗДЕЛ  //  текст» — как подвал главного меню
+-- Строка статуса для плашки: «РАЗДЕЛ: текст» — как подвал главного меню
 -- (Theme.Status), но без настройки самой надписи: плашки забега переносят строки.
 function Theme.StatusText(section, detail)
-	return ('<font color="%s">%s  //</font>  %s'):format(
+	return ('<font color="%s">%s:</font>  %s'):format(
 		Theme.Hex(Theme.color.accentDim),
 		Theme.Caps(section),
 		Theme.Escape(detail)
@@ -396,7 +396,7 @@ end
 -- (замечание автора: «бирюза хорошо на чёрном, на светлом нет»). Раздел — светло-серым,
 -- текст — белым; бирюза на арене остаётся только у кнопок и полосок.
 function Theme.ArenaText(section, detail)
-	return ('<font color="%s">%s  //</font>  %s'):format(
+	return ('<font color="%s">%s:</font>  %s'):format(
 		Theme.Hex(Theme.color.textDim),
 		Theme.Caps(section),
 		detail
@@ -436,11 +436,9 @@ function Theme.Title(label, color)
 	if mark then
 		mark:Destroy()
 	end
-	local text = Theme.Caps(label.Text)
-	if label.TextXAlignment == Enum.TextXAlignment.Left and text:sub(1, 1) ~= ">" then
-		text = "> " .. text
-	end
-	label.Text = text
+	-- Без печатной скобки «>» в начале: декоративные «>» и «//» убраны из всех
+	-- интерфейсов (решение автора). Заголовок — просто заглавными.
+	label.Text = Theme.Caps(label.Text)
 	return label
 end
 
@@ -472,7 +470,7 @@ function Theme.Section(label, caption, note)
 	label.TextColor3 = Theme.color.textMute
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Text = note ~= nil
-		and ("%s  //  %s"):format(Theme.Caps(caption), Theme.Caps(tostring(note)))
+		and ("%s · %s"):format(Theme.Caps(caption), Theme.Caps(tostring(note)))
 		or Theme.Caps(caption)
 
 	local rule = label:FindFirstChild("Rule")
@@ -521,7 +519,7 @@ function Theme.Rule(frame)
 	return frame
 end
 
--- Статусная строка по низу окна: слева — раздел заглавными, через «//» — то, что
+-- Статусная строка по низу окна: слева — раздел заглавными, через двоеточие — то, что
 -- сейчас можно сделать. Подсказки раньше стояли внутри вкладок и отъедали высоту
 -- у списков; в одной строке внизу они ещё и находятся всегда на одном месте.
 function Theme.Status(label, section, detail)
@@ -531,7 +529,7 @@ function Theme.Status(label, section, detail)
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.TextColor3 = Theme.color.textMute
 	label.TextTruncate = Enum.TextTruncate.AtEnd
-	label.Text = ('<font color="%s">%s  //</font>  %s'):format(
+	label.Text = ('<font color="%s">%s:</font>  %s'):format(
 		Theme.Hex(Theme.color.accentDim),
 		Theme.Caps(section),
 		detail

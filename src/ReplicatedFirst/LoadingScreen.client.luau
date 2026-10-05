@@ -316,7 +316,7 @@ if okTips and type(tipLists) == "table" then
 			pos = 1
 		end
 		local entry = deck[pos]
-		head.Text = "> " .. KIND_CAPTION[entry.kind]
+		head.Text = KIND_CAPTION[entry.kind]
 		body.Text = entry.text
 		shownAt = os.clock()
 	end

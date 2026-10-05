@@ -150,7 +150,7 @@ titleLabel.Size = UDim2.fromOffset(0, 20)
 titleLabel.AutomaticSize = Enum.AutomaticSize.X
 titleLabel.TextSize = 18
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Text = "> " .. Theme.Caps("забег")
+titleLabel.Text = Theme.Caps("забег")
 titleLabel.BackgroundTransparency = 1
 titleLabel.Parent = titlePill
 Theme.Title(titleLabel)
@@ -171,7 +171,7 @@ levelLabel.Parent = titlePill
 local function updateLevel()
 	local number = ReplicatedStorage:GetAttribute("RunLevel")
 	local level = typeof(number) == "number" and Levels[number]
-	levelLabel.Text = level and ("УРОВЕНЬ %d  //  %s"):format(number, Theme.Caps(level.name)) or ""
+	levelLabel.Text = level and ("УРОВЕНЬ %d · %s"):format(number, Theme.Caps(level.name)) or ""
 	levelLabel.Visible = level ~= nil and level ~= false
 end
 ReplicatedStorage:GetAttributeChangedSignal("RunLevel"):Connect(updateLevel)
@@ -347,16 +347,14 @@ local journalEntries = {} -- новые первыми: { label = TextLabel, tex
 local journalOrder = 0
 local inRun = false
 
--- Новая строка — белым с красной скобкой, старые тише: глаз сразу находит последнее.
+-- Новая строка — белым, старые тише: глаз сразу находит последнее. Скобки «>»
+-- в начале строк нет: декоративные «>» и «//» убраны из всех интерфейсов (решение автора).
 local function paintJournal()
 	for index, entry in journalEntries do
 		entry.label.LayoutOrder = index
 		local newest = index == 1
 		entry.label.TextColor3 = newest and Theme.color.text or (index == 2 and Theme.color.textDim or Theme.color.textMute)
-		entry.label.Text = ('<font color="%s">&gt;</font> %s'):format(
-			Theme.Hex(newest and Theme.color.danger or entry.label.TextColor3),
-			entry.text
-		)
+		entry.label.Text = entry.text
 	end
 	journal.Visible = #journalEntries > 0
 end
@@ -702,14 +700,14 @@ Remotes.RunEnded.OnClientEvent:Connect(function(won, levelNumber)
 	end
 	resultLabel.TextColor3 = Theme.Legible(tone)
 	if resultCaption then
-		resultCaption.Text = won and "ЗАБЕГ ОКОНЧЕН  //  прочность стола сохранена"
-			or "ЗАБЕГ ОКОНЧЕН  //  лаборатория прорвана"
+		resultCaption.Text = won and "ЗАБЕГ ОКОНЧЕН: прочность стола сохранена"
+			or "ЗАБЕГ ОКОНЧЕН: лаборатория прорвана"
 		-- Обучение пройдено (задача #298): сказать, куда «Играть» поведёт дальше.
 		local level = won and typeof(levelNumber) == "number" and Levels[levelNumber]
 		if level and level.tutorial then
 			local nextLevel = Levels[levelNumber + 1]
 			resultCaption.Text = nextLevel
-				and ("ОБУЧЕНИЕ ПРОЙДЕНО  //  открыт уровень %d «%s»"):format(levelNumber + 1, nextLevel.name)
+				and ("ОБУЧЕНИЕ ПРОЙДЕНО: открыт уровень %d «%s»"):format(levelNumber + 1, nextLevel.name)
 				or "ОБУЧЕНИЕ ПРОЙДЕНО"
 		end
 	end
