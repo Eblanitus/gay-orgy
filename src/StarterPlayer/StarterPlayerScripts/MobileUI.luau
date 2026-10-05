@@ -2,6 +2,7 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local GuiService = game:GetService("GuiService")
+local TextService = game:GetService("TextService")
 
 local MobileUI = {}
 
@@ -110,26 +111,58 @@ MobileUI.FOOTER_BOTTOM = MobileUI.isMobile and 18 or 26 -- низ строки 0
 MobileUI.FOOTER_LINE = MobileUI.isMobile and 28 or 32 -- шаг между строками
 MobileUI.FOOTER_SIDE = MobileUI.isMobile and 180 or 330
 
--- Ставит строку подвала: по центру, низом на своей строке, ширина и высота — по тексту
+-- Ставит строку подвала: по центру, низом на своей строке, ширина — по тексту
 -- (подложка только под самой надписью, без полосы во всю ширину). Не шире места между
 -- боковыми отступами: длиннее — переносится и растёт вверх. side — свой боковой отступ.
+--
+-- Ширину считаем сами замером текста, а не AutomaticSize X: с переносом строк (TextWrapped)
+-- движок ужимал строку по своему и рвал фразу посреди экрана, хотя места хватало
+-- (скрины автора: «…клавиша E у / турели» при пустой половине экрана). Высота — по
+-- тексту (AutomaticSize Y). Перемеряется при смене текста, кегля и размера экрана.
+local function plainText(text)
+	text = text:gsub("<[^>]*>", "")
+	return (text:gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&amp;", "&"))
+end
+
+local function fitFooter(gui)
+	local side = gui:GetAttribute("FooterSide") or MobileUI.FOOTER_SIDE
+	local maxWidth = math.max(200, MobileUI.viewportX - 2 * side)
+	local pad = gui:FindFirstChildOfClass("UIPadding")
+	local padX = pad and (pad.PaddingLeft.Offset + pad.PaddingRight.Offset) or 0
+	local text = gui.RichText and plainText(gui.Text) or gui.Text
+	local width = maxWidth
+	local ok, bounds = pcall(function()
+		local params = Instance.new("GetTextBoundsParams")
+		params.Text = text
+		params.Font = gui.FontFace
+		params.Size = gui.TextSize
+		params.Width = 100000
+		return TextService:GetTextBoundsAsync(params)
+	end)
+	if ok and bounds then
+		-- Запас в несколько пикселей: замер и отрисовка расходятся на доли пикселя,
+		-- и строка ровно по замеру иногда всё равно уходила на вторую строку.
+		width = math.min(maxWidth, math.ceil(bounds.X) + padX + 6)
+	end
+	gui.Size = UDim2.new(0, width, 0, 0)
+end
+
 function MobileUI.FooterLine(gui, line, side)
 	gui.AnchorPoint = Vector2.new(0.5, 1)
 	gui.Position = UDim2.new(0.5, 0, 1, -(MobileUI.FOOTER_BOTTOM + line * MobileUI.FOOTER_LINE))
-	gui.Size = UDim2.new(0, 0, 0, 0)
-	gui.AutomaticSize = Enum.AutomaticSize.XY
-	local limit = gui:FindFirstChild("FooterLimit")
-	if not limit then
-		limit = Instance.new("UISizeConstraint")
-		limit.Name = "FooterLimit"
-		limit.Parent = gui
-		MobileUI.OnViewportChanged(function()
-			local margin = gui:GetAttribute("FooterSide") or MobileUI.FOOTER_SIDE
-			limit.MaxSize = Vector2.new(math.max(200, MobileUI.viewportX - 2 * margin), math.huge)
-		end)
-	end
+	gui.AutomaticSize = Enum.AutomaticSize.Y
 	gui:SetAttribute("FooterSide", side or MobileUI.FOOTER_SIDE)
-	limit.MaxSize = Vector2.new(math.max(200, MobileUI.viewportX - 2 * (side or MobileUI.FOOTER_SIDE)), math.huge)
+	if not gui:GetAttribute("FooterWatch") then
+		gui:SetAttribute("FooterWatch", true)
+		local function refit()
+			task.spawn(fitFooter, gui) -- замер текста ждёт движок
+		end
+		gui:GetPropertyChangedSignal("Text"):Connect(refit)
+		gui:GetPropertyChangedSignal("TextSize"):Connect(refit)
+		gui:GetPropertyChangedSignal("FontFace"):Connect(refit)
+		MobileUI.OnViewportChanged(refit)
+	end
+	task.spawn(fitFooter, gui)
 	return gui
 end
 
