@@ -379,11 +379,134 @@ def MusicBunker(rng):
     return softclip(x, 1.2)
 
 
+def _comb(x, delay, g):
+    """Гребёнка с обратной связью y[n] = x[n] + g*y[n-D], блоками по D сэмплов."""
+    d = int(delay * SR)
+    y = x.copy()
+    for i in range(d, len(y), d):
+        j = min(len(y), i + d)
+        y[i:j] += g * y[i - d:j - d]
+    return y
+
+
+def _allpass(x, delay, g):
+    d = int(delay * SR)
+    y = -g * x
+    y[d:] += x[:-d]
+    for i in range(d, len(y), d):
+        j = min(len(y), i + d)
+        y[i:j] += g * y[i - d:j - d]
+    return y
+
+
+def reverb(x, size=1.0, damp=3500):
+    """Простой ревер Шрёдера: 4 гребёнки параллельно, 2 фазовращателя последовательно."""
+    wet = sum(_comb(lp(x, damp), dl * size, 0.84) for dl in (0.0297, 0.0371, 0.0411, 0.0437)) / 4
+    for dl in (0.005, 0.0017):
+        wet = _allpass(wet, dl, 0.7)
+    return wet
+
+
+def bell(f, seconds, decay):
+    """Стеклянный колокольчик: негармонические обертоны, верхние гаснут быстрее."""
+    t = t_axis(seconds)
+    x = np.zeros_like(t)
+    for k, a in ((1, 1.0), (2.76, 0.45), (5.4, 0.22), (8.93, 0.1)):
+        x += a * np.sin(2 * np.pi * f * k * t) * np.exp(-t * k / decay)
+    return x * np.minimum(t / 0.003, 1)
+
+
+def MusicMenu(rng):
+    # Петля 64 с (16 тактов по 4/4, 60 BPM), ре минор с до-диезом: гул, пэд, стеклянная
+    # мелодия, пузыри в колбах и редкие удары «сердца». Хвост ревера переносится в начало.
+    beat = 1.0
+    bar = 4 * beat
+    d = 16 * bar
+    tail = 8.0
+    full = d + tail
+    x = np.zeros(int(full * SR))
+    t = t_axis(full)
+    N = {"D3": 146.83, "E4": 329.63, "F4": 349.23, "G4": 392.0, "A4": 440.0, "Bb4": 466.16,
+         "C#5": 554.37, "D5": 587.33, "E5": 659.26, "F5": 698.46, "G5": 783.99, "A5": 880.0}
+    # аккорд на каждые 2 такта: Dm Bb Gm A, дважды
+    chords = [
+        (36.71, [146.83, 174.61, 220.0]),   # Dm
+        (29.14, [116.54, 146.83, 174.61]),  # Bb
+        (24.50, [98.0, 116.54, 146.83]),    # Gm
+        (27.50, [110.0, 138.59, 164.81]),   # A
+    ] * 2
+
+    # гул: ре и ля снизу, медленно дышит
+    drone = (0.3 * np.sin(2 * np.pi * 36.71 * t) + np.sin(2 * np.pi * 73.42 * t)
+             + 0.5 * np.sin(2 * np.pi * 110.0 * t) + 0.4 * lp(saw(73.42, full), 400)) \
+        * (0.75 + 0.25 * np.sin(2 * np.pi * t / 16))
+    x += drone * 0.1
+
+    # пэд и бас по аккордам, с мягкими краями
+    seg = 2 * bar
+    for i, (root, notes) in enumerate(chords):
+        tt = t_axis(seg + 1.5)
+        edge = np.minimum(tt / 1.2, 1) * np.minimum(np.maximum(seg + 1.5 - tt, 0) / 1.5, 1)
+        p = sum(saw(f * (1 + det), seg + 1.5) for f in notes for det in (-0.004, 0.0, 0.004))
+        bright = lp(p, 1400)
+        dark = lp(p, 450)
+        sway = 0.5 + 0.5 * np.sin(2 * np.pi * tt / seg - np.pi / 2)
+        place(x, (dark * (1 - sway) + bright * sway) * edge * 0.045, i * seg)
+        bass = lp(saw(root * 2, seg + 1.5), 260) * edge * 0.12
+        place(x, bass, i * seg)
+
+    # мелодия восьмыми (позиция в восьмых внутри 2 тактов, нота)
+    phrases = [
+        [(0, "A4"), (2, "D5"), (4, "E5"), (5, "F5"), (7, "E5"), (8, "D5"), (11, "C#5"), (12, "A4")],
+        [(0, "F5"), (2, "D5"), (4, "Bb4"), (6, "A4"), (8, "F4"), (10, "G4"), (12, "A4")],
+        [(0, "G4"), (2, "Bb4"), (4, "D5"), (6, "G5"), (8, "F5"), (10, "E5"), (12, "D5")],
+        [(0, "E5"), (2, "C#5"), (4, "A4"), (6, "E4"), (8, "G4"), (10, "F4"), (12, "E4")],
+    ]
+    mel = np.zeros_like(x)
+    for slot in range(1, 8):
+        for pos, name in phrases[slot % 4]:
+            f = N[name] * (2 if slot >= 5 and pos % 4 == 0 else 1)
+            v = 0.3 if slot >= 4 else 0.24
+            place(mel, bell(f, 3.0, 1.1) * v * rng.uniform(0.8, 1.0), slot * seg + pos * beat / 2)
+    # тихое арпеджио «музыкальной шкатулки» во второй половине
+    for slot in range(4, 8):
+        notes = chords[slot][1]
+        for k in range(16):
+            f = notes[(k * 2) % 3] * 4 * (2 if k % 8 == 7 else 1)
+            place(mel, bell(f, 1.0, 0.35) * 0.06, slot * seg + k * beat / 2 + beat / 4)
+    # глубокий колокол в начале каждой четверти петли
+    for q in range(4):
+        place(mel, lp(bell(N["D3"], 7.0, 4.0), 2500) * 0.14, q * 4 * bar)
+
+    # пузыри в колбах: короткие писки с подъёмом высоты, серии по несколько
+    for _ in range(46):
+        at = rng.uniform(0, d)
+        for b in range(rng.integers(1, 4)):
+            f = rng.uniform(380, 1100)
+            dur = rng.uniform(0.04, 0.09)
+            blip = sweep(dur, f, f * rng.uniform(1.6, 2.4)) * env_exp(dur, dur / 3, 0.004)
+            place(mel, lp(blip, 2600) * rng.uniform(0.03, 0.07), at + b * rng.uniform(0.07, 0.2))
+
+    x += mel + reverb(mel, 1.6, 3000) * 1.1 + reverb(x, 1.8, 1200) * 0.3
+
+    # «сердце»: двойной глухой удар раз в такт с 5-го по 12-й
+    for b in range(4, 12):
+        for k, (at, v) in enumerate(((0.0, 0.5), (0.32, 0.32))):
+            thud = sweep(0.4, 70, 38) * env_exp(0.4, 0.11, 0.003)
+            place(x, lp(thud, 220) * v * 0.6, b * bar + at)
+
+    # хвост — в начало петли
+    n = int(d * SR)
+    out = x[:n].copy()
+    out[: len(x) - n] += x[n:]
+    return softclip(out, 1.1)
+
+
 ALL = [ShotFlask, ShotInjector, DroneLaunch, Boom, DroneBoom, Quake, Splash, Sizzle,
        DeathSmall, DeathMedium, DeathBig, Splat, Shatter, WingBuzz, HumArea,
-       WaveStart, RunWin, RunLose, AmbientBunker, MusicBunker]
+       WaveStart, RunWin, RunLose, AmbientBunker, MusicBunker, MusicMenu]
 
-LOOPS = {"WingBuzz", "HumArea", "AmbientBunker", "MusicBunker"}
+LOOPS = {"WingBuzz", "HumArea", "AmbientBunker", "MusicBunker", "MusicMenu"}
 
 
 def write(name, x):

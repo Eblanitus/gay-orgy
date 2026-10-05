@@ -8,6 +8,7 @@
 -- Звук в мире висит на Attachment в Terrain в точке события и стихает с расстоянием
 -- до камеры (near/far из таблицы). Петли (гул турели, крылья) живут на самой модели
 -- и уходят вместе с ней.
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
@@ -253,19 +254,56 @@ if ambient then
 	ambient:Play()
 end
 
+-- Две музыки: бункерная (тише вне забега) и своя у главного меню. Пока меню открыто,
+-- играет только его трек, закрылось — возвращается бункерная. Обе крутятся всё время,
+-- меняется лишь громкость, поэтому трек продолжается с того места, где его притушили.
 local music = make(SoundBank.Music)
 local musicVolume = music and music.Volume
-if music then
-	music.Volume = musicVolume * SoundBank.MUSIC_IDLE
-	music.Parent = SoundService
-	music:Play()
-end
+local menuMusic = make(SoundBank.MenuMusic)
+local menuVolume = menuMusic and menuMusic.Volume
+local musicLevel = SoundBank.MUSIC_IDLE
+local menuOpen = false
 
-local function musicTo(factor)
-	if music then
-		TweenService:Create(music, TweenInfo.new(SoundBank.MUSIC_FADE), { Volume = musicVolume * factor }):Play()
+local function fadeTo(sound, volume)
+	if sound then
+		TweenService:Create(sound, TweenInfo.new(SoundBank.MUSIC_FADE), { Volume = volume }):Play()
 	end
 end
+
+local function applyMusic()
+	fadeTo(music, musicVolume and musicVolume * (menuOpen and 0 or musicLevel))
+	fadeTo(menuMusic, menuVolume and menuVolume * (menuOpen and 1 or 0))
+end
+
+-- Звука может не быть (не загружен) — тогда nil, и {music, menuMusic} оборвался бы на нём.
+local function start(sound)
+	if sound then
+		sound.Volume = 0
+		sound.Parent = SoundService
+		sound:Play()
+	end
+end
+start(music)
+start(menuMusic)
+applyMusic()
+
+local function musicTo(factor)
+	musicLevel = factor
+	applyMusic()
+end
+
+-- Меню (MainMenu.client) — ScreenGui «MainMenu» в PlayerGui, открыто = Enabled.
+task.spawn(function()
+	local menu = Players.LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("MainMenu")
+	local function sync()
+		if menu.Enabled ~= menuOpen then
+			menuOpen = menu.Enabled
+			applyMusic()
+		end
+	end
+	menu:GetPropertyChangedSignal("Enabled"):Connect(sync)
+	sync()
+end)
 
 Remotes:WaitForChild("WaveChanged").OnClientEvent:Connect(function()
 	play("WaveStart")

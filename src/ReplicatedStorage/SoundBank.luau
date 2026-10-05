@@ -51,6 +51,7 @@ SoundBank.Sounds = {
 	-- Фон
 	AmbientBunker = { group = "Ambient", volume = 0.5, pitch = { 1, 1 }, looped = true },
 	MusicBunker = { group = "Music", volume = 0.35, pitch = { 1, 1 }, looped = true },
+	MusicMenu = { group = "Music", volume = 0.45, pitch = { 1, 1 }, looped = true },
 }
 
 -- Выстрел — по типу турели (атрибут Type, Towers). Нет строки — турель стреляет молча.
@@ -101,7 +102,9 @@ SoundBank.BLAST_GAIN = { 0.7, 1.4 }
 -- Фон и музыка
 SoundBank.Ambient = "AmbientBunker"
 SoundBank.Music = "MusicBunker"
--- Насколько тише музыка, пока забега нет (лобби, меню) — множитель громкости.
+-- Своя музыка главного меню: пока меню открыто, играет она, а бункерная молчит.
+SoundBank.MenuMusic = "MusicMenu"
+-- Насколько тише бункерная музыка, пока забега нет (лобби без меню) — множитель громкости.
 SoundBank.MUSIC_IDLE = 0.6
 -- За сколько секунд музыка плавно меняет громкость.
 SoundBank.MUSIC_FADE = 2
