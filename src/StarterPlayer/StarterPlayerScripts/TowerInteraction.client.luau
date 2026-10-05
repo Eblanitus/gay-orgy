@@ -559,12 +559,10 @@ minRangeIndicator.Parent = Workspace
 
 local buildHint = Instance.new("TextLabel")
 -- Строка стройки — нижняя строка подвала рамки забега (MobileUI.FooterLine), под шагом
--- обучения. Плашки нет: текст лежит на арене под тенью от края (Hud), раздел светло-серым,
+-- обучения. Шириной по тексту, тёмная подложка только под ним; раздел светло-серым,
 -- выбранная постройка белым — бирюза на светлой арене не читалась (замечание автора).
 -- Переноса нет: хвост с клавишами длинный, и строка в две строки налезла бы на обучение.
 MobileUI.FooterLine(buildHint, 0)
-buildHint.AutomaticSize = Enum.AutomaticSize.None
-buildHint.Size = UDim2.new(1, -2 * MobileUI.FOOTER_SIDE, 0, MobileUI.FOOTER_LINE - 4)
 buildHint.FontFace = Theme.font.body
 buildHint.TextSize = MobileUI.isMobile and Theme.MIN_TEXT or 15
 buildHint.RichText = true
@@ -572,7 +570,15 @@ buildHint.TextColor3 = Theme.color.textDim
 buildHint.TextTruncate = Enum.TextTruncate.AtEnd
 buildHint.Visible = false
 buildHint.Parent = controlsGui
-Theme.ArenaLabel(buildHint)
+-- Тёмная подложка только под строкой (Theme.ArenaBacking), без полосы во всю ширину.
+Theme.ArenaBacking(buildHint)
+
+local buildHintPad = Instance.new("UIPadding")
+buildHintPad.PaddingTop = UDim.new(0, 4)
+buildHintPad.PaddingBottom = UDim.new(0, 4)
+buildHintPad.PaddingLeft = UDim.new(0, 12)
+buildHintPad.PaddingRight = UDim.new(0, 12)
+buildHintPad.Parent = buildHint
 
 -- Что можно строить, в порядке цифровых клавиш. Имена и цены берутся из таблицы Towers:
 -- добавить постройку = добавить строку туда и ключ сюда, подсказка подстроится сама.

@@ -835,16 +835,23 @@ local openGui = Instance.new("ScreenGui")
 openGui.Name = "MainMenuButton"
 openGui.ResetOnSpawn = false
 openGui.DisplayOrder = MobileUI.Layer.Controls
+-- Кнопка стоит в самой полосе Roblox сверху, на одной линии с его кнопками и шапкой
+-- забега (Hud), — отсчёт от верха экрана.
+openGui.IgnoreGuiInset = true
 openGui.Parent = playerGui
 
 local openButton = Instance.new("TextButton")
 openButton.Name = "MenuButton"
--- Правый верхний угол, внутри рамки забега (Hud): квадратная кнопка со значком
--- без надписи (просьба автора). Значок — четыре квадрата, а не «≡»: три черты
--- уже стоят у самого Roblox в его панели слева сверху, и два одинаковых значка
--- на экране читались как одна и та же кнопка. Место в столбце считает MobileUI.
-MobileUI.TopRight(openButton, MobileUI.CornerSlot.Menu)
-openButton.Size = UDim2.fromOffset(MobileUI.CORNER_H, MobileUI.CORNER_H)
+-- Правый верхний угол в полосе Roblox: квадратная кнопка со значком без надписи
+-- (просьба автора). Значок — четыре квадрата, а не «≡»: три черты уже стоят у самого
+-- Roblox в его панели слева сверху, и два одинаковых значка читались как одна кнопка.
+local OPEN_SIDE = mobile and MobileUI.MIN_TAP or 44 -- как плашки шапки забега (Hud)
+openButton.AnchorPoint = Vector2.new(1, 0)
+openButton.Size = UDim2.fromOffset(OPEN_SIDE, OPEN_SIDE)
+MobileUI.OnViewportChanged(function()
+	local y = math.max(0, math.floor((MobileUI.Topbar.height - OPEN_SIDE) / 2))
+	openButton.Position = UDim2.new(1, -16, 0, y)
+end)
 openButton.Text = ""
 openButton.Parent = openGui
 Theme.HudButton(openButton)
