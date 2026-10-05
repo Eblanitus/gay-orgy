@@ -119,6 +119,7 @@ local Enemies = {
 		model = "ArmoredBeetleTemplate",
 		scale = 2.7,
 		tone = -0.6, -- раскраска BugPalette; бронепластины модели остаются своим цветом
+		hue = 110,
 	},
 	-- Тир 0. Меньше HP и меньше физический размер
 	-- модели — читается на поле без взгляда на полоску HP. Своей механики роя нет —
@@ -144,6 +145,7 @@ local Enemies = {
 		scaleRange = {0.58, 1.88},
 		model = "MiniBeetleTemplate",
 		tone = 0.45, -- мелкий — светлее Стандарта (BugPalette)
+		hue = -12,
 		matter = 3,
 	},
 	-- Тир 0. Летающий: не участвует в поиске пути по сетке
@@ -174,6 +176,7 @@ local Enemies = {
 		model = "FacehuggerTemplate",
 		scale = 3.11,
 		tone = 0.3,
+		hue = 18,
 	},
 
 	-- ===================== Каста 0 — Разведчики (продолжение) =====================
@@ -255,6 +258,7 @@ local Enemies = {
 			pit = { time = 3, radius = 4, depth = 6, core = 1 },
 		},
 		tone = -0.4, -- толстый — темнее
+		hue = -8,
 		matter = 14,
 	},
 
@@ -282,6 +286,7 @@ local Enemies = {
 		model = "PelicanBeetleTemplate",
 		scale = 3.93,
 		tone = 0.15,
+		hue = 8,
 		matter = 12,
 	},
 
@@ -305,6 +310,7 @@ local Enemies = {
 		model = "AcidSpitterTemplate",
 		scale = 3.37,
 		tone = 0,
+		hue = 14,
 	},
 
 	-- «Не атакует. Лечит других жуков... Убить медика приоритетнее, но он за
@@ -332,6 +338,7 @@ local Enemies = {
 		model = "MedicTemplate",
 		scale = 2.96,
 		tone = 0.25,
+		hue = 5,
 	},
 
 	-- «Прилетает на карту, откладывает личинку и уходит.» Уход — это именно уход
@@ -350,6 +357,7 @@ local Enemies = {
 		model = "QueenTemplate",
 		scale = 3.53,
 		tone = -0.2,
+		hue = -6,
 	},
 
 	-- Личинка Матки: «стоит на месте. Через время вылупляется большая группа
@@ -392,6 +400,7 @@ local Enemies = {
 		model = "BomberTemplate",
 		scale = 2.64,
 		tone = 0,
+		hue = 8,
 	},
 
 	-- «Несёт широкий лобовой щит. Закрывает не только себя, но и идущих сзади...
@@ -414,6 +423,7 @@ local Enemies = {
 		model = "ShieldBearerTemplate",
 		scale = 3.82,
 		tone = -0.3,
+		hue = -6,
 	},
 
 	-- «Не трогает стены. Указывает солдатам какую турель атаковать.»
@@ -431,6 +441,7 @@ local Enemies = {
 		model = "CoordinatorTemplate",
 		scale = 2.94,
 		tone = 0.15,
+		hue = 4,
 	},
 
 	-- «Долго нацеливается. Разгоняется по прямой... На разгоне не поворачивает.
@@ -452,6 +463,7 @@ local Enemies = {
 		model = "RamTemplate",
 		scale = 4.21,
 		tone = -0.5,
+		hue = -10,
 	},
 
 	-- «Маленький. Очень быстрый. Мало здоровья. Летит к лаборатории мимо всего.»
@@ -472,6 +484,7 @@ local Enemies = {
 		model = "SprinterTemplate",
 		scale = 2.09,
 		tone = 0.4,
+		hue = 12,
 	},
 
 	-- «Огромный размер. Очень много здоровья. Высокая броня. Низкая скорость.»
@@ -493,6 +506,7 @@ local Enemies = {
 		model = "GiantTemplate",
 		scale = 5.86,
 		tone = -0.7,
+		hue = -3,
 	},
 
 	-- «Очень высокая регенерация... Нужен тяжёлый снаряд или комбо чтобы
@@ -513,6 +527,7 @@ local Enemies = {
 		model = "KnitterTemplate",
 		scale = 3.2,
 		tone = 0.1,
+		hue = -14,
 	},
 
 	-- ========================== Каста 3 — Особые ==========================
@@ -539,6 +554,7 @@ local Enemies = {
 		model = "AbsorberTemplate",
 		scale = 2.6,
 		tone = 0,
+		hue = 32,
 	},
 
 	-- «Адаптируется к самому эффективному оружию игрока... Игрок вынужден
@@ -560,6 +576,7 @@ local Enemies = {
 		model = "EvolverTemplate",
 		scale = 3.2,
 		tone = 0,
+		hue = -10,
 	},
 
 	-- «Несёт внутри других жуков. Уничтожен — жуки высыпаются. Если добрался
@@ -579,6 +596,7 @@ local Enemies = {
 		model = "CarrierTemplate",
 		scale = 4.25,
 		tone = -0.4,
+		hue = 8,
 	},
 
 	-- «Заворачивает раненого жука в кокон. Через время из кокона выходит жук
@@ -600,6 +618,7 @@ local Enemies = {
 		model = "PuppeteerTemplate",
 		scale = 2.52,
 		tone = 0.2,
+		hue = 22,
 	},
 
 	-- «Заменяет пол и стены хитином. На хитине жуки быстрее. Обычный ремонт
@@ -620,6 +639,7 @@ local Enemies = {
 		model = "HiveArchitectTemplate",
 		scale = 3.94,
 		tone = -0.3,
+		hue = -8,
 	},
 
 	-- «Маскируется под мешок, обломок или даже турель. Стоит неподвижно.

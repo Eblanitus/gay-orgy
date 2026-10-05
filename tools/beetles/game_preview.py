@@ -9,10 +9,10 @@ from species2 import SPECIES2
 
 SPECIES = {**SPECIES, **SPECIES2}
 
-HEX = {"olive": "#66703F", "ochre": "#9A7238", "brick": "#8C3B2A", "plum": "#5B3F63", "bone": "#D3C7A6",
+HEX = {"olive": "#66703F", "ochre": "#9A7238", "brick": "#8C3B2A", "blue": "#3F5573", "bone": "#D3C7A6",
        "tar": "#2A2522"}
-BY_CASTE = {0: "olive", 1: "ochre", 2: "brick", 3: "plum"}
-# Каста / семейство и тон — из src/ReplicatedStorage/Enemies.luau.
+BY_CASTE = {0: "olive", 1: "ochre", 2: "brick", 3: "blue"}
+# Каста / семейство и тон (и HUE ниже) — из src/ReplicatedStorage/Enemies.luau.
 ENEMY = {"standard_beetle": (0, None, 0), "worker_beetle": (1, None, 0), "mini_beetle": (0, None, 0.45),
          "hmuryi_bron": (0, None, -0.6), "moth": (0, "bone", 0), "builder_beetle": (1, None, -0.4),
          "pelican_beetle": (1, None, 0.15),
@@ -42,9 +42,19 @@ def lin(c):
     return [x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
 
 
+HUE = {"mini_beetle": -12, "hmuryi_bron": 110, "builder_beetle": -8, "pelican_beetle": 8, "acid_spitter": 14,
+       "medic": 5, "queen": -6, "bomber": 8, "shield_bearer": -6, "coordinator": 4, "ram": -10, "sprinter": 12,
+       "giant": -3, "knitter": -14, "facehugger": 18, "absorber": 32, "evolver": -10, "carrier": 8, "puppeteer": 22,
+       "hive_architect": -8}
+
+
 def palette(src):
     caste, family, tone = ENEMY[src]
     base = rgb(HEX[family or BY_CASTE[caste]])
+    if HUE.get(src):
+        import colorsys
+        h, s, v = colorsys.rgb_to_hsv(*base)
+        base = list(colorsys.hsv_to_rgb((h + HUE[src] / 360) % 1, s, v))
     shell = lerp(base, rgb(HEX["bone"]), tone * 0.4) if tone >= 0 else lerp(base, rgb(HEX["tar"]), -tone * 0.5)
     tar = rgb(HEX["tar"])
     return {"chitin": shell, "elytra": lerp(shell, tar, 0.12), "head": lerp(shell, tar, 0.32),
