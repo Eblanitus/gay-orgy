@@ -169,7 +169,9 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 			front = name == "leg_front_left" or name == "leg_front_right",
 		})
 	end
-	EnemyGait.Attach(model, legs)
+	-- Почерк движения вида берётся по имени шаблона (EnemyGaitStyles): сам шаблон и
+	-- есть вид, отдельного поля для этого не нужно.
+	EnemyGait.Attach(model, legs, templateName)
 	storeFeet(model, legs)
 	EnemyBody.Measure(model)
 	return model
@@ -240,7 +242,9 @@ local function buildPrimitive(enemyData, scale)
 
 	model.PrimaryPart = body
 	model:SetAttribute("Scale", scale)
-	EnemyGait.Attach(model, legs)
+	-- Примитив собран вместо шаблона вида (шаблона ещё нет в месте) — почерк тот же,
+	-- что был бы у шаблона: вид от этого не меняется.
+	EnemyGait.Attach(model, legs, enemyData.model)
 	storeFeet(model, legs)
 	return model
 end

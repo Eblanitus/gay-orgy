@@ -22,6 +22,10 @@
 local Workspace = game:GetService("Workspace")
 -- Спина соседа под лапой — по общей с толкучкой формуле (EnemyBody.BackHeight).
 local EnemyBody = require(script.Parent:WaitForChild("EnemyBody"))
+-- Почерк вида: множители и амплитуды поверх этой походки (EnemyGaitStyles). Все числа
+-- ниже остаются числами СТАНДАРТА, а вид отличается от него множителем из таблицы —
+-- так ни один вид не требует своей ветки в коде.
+local EnemyGaitStyles = require(script.Parent:WaitForChild("EnemyGaitStyles"))
 
 local EnemyGait = {}
 
@@ -238,6 +242,25 @@ local CHEW_SWING = 0.16 -- studs амплитуды
 -- держится на расползшихся лапах и выцветании (см. Corpses), а не на перевёртыше.
 local DEATH_SPLAY = 1.25
 local DEATH_DROP = 0.3
+
+-- ======================= Почерк вида (EnemyGaitStyles) =======================
+--
+-- Поверх общей походки каждый вид получает свой подскок, валкость, дыхание и озирание.
+-- Все четыре слоя считаются над ОДНИМ кадром тела, который и так пересчитывается каждый
+-- кадр (см. carryBody/react): ни одной лишней детали и ни одного лишнего прохода по
+-- деталям они не добавляют — важно на телефоне, где жуков до ~39.
+--
+-- Ниже какого хода (в единицах Стандарта, ст/сек) жук считается стоящим: дыхание и
+-- озирание видны только на остановке, на ходу их не видно за качкой от ног.
+local IDLE_SPEED = 2
+-- Как быстро жук переходит между «идёт» и «стоит», 1/сек: без сглаживания дыхание
+-- включалось бы рывком на каждой заминке в толкучке.
+local IDLE_EASE = 3
+-- Потолок шагов в секунду для фазы подскока: на рывке толкучки или просадке кадра
+-- сырая каденция уходит в десятки, и подскок превращался бы в дрожь.
+local CADENCE_MAX = 6
+-- Потолок тангажа дыхания, рад: вдох чуть приподнимает нос, а не кивает жуком.
+local BREATH_PITCH = 0.5
 
 -- Состояние ног по моделям. Слабые ключи: жук умирает в десятках мест кода (снаряд,
 -- горение, рестарт забега), и обязывать каждое из них сообщить об этом походке значит
@@ -514,9 +537,23 @@ local function poseHead(state, body, dt, mode, turnRate, headLead)
 	local t = state.clock + rig.phase
 	local scale = state.gaitScale or 1
 
-	local lead = math.clamp(headLead, -NECK_MAX, NECK_MAX)
+	local style = state.style or EnemyGaitStyles.Default
+	local idle = state.idle or 0
+
+	-- Озирание: стоящий жук ведёт головой из стороны в сторону и чуть опускает её —
+	-- именно это отличает «замер, ожидая» от «выключен». На ходу гасится: там голова
+	-- занята доворотом раньше тела (см. NECK_*).
+	local sniff = style.sniff
+	local sniffYaw, sniffPitch = 0, 0
+	if sniff.amp > 0 and idle > 0.01 then
+		local wave = (state.clock + rig.phase) * sniff.rate * math.pi * 2
+		sniffYaw = math.sin(wave) * sniff.amp * idle
+		sniffPitch = math.sin(wave * 0.5) * sniff.amp * 0.4 * idle
+	end
+
+	local lead = math.clamp(headLead + sniffYaw, -NECK_MAX, NECK_MAX)
 	state.neckYaw = (state.neckYaw or 0) + (lead - (state.neckYaw or 0)) * math.clamp(dt * NECK_FOLLOW, 0, 1)
-	local neck = around(rig.neck, CFrame.Angles(0, state.neckYaw, 0))
+	local neck = around(rig.neck, CFrame.Angles(sniffPitch, state.neckYaw, 0))
 
 	-- Ускорение вдоль носа — из сглаженной скорости хода (state.velocity считает Step).
 	local forward = body:VectorToObjectSpace(state.velocity or Vector3.zero).Z / scale
@@ -536,12 +573,15 @@ local function poseHead(state, body, dt, mode, turnRate, headLead)
 
 	local lagYaw = math.clamp(-turnRate * ANTENNA_TURN_LAG, -ANTENNA_MAX, ANTENNA_MAX)
 	local lagPitch = math.clamp(state.antennaAccel * ANTENNA_ACCEL_LAG, -ANTENNA_MAX, ANTENNA_MAX)
+	-- Усики вида: Моль ведёт ими широко и мягко, Спринтер прижимает, Мимик почти не шевелит.
+	local antSway = ANTENNA_SWAY * style.antenna.sway
+	local antFreq = ANTENNA_FREQ * style.antenna.freq
 	for index, antenna in rig.antennae do
 		if antenna.joint then
-			local wave = t * ANTENNA_FREQ + index * 1.7
+			local wave = t * antFreq + index * 1.7
 			local rotation = CFrame.Angles(
-				ANTENNA_SWAY * 0.6 * math.sin(wave * 1.3) + lagPitch,
-				ANTENNA_SWAY * math.sin(wave) + lagYaw,
+				antSway * 0.6 * math.sin(wave * 1.3) + lagPitch,
+				antSway * math.sin(wave) + lagYaw,
 				0
 			)
 			local joint = neck * around(antenna.joint, rotation)
@@ -552,8 +592,8 @@ local function poseHead(state, body, dt, mode, turnRate, headLead)
 	end
 
 	local chewing = mode == "chew"
-	local open = chewing and MANDIBLE_CHEW_OPEN or MANDIBLE_OPEN
-	local freq = chewing and MANDIBLE_CHEW_FREQ or MANDIBLE_FREQ
+	local open = (chewing and MANDIBLE_CHEW_OPEN or MANDIBLE_OPEN) * style.mandible.open
+	local freq = (chewing and MANDIBLE_CHEW_FREQ or MANDIBLE_FREQ) * style.mandible.freq
 	local gape = open * (0.5 + 0.5 * math.sin(t * freq))
 	for _, mandible in rig.mandibles do
 		if mandible.joint then
@@ -570,7 +610,7 @@ end
 
 -- Крылья: детали групп wing_L / wing_R в кадре тела и шарнир — точка у внутреннего края
 -- (ближе всего к оси тела). Нет крыльев — nil.
-local function captureWings(model)
+local function captureWings(model, style)
 	local pivot = model:GetPivot()
 	local wings = {}
 	for _, name in { "wing_L", "wing_R" } do
@@ -607,18 +647,24 @@ local function captureWings(model)
 	if #wings == 0 then
 		return nil
 	end
+	-- Взмах шаблона, помноженный на почерк вида: Матка машет реже и шире, Лицехват — чаще.
+	local wing = style and style.wing or nil
 	return {
 		wings = wings,
-		freq = model:GetAttribute("WingFlapFreq") or WING_FLAP_FREQ,
-		angle = model:GetAttribute("WingFlapAngle") or WING_FLAP_ANGLE,
+		freq = (model:GetAttribute("WingFlapFreq") or WING_FLAP_FREQ) * (wing and wing.freq or 1),
+		angle = (model:GetAttribute("WingFlapAngle") or WING_FLAP_ANGLE) * (wing and wing.angle or 1),
+		idle = style and style.wingIdle or nil,
 		phase = math.random() * math.pi * 2,
 		open = 0, -- текущий размах: 1 — машет в полную силу, 0 — сложены
 		clock = 0,
 	}
 end
 
-local function poseWings(rig, body)
-	local amount = rig.open * rig.angle * math.sin(rig.clock * rig.freq * math.pi * 2 + rig.phase)
+-- openOverride/freqMul — обмахивание стоящего жука на земле (см. rig.idle): размах не
+-- тот, с которым он летит, и частота своя.
+local function poseWings(rig, body, openOverride, freqMul)
+	local open = openOverride or rig.open
+	local amount = open * rig.angle * math.sin(rig.clock * rig.freq * (freqMul or 1) * math.pi * 2 + rig.phase)
 	local parts, frames = {}, {}
 	for _, wing in rig.wings do
 		-- Поворот вокруг оси нос–хвост: крыло слева и справа поднимаются вместе.
@@ -671,6 +717,59 @@ local function react(state, body, dt, turnRate)
 	return CFrame.new(body.Position + offset) * rotation * body.Rotation
 end
 
+-- Насколько жук сейчас «стоит»: 1 — замер, 0 — идёт. Сглажено (см. IDLE_EASE), чтобы
+-- заминка в толкучке не включала дыхание рывком.
+local function idleAmount(state, dt)
+	local speed = (state.velocity or Vector3.zero).Magnitude / (state.gaitScale or 1)
+	local want = math.clamp(1 - speed / IDLE_SPEED, 0, 1)
+	state.idle = (state.idle or want) + (want - (state.idle or want)) * math.clamp(dt * IDLE_EASE, 0, 1)
+	return state.idle
+end
+
+-- Почерк вида поверх качки от ног: собственный подскок корпуса на ходу, валкость
+-- (перевалка с борта на борт) и дыхание на остановке. Числа — EnemyGaitStyles.
+--
+-- Почему это отдельный слой, а не правка carryBody: качка от ног — следствие ГЕОМЕТРИИ
+-- (где стоят ступни), и подкручивать её значило бы врать про опору. Подскок и дыхание —
+-- работа мышц самого жука, они и должны лежать поверх, в кадре тела.
+local function flourish(state, body, dt)
+	local style = state.style or EnemyGaitStyles.Default
+	local strut = state.strut or 1
+	local scale = state.gaitScale or 1
+	local speed = (state.velocity or Vector3.zero).Magnitude / scale
+	-- Доля полной силы: на рабочей скорости вида — 1, на медленном ходу меньше.
+	local drive = math.clamp(speed / style.refSpeed, 0, 1.3)
+
+	-- Фаза шагового цикла: шагов в секунду = ход / длина шага. Считается по факту, а не
+	-- по задуманной скорости вида: в толкучке и на замедлении подскок замедляется вместе
+	-- с ногами, иначе тело трясётся отдельно от них.
+	local cadence = math.min(speed / math.max(MODEL_STRIDE * style.stride, 0.1), CADENCE_MAX)
+	state.gaitPhase = (state.gaitPhase or 0) + dt * cadence
+	local phase = state.gaitPhase * math.pi * 2 + state.phase
+
+	local rise, pitch, roll = 0, 0, 0
+	if style.bob.amp > 0 and drive > 0.01 then
+		rise += math.sin(phase * style.bob.freq) * style.bob.amp * drive * strut
+	end
+	if style.lurch.amp > 0 and drive > 0.01 then
+		roll += math.sin(phase * style.lurch.freq) * style.lurch.amp * drive
+	end
+
+	local idle = state.idle or 0
+	if style.breath.amp > 0 and idle > 0.01 then
+		local wave = math.sin((state.clock + state.phase) * style.breath.rate * math.pi * 2)
+		rise += wave * style.breath.amp * idle * strut
+		pitch += wave * style.breath.amp * idle * BREATH_PITCH
+	end
+
+	if math.abs(rise) < 1e-4 and math.abs(roll) < 1e-4 and math.abs(pitch) < 1e-4 then
+		return body
+	end
+	-- Смещение В КАДРЕ ТЕЛА, а не по миру: на стене «вверх» — это от поверхности,
+	-- и подскок там обязан идти от неё, а не в небо.
+	return body * CFrame.new(0, rise, 0) * CFrame.Angles(pitch, 0, roll)
+end
+
 local function carryBody(state, path, dt, now)
 	local up = path.UpVector
 	local sum, lift, stance = Vector3.zero, 0, 0
@@ -721,8 +820,9 @@ local function carryBody(state, path, dt, now)
 	state.carryMean = state.carryMean and state.carryMean:Lerp(raw, math.clamp(dt * BODY_MEAN, 0, 1)) or raw
 
 	local strutRef = state.strut or 1
-	local sway = strutRef * BODY_SWAY
-	local rise = strutRef * BODY_LIFT
+	local style = state.style or EnemyGaitStyles.Default
+	local sway = strutRef * BODY_SWAY * style.sway
+	local rise = strutRef * BODY_LIFT * style.lift
 	local wobble = (raw - state.carryMean) * BODY_FOLLOW
 	wobble = Vector3.new(
 		math.clamp(wobble.X, -sway, sway),
@@ -748,8 +848,9 @@ local function carryBody(state, path, dt, now)
 
 	local offset = state.carry
 	-- tilt < 0 — борт +X просел сильнее; поворот вокруг оси носа опускает его туда же.
-	local roll = math.clamp(state.carryRoll / strutRef * BODY_ROLL, -BODY_ROLL_MAX, BODY_ROLL_MAX)
-	local pitch = (offset.Z / strutRef) * BODY_PITCH
+	local roll = math.clamp(state.carryRoll / strutRef * BODY_ROLL * style.roll,
+		-BODY_ROLL_MAX * style.roll, BODY_ROLL_MAX * style.roll)
+	local pitch = (offset.Z / strutRef) * BODY_PITCH * style.pitch
 	return path * CFrame.new(offset) * CFrame.Angles(pitch, 0, roll)
 end
 
@@ -852,11 +953,22 @@ end
 -- толщину ей хранить негде и не нужно. Вместо этого снимаются длины звеньев
 -- и направление сгиба — по ним placeModelLeg гнёт лапу инверсией (см. выше).
 -- length у модели — бедро + голень (анатомический предел, не стойка покоя).
-function EnemyGait.Attach(model, legs)
+-- styleKey — имя шаблона вида (Enemies.model): по нему берётся почерк из EnemyGaitStyles.
+-- Нет ключа (жук Аркады, примитив без шаблона) — почерк Стандарта, как было до таблицы.
+function EnemyGait.Attach(model, legs, styleKey)
 	-- Свой масштаб похода: во сколько раз этот экземпляр крупнее/мельче Стандарта, под
 	-- которого подобраны MODEL_STRIDE и остальные абсолютные величины (см. GAIT_TUNED_SCALE).
 	local gaitScale = (model:GetAttribute("Scale") or GAIT_TUNED_SCALE) / GAIT_TUNED_SCALE
-	local state = { legs = {}, clock = 0, turn = nil, gaitScale = gaitScale }
+	local state = {
+		legs = {},
+		clock = 0,
+		turn = nil,
+		gaitScale = gaitScale,
+		style = EnemyGaitStyles.For(styleKey),
+		-- Своя фаза дыхания и подскока: иначе вся волна одного вида дышит в унисон,
+		-- и поле читается как механизм, а не как толпа.
+		phase = math.random() * math.pi * 2,
+	}
 
 	for index, leg in legs do
 		local isModel = leg.part:IsA("Model")
@@ -959,7 +1071,7 @@ function EnemyGait.Attach(model, legs)
 	state.strut = #state.legs > 0 and strutSum / #state.legs or 1
 
 	state.head = captureHead(model)
-	state.wings = captureWings(model)
+	state.wings = captureWings(model, state.style)
 
 	states[model] = state
 	return state
@@ -993,7 +1105,9 @@ function EnemyGait.Flinch(model, from, strength)
 	if away.Magnitude < 1e-3 then
 		return
 	end
-	local power = math.clamp(FLINCH_FLOOR + (strength or 0) * FLINCH_GAIN, 0, 1)
+	local style = state.style or EnemyGaitStyles.Default
+	-- Броню качнуть труднее, Личинку — легче: сила вздрагивания у вида своя.
+	local power = math.clamp(FLINCH_FLOOR + (strength or 0) * FLINCH_GAIN, 0, 1) * style.flinch
 	-- Пик критически демпфированной пружины с начальной скоростью v — v / (ω·e).
 	local speed = (state.strut or 1) * FLINCH_SHIFT * power * FLINCH_OMEGA * math.exp(1)
 	state.flinchVelocity = (state.flinchVelocity or Vector3.zero) + away.Unit * speed
@@ -1068,20 +1182,31 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 
 	local now = os.clock()
 	local path = pathCF or model:GetPivot()
+	-- «Стоит или идёт» нужно и голове (озирание), и телу (дыхание) — считается один раз.
+	idleAmount(state, dt)
 	local body = pathCF and carryBody(state, path, dt, now) or path
 	if pathCF then
-		body = react(state, body, dt, turnRate)
+		body = flourish(state, react(state, body, dt, turnRate), dt)
 		model:PivotTo(body)
 	end
 	if state.head then
 		poseHead(state, body, dt, mode, turnRate, headLead)
 	end
-	-- На земле крылья складываются (Пеликан сел, наевшись).
+	-- На земле крылья складываются (Пеликан сел, наевшись). А у видов с wingIdle
+	-- сложенные крылья ещё и обмахивают — но только пока жук стоит: на марше это
+	-- и не видно, и стоило бы прохода по деталям крыльев у каждого жука в волне.
 	local wings = state.wings
-	if wings and wings.open > 0 then
-		wings.open = math.max(0, wings.open - dt * WING_FOLD)
-		wings.clock += dt
-		poseWings(wings, body)
+	if wings then
+		local idleFlap = (wings.idle and (state.idle or 0) > 0.5)
+			and wings.idle.amp * ((state.idle or 0) - 0.5) * 2 or 0
+		if wings.open > 0 then
+			wings.open = math.max(0, wings.open - dt * WING_FOLD)
+			wings.clock += dt
+			poseWings(wings, body, math.max(wings.open, idleFlap))
+		elseif idleFlap > 0.001 then
+			wings.clock += dt
+			poseWings(wings, body, idleFlap, wings.idle.freq / math.max(wings.freq, 0.1))
+		end
 	end
 	local up = body.UpVector
 	local nose = body:VectorToWorldSpace(Vector3.new(0, 0, 1)) -- голова модели смотрит по +Z
@@ -1121,10 +1246,13 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 		-- Своя каденция ног-моделей (см. MODEL_* выше) — приведена к масштабу экземпляра:
 		-- у Мини (Scale меньше Стандартовых 3.0) шаг и дуга короче во столько же раз, иначе
 		-- они превышают анатомический предел собственной лапы (см. GAIT_TUNED_SCALE).
+		-- Поверх масштаба — почерк вида: Гигант вышагивает (шаг длиннее, перенос дольше),
+		-- Мини семенит, Кукольник перебрасывает лапу рывком.
+		local style = state.style or EnemyGaitStyles.Default
 		local modelScale = leg.isModel and state.gaitScale or 1
-		local stride = leg.isModel and (MODEL_STRIDE * modelScale) or STRIDE
-		local stepTime = leg.isModel and MODEL_STEP_TIME or STEP_TIME
-		local stepLift = leg.isModel and (MODEL_STEP_LIFT * modelScale) or STEP_LIFT
+		local stride = (leg.isModel and (MODEL_STRIDE * modelScale) or STRIDE) * style.stride
+		local stepTime = (leg.isModel and MODEL_STEP_TIME or STEP_TIME) * style.stepTime
+		local stepLift = (leg.isModel and (MODEL_STEP_LIFT * modelScale) or STEP_LIFT) * style.stepLift
 
 		if mode == "climb" then
 			-- На вертикали жук распластывается: стойка шире и немного ближе к поверхности.
@@ -1132,7 +1260,8 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 		elseif mode == "chew" and leg.front then
 			-- Передние лапы упёрлись в преграду и работают: подняты, вынесены вперёд
 			-- и качаются. Это то, что отличает «вгрызся» от «встал и ждёт».
-			local swing = math.sin(state.clock * CHEW_RATE * math.pi * 2 + leg.index) * CHEW_SWING * modelScale
+			local swing = math.sin(state.clock * CHEW_RATE * style.chew * math.pi * 2 + leg.index)
+				* CHEW_SWING * modelScale
 			rest = rest + Vector3.new(0, CHEW_RAISE * modelScale + swing, CHEW_REACH * modelScale + swing)
 		end
 
@@ -1198,9 +1327,12 @@ end
 -- способ их узнать — лишний.
 -- splay, drop — насколько далеко и низко ступня (по умолчанию поза трупа); меньше — лапы поджаты.
 function EnemyGait.DeathPose(corpse, original, splay, drop)
-	splay = splay or DEATH_SPLAY
-	drop = drop or DEATH_DROP
 	local state = states[original]
+	-- Поза смерти вида: броня оседает поджато, Моль раскидывает лапы шире. Множитель
+	-- ложится и на поджатую позу останков (curlSplay/curlDrop из PhysicsFX).
+	local style = (state and state.style) or EnemyGaitStyles.Default
+	splay = (splay or DEATH_SPLAY) * style.death.splay
+	drop = (drop or DEATH_DROP) * style.death.drop
 	local body = corpse.PrimaryPart
 	if not state or not body then
 		return
