@@ -15,14 +15,37 @@
 --
 -- Метки при смерти (атрибут DeathMarks) — ряд квадратиков цвета элементов над полоской:
 -- их может висеть несколько разом, и игрок должен видеть, чем жук станет после смерти.
+--
+-- Отклик на урон (#418): вспышка тела при попадании — та же общая обводка EffectMark
+-- (новых Highlight нет: движок рисует не больше 31 обводки разом, и толпа съела бы лимит),
+-- полоска HP появляется только после первого урона (целая толпа не рябит плашками), а
+-- снятый кусок полоски ещё миг висит светлым «следом» и потом съезжает — видно, сколько
+-- сняло этим ударом. Смерть — короткий хлопок пыли и искр из одного общего излучателя
+-- на клиенте (Remotes.EnemyDied): сколько бы жуков ни умерло разом, деталей не прибавится.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 -- Цвета полоски HP — из общей палитры интерфейса.
 local Theme = require(script.Parent:WaitForChild("UITheme"))
 
 local enemiesFolder = Workspace:WaitForChild("Enemies")
+local EnemyDiedRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("EnemyDied")
+
+-- Вспышка при попадании. Сила — доля макс. HP, снятая ударом: тики горения дают едва
+-- заметное мигание, тяжёлый удар — почти белое тело. FLASH_FULL — доля, с которой
+-- вспышка уже полная.
+local FLASH_TIME = 0.1
+local FLASH_COLOR = Color3.new(1, 1, 1)
+local FLASH_FAINT = 0.75 -- FillTransparency самой слабой вспышки
+local FLASH_STRONG = 0.2 -- FillTransparency полной вспышки
+local FLASH_FULL = 0.2
+
+-- След урона на полоске: сколько висит и за сколько съезжает к новому HP.
+local TRAIL_HOLD = 0.25
+local TRAIL_SLIDE = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TRAIL_COLOR = Color3.fromRGB(255, 235, 200)
 
 local function attachVisuals(enemy)
 	if not enemy:IsA("Model") then
@@ -55,6 +78,20 @@ local function attachVisuals(enemy)
 	back.BorderSizePixel = 0
 	back.Size = UDim2.new(1, 0, 1, 0)
 	back.Parent = gui
+
+	-- Тёмный кант: на светлом полу и на светлом жуке полоска без него терялась.
+	local edge = Instance.new("UIStroke")
+	edge.Color = Theme.color.hpBack
+	edge.Thickness = 1.5
+	edge.Parent = back
+
+	-- След урона — под заливкой: снятый кусок миг светится и съезжает (см. TRAIL_*).
+	local trail = Instance.new("Frame")
+	trail.Name = "Trail"
+	trail.BorderSizePixel = 0
+	trail.Size = UDim2.new(1, 0, 1, 0)
+	trail.BackgroundColor3 = TRAIL_COLOR
+	trail.Parent = back
 
 	local fill = Instance.new("Frame")
 	fill.Name = "Fill"
@@ -150,12 +187,94 @@ local function attachVisuals(enemy)
 		},
 	}
 
+	-- Полоска с первого урона: до него жук целый, и плашка над каждым из толпы — шум.
+	-- Потом она остаётся до смерти, даже если реген дотянул HP до полного.
+	-- Уже раненым приходит очищенный Мылом: тело и полоска у него собираются заново.
+	local lastHp = enemy:GetAttribute("HP")
+	local damaged = lastHp ~= nil and lastHp < (enemy:GetAttribute("MaxHP") or lastHp)
+	local trailTween = nil
+	local trailToken = 0
+	local flashUntil = 0
+
+	local function updateBar()
+		gui.Enabled = damaged and not enemy:GetAttribute("Disguise")
+	end
+
+	-- Вспышка забирает общую обводку на FLASH_TIME, потом updateMark возвращает ту метку,
+	-- что положена по атрибутам. Удары подряд продлевают вспышку, а не копят задержки.
+	local function updateMark()
+		if os.clock() < flashUntil then
+			return
+		end
+		for _, style in markStyles do
+			if enemy:GetAttribute(style.attribute) == true then
+				effectMark.FillColor = style.fillColor
+				effectMark.FillTransparency = style.fillTransparency
+				effectMark.OutlineColor = style.outlineColor
+				effectMark.Enabled = true
+				return
+			end
+		end
+		effectMark.Enabled = false
+	end
+
+	local function flash(share)
+		local strength = math.clamp(share / FLASH_FULL, 0, 1)
+		effectMark.FillColor = FLASH_COLOR
+		effectMark.FillTransparency = FLASH_FAINT + (FLASH_STRONG - FLASH_FAINT) * strength
+		effectMark.OutlineColor = FLASH_COLOR
+		effectMark.Enabled = true
+		local untilAt = os.clock() + FLASH_TIME
+		flashUntil = untilAt
+		task.delay(FLASH_TIME, function()
+			if flashUntil == untilAt and effectMark.Parent then
+				flashUntil = 0
+				updateMark()
+			end
+		end)
+	end
+
 	local function updateHealth()
 		local hp = enemy:GetAttribute("HP") or 0
 		local maxHp = enemy:GetAttribute("MaxHP") or hp
 		local fraction = maxHp > 0 and math.clamp(hp / maxHp, 0, 1) or 0
 		fill.Size = UDim2.new(fraction, 0, 1, 0)
 		fill.BackgroundColor3 = Theme.color.hpLow:Lerp(Theme.color.hpFull, fraction)
+
+		local last = lastHp
+		lastHp = hp
+		if last and hp < last then
+			if not damaged then
+				damaged = true
+				updateBar()
+			end
+			if hp > 0 and maxHp > 0 and not enemy:GetAttribute("Disguise") then
+				flash((last - hp) / maxHp)
+			end
+			-- След стоит на старом HP и съезжает после паузы; новый удар во время паузы
+			-- переносит её, и след догоняет уже итог серии.
+			trailToken += 1
+			local token = trailToken
+			if trailTween then
+				trailTween:Cancel()
+				trailTween = nil
+			end
+			task.delay(TRAIL_HOLD, function()
+				if token ~= trailToken or not trail.Parent then
+					return
+				end
+				trailTween = TweenService:Create(trail, TRAIL_SLIDE, { Size = fill.Size })
+				trailTween:Play()
+			end)
+		else
+			-- Реген и первый показ: следу нечего показывать.
+			trailToken += 1
+			if trailTween then
+				trailTween:Cancel()
+				trailTween = nil
+			end
+			trail.Size = fill.Size
+		end
 	end
 
 	local function updateBurning()
@@ -172,22 +291,11 @@ local function attachVisuals(enemy)
 		confusionMark.Enabled = enemy:GetAttribute("Confused") == true
 	end
 
-	-- Одна обводка на оба эффекта, поэтому и обновление одно: перебирает markStyles
-	-- по порядку и берёт первый активный. Ни один не активен — обводки нет.
-	-- Стан булевый отдельно от срока (StunnedUntil): срок считается по os.clock()
-	-- сервера, и клиенту это число ничего не значит — тот же расклад, что у запутывания.
-	local function updateMark()
-		for _, style in markStyles do
-			if enemy:GetAttribute(style.attribute) == true then
-				effectMark.FillColor = style.fillColor
-				effectMark.FillTransparency = style.fillTransparency
-				effectMark.OutlineColor = style.outlineColor
-				effectMark.Enabled = true
-				return
-			end
-		end
-		effectMark.Enabled = false
-	end
+	-- Одна обводка на все метки, поэтому и обновление одно (updateMark выше, рядом со
+	-- вспышкой): перебирает markStyles по порядку и берёт первый активный. Ни один не
+	-- активен — обводки нет. Стан булевый отдельно от срока (StunnedUntil): срок считается
+	-- по os.clock() сервера, и клиенту это число ничего не значит — тот же расклад, что
+	-- у запутывания.
 
 	-- Атрибут — ключи элементов через запятую (Effects.putDeathMark). Ряд пересобирается
 	-- целиком: меток единицы, и меняются они редко — только новой меткой.
@@ -224,7 +332,7 @@ local function attachVisuals(enemy)
 
 	-- Замаскированный Мимик полоской выдал бы себя: мешок с HP — не мешок.
 	local function updateDisguise()
-		gui.Enabled = not enemy:GetAttribute("Disguise")
+		updateBar()
 		updateDeathMarks()
 	end
 
@@ -259,4 +367,76 @@ task.spawn(function()
 		task.spawn(attachVisuals, ally)
 	end
 	alliesFolder.ChildAdded:Connect(attachVisuals)
+end)
+
+-- Хлопок смерти: пыль и искры в точке гибели. Излучатели одни на весь клиент и висят на
+-- точке-Attachment в Terrain: на каждую смерть точка переезжает и выпускает горсть частиц
+-- (Emit) — ни деталей, ни излучателей на жука. Сервер не шлёт EnemyDied застывшим статуей
+-- Глины: у них смерти нет.
+local POP_LIFT = 1 -- над серверной точкой жука: пыль из пола не видно
+local POP_DUST = 6
+local POP_SPARKS = 10
+-- Потолок хлопков за короткое окно: взрыв по толпе кладёт десятки жуков в один кадр,
+-- и частиц хватит с первых POP_BURST — остальные смерти и так видны трупами.
+local POP_WINDOW = 0.1
+local POP_BURST = 12
+
+local popPoint = Instance.new("Attachment")
+popPoint.Name = "DeathPop"
+popPoint.Parent = Workspace.Terrain
+
+local popDust = Instance.new("ParticleEmitter")
+popDust.Name = "Dust"
+popDust.Texture = "rbxasset://textures/particles/smoke_main.dds"
+popDust.Color = ColorSequence.new(Color3.fromRGB(200, 195, 180), Color3.fromRGB(150, 145, 135))
+popDust.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.35),
+	NumberSequenceKeypoint.new(1, 1),
+})
+popDust.Size = NumberSequence.new(1, 2.6)
+popDust.Lifetime = NumberRange.new(0.35, 0.55)
+popDust.Speed = NumberRange.new(3, 6)
+popDust.SpreadAngle = Vector2.new(180, 180)
+popDust.Drag = 6
+popDust.Rotation = NumberRange.new(0, 360)
+popDust.RotSpeed = NumberRange.new(-90, 90)
+popDust.Rate = 0
+popDust.Parent = popPoint
+
+local popSparks = Instance.new("ParticleEmitter")
+popSparks.Name = "Sparks"
+popSparks.Color = ColorSequence.new(Color3.fromRGB(255, 250, 230), Color3.fromRGB(255, 200, 120))
+popSparks.LightEmission = 1
+popSparks.Size = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.3),
+	NumberSequenceKeypoint.new(1, 0),
+})
+popSparks.Lifetime = NumberRange.new(0.2, 0.35)
+popSparks.Speed = NumberRange.new(9, 15)
+popSparks.SpreadAngle = Vector2.new(70, 70)
+popSparks.EmissionDirection = Enum.NormalId.Top
+popSparks.Acceleration = Vector3.new(0, -40, 0)
+popSparks.Drag = 3
+popSparks.Rate = 0
+popSparks.Parent = popPoint
+
+local popWindowStart = 0
+local popCount = 0
+
+EnemyDiedRemote.OnClientEvent:Connect(function(position)
+	if typeof(position) ~= "Vector3" then
+		return
+	end
+	local now = os.clock()
+	if now - popWindowStart > POP_WINDOW then
+		popWindowStart = now
+		popCount = 0
+	end
+	if popCount >= POP_BURST then
+		return
+	end
+	popCount += 1
+	popPoint.WorldPosition = position + Vector3.new(0, POP_LIFT, 0)
+	popDust:Emit(POP_DUST)
+	popSparks:Emit(POP_SPARKS)
 end)
