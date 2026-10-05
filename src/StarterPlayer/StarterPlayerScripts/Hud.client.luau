@@ -60,22 +60,32 @@ Theme.Stroke(frame, Theme.color.frame, 1, 0.3)
 
 -- Тень от края экрана вместо плашки: тёмный градиент цвета ink под шапкой и подвалом.
 -- Над ареной любой яркости текст в ней читается, а середина экрана остаётся чистой.
-local function edgeShade(top, height)
+-- Тени — в своём ScreenGui во весь экран, ВКЛЮЧАЯ полосу Roblox сверху (IgnoreGuiInset).
+-- Внутри рамки верхняя тень начиналась ниже кнопок самого Roblox: его кнопки висели
+-- на голой светлой арене над тёмной полосой шапки, и вышло две разные полосы одна
+-- над другой (замечание автора). Теперь тень идёт от самого верха экрана, и кнопки
+-- Roblox лежат в той же темноте, что и шапка забега. Слой на единицу ниже HUD.
+local shadeGui = Instance.new("ScreenGui")
+shadeGui.Name = "GameHudShade"
+shadeGui.ResetOnSpawn = false
+shadeGui.IgnoreGuiInset = true
+shadeGui.DisplayOrder = MobileUI.Layer.Hud - 1
+shadeGui.Enabled = false
+shadeGui.Parent = playerGui
+
+local function edgeShade(top)
 	local shade = Instance.new("Frame")
 	shade.Name = top and "ShadeTop" or "ShadeBottom"
 	shade.AnchorPoint = Vector2.new(0, top and 0 or 1)
 	shade.Position = UDim2.fromScale(0, top and 0 or 1)
-	shade.Size = UDim2.new(1, 0, 0, height)
 	shade.BackgroundColor3 = Theme.color.ink
 	shade.BackgroundTransparency = 0
 	shade.BorderSizePixel = 0
-	shade.Parent = frame
-	Theme.Corner(shade, Theme.radius.panel)
+	shade.Parent = shadeGui
 
 	local fade = Instance.new("UIGradient")
 	fade.Rotation = top and 90 or -90
-	-- Плавный спад без ступеньки: прежние 0.12 → 0.4 на середине давали плотную
-	-- полосу с видимым краем, и на светлой стене она резала арену (скрин автора).
+	-- Плавный спад без ступеньки: плотная полоса с видимым краем резала светлую арену.
 	fade.Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 0.25),
 		NumberSequenceKeypoint.new(0.3, 0.45),
@@ -86,11 +96,19 @@ local function edgeShade(top, height)
 	return shade
 end
 
-edgeShade(true, HEADER_H + (mobile and 40 or 80))
+local shadeTop = edgeShade(true)
 -- Подвал: две строки подсказок, кнопка волны на ПК и запас под тень.
-edgeShade(false, MobileUI.FOOTER_BOTTOM + 2 * MobileUI.FOOTER_LINE + (mobile and 60 or 110) - INSET)
+local shadeBottom = edgeShade(false)
+shadeBottom.Size = UDim2.new(1, 0, 0, MobileUI.FOOTER_BOTTOM + 2 * MobileUI.FOOTER_LINE + (mobile and 60 or 110))
 
--- Скобки после теней: уголки должны лечь поверх них.
+-- Высота верхней тени — от верха экрана: полоса Roblox (своя у каждого устройства и
+-- меняется в полноэкранном режиме), отступ рамки, шапка и запас на спад.
+local function fitShade()
+	shadeTop.Size = UDim2.new(1, 0, 0, MobileUI.TopInset + INSET + HEADER_H + (mobile and 40 or 80))
+end
+MobileUI.OnViewportChanged(fitShade)
+
+-- Уголки рамки.
 Theme.Brackets(frame)
 
 local function rule(y, fromBottom)
@@ -401,6 +419,7 @@ placeJournal()
 local function setInRun(value)
 	inRun = value
 	frame.Visible = value
+	shadeGui.Enabled = value
 	placeJournal()
 end
 
