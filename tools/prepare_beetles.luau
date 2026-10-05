@@ -504,9 +504,11 @@ local function prepare(spec, normalRoot)
 	template.WorldPivot = rootCF
 	local unpainted = paint(template)
 
-	local old = ReplicatedStorage:FindFirstChild(spec.template)
-	if old then
-		old:Destroy()
+	-- Все старые с этим именем: при двух одинаковых игра могла бы взять как раз старый.
+	for _, old in ReplicatedStorage:GetChildren() do
+		if old.Name == spec.template then
+			old:Destroy()
+		end
 	end
 	template.Parent = ReplicatedStorage
 	import:Destroy()
@@ -527,6 +529,28 @@ for _, spec in SPECS do
 		ok, message = false, "ошибка скрипта: " .. tostring(ok)
 	end
 	print(("[Жуки] %s %s: %s"):format(ok and "✔" or "✘", spec.template, message))
+end
+-- Старые авторские шаблоны узнаются по атрибуту ColorChitin: у новых его нет. Если рядом
+-- с новым остался старый дубль с тем же именем, игра могла взять его — убираем.
+for _, spec in SPECS do
+	local fresh, stale = false, {}
+	for _, t in ReplicatedStorage:GetChildren() do
+		if t.Name == spec.template then
+			if t:GetAttribute("ColorChitin") ~= nil then
+				table.insert(stale, t)
+			else
+				fresh = true
+			end
+		end
+	end
+	if fresh then
+		for _, t in stale do
+			t:Destroy()
+			print(("[Жуки] убран старый дубль %s"):format(spec.template))
+		end
+	elseif #stale > 0 then
+		warn(("[Жуки] %s всё ещё старый: импортируй %s.glb и запусти скрипт ещё раз"):format(spec.template, spec.source))
+	end
 end
 if recording then
 	ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
