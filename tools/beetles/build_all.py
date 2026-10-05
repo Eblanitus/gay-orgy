@@ -2,7 +2,11 @@
 import os
 import sys
 
-from species import SPECIES
+from beetlegen import merge
+from species import SPECIES as SPECIES1
+from species2 import SPECIES2
+
+SPECIES = {**SPECIES1, **SPECIES2}
 
 out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "..", "Модели", "Жуки")
 for name, fn in SPECIES.items():
@@ -13,3 +17,12 @@ for name, fn in SPECIES.items():
     model.save(path)
     parts = sum(1 for n in model.nodes if n["mesh"] is not None)
     print(f"{name}: {model.tris()} треугольников, {parts} деталей")
+
+# Все виды одним файлом: один Import 3D вместо двадцати шести (prepare_beetles находит виды по имени).
+models = []
+for name, fn in SPECIES.items():
+    model = fn()
+    model.nodes[model.root]["name"] = name
+    models.append(model)
+merge(models).save(os.path.join(out_dir, "all_beetles.glb"))
+print("all_beetles.glb: все виды одним файлом")

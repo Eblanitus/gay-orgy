@@ -245,7 +245,7 @@ class Model:
         gltf = {
             "asset": {"version": "2.0", "generator": "beetlegen.py"},
             "scene": 0,
-            "scenes": [{"name": "Scene", "nodes": [self.root]}],
+            "scenes": [{"name": "Scene", "nodes": getattr(self, "roots", [self.root])}],
             "nodes": nodes, "meshes": meshes, "materials": mats,
             "accessors": accessors, "bufferViews": views,
             "buffers": [{"byteLength": len(buf)}],
@@ -461,3 +461,24 @@ def add_antennae(m, pts_left, r, mat, clubbed=0.0):
             items.append(("AntSeg4", blob(last, (clubbed, clubbed * 0.8, clubbed * 1.3), n=6, rows=3)))
         for name, mesh in items:
             m.part(name + suf, mesh, mat)
+
+
+def merge(models, spacing=7.0):
+    """Все жуки в одной сцене (для одного Import 3D): корни — отдельные узлы сцены,
+    каждый вид сдвинут по X, чтобы не накладывались."""
+    out = Model()
+    out.nodes = []
+    roots = []
+    for k, m in enumerate(models):
+        mat_off = len(out.materials)
+        out.materials.extend(m.materials)
+        node_off = len(out.nodes)
+        shift = np.array([k * spacing, 0, 0])
+        for n in m.nodes:
+            mesh = n["mesh"].transformed(lambda p, s=shift: p + s) if n["mesh"] is not None else None
+            out.nodes.append({"name": n["name"], "mesh": mesh,
+                              "mat": None if n["mat"] is None else n["mat"] + mat_off,
+                              "children": [c + node_off for c in n["children"]]})
+        roots.append(m.root + node_off)
+    out.roots = roots
+    return out
