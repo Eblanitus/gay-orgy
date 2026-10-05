@@ -44,11 +44,10 @@ resultGui.Parent = playerGui
 
 local INSET = MobileUI.FRAME_INSET
 
--- Рамка видна только во время забега: появляется на WaveReady/WaveChanged,
--- прячется на RunEnded. В лобби экран занимает главное меню.
--- Полос во всю ширину (тени от края, черты под шапкой и над подвалом) больше нет
--- (просьба автора): тёмная подложка только под самими надписями — плашкой того же
--- вида, что кнопки Roblox в его полосе сверху.
+-- Линий по экрану нет (просьба автора): ни канта рамки, ни уголков, ни черт.
+-- Читаемость держит плавная тень от верхнего и нижнего края экрана, а сами надписи
+-- лежат на своих подложках. frame — пустой контейнер забега: по нему считаются
+-- отступы журнала и кнопки волны.
 local frame = Instance.new("Frame")
 frame.Name = "RunFrame"
 frame.Position = UDim2.fromOffset(INSET, INSET)
@@ -57,9 +56,51 @@ frame.BackgroundTransparency = 1
 frame.BorderSizePixel = 0
 frame.Visible = false
 frame.Parent = screenGui
-Theme.Corner(frame, Theme.radius.panel)
-Theme.Stroke(frame, Theme.color.frame, 1, 0.3)
-Theme.Brackets(frame)
+
+-- Тени — в своём ScreenGui во весь экран, ВКЛЮЧАЯ полосу Roblox сверху (IgnoreGuiInset):
+-- кнопки Roblox и шапка забега лежат в одной темноте, без светлой щели между ними.
+-- Слой на единицу ниже HUD.
+local shadeGui = Instance.new("ScreenGui")
+shadeGui.Name = "GameHudShade"
+shadeGui.ResetOnSpawn = false
+shadeGui.IgnoreGuiInset = true
+shadeGui.DisplayOrder = MobileUI.Layer.Hud - 1
+shadeGui.Enabled = false
+shadeGui.Parent = playerGui
+
+local function edgeShade(top)
+	local shade = Instance.new("Frame")
+	shade.Name = top and "ShadeTop" or "ShadeBottom"
+	shade.AnchorPoint = Vector2.new(0, top and 0 or 1)
+	shade.Position = UDim2.fromScale(0, top and 0 or 1)
+	shade.BackgroundColor3 = Theme.color.ink
+	shade.BackgroundTransparency = 0
+	shade.BorderSizePixel = 0
+	shade.Parent = shadeGui
+
+	local fade = Instance.new("UIGradient")
+	fade.Rotation = top and 90 or -90
+	-- Плавный спад без ступеньки: плотная полоса с видимым краем резала светлую арену.
+	fade.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.25),
+		NumberSequenceKeypoint.new(0.3, 0.45),
+		NumberSequenceKeypoint.new(0.65, 0.8),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	fade.Parent = shade
+	return shade
+end
+
+local shadeTop = edgeShade(true)
+-- Подвал: строки подсказок, кнопка волны на ПК и запас под спад.
+local shadeBottom = edgeShade(false)
+shadeBottom.Size = UDim2.new(1, 0, 0, MobileUI.FOOTER_BOTTOM + 3 * MobileUI.FOOTER_LINE + (mobile and 50 or 90))
+
+-- Высота верхней тени — от верха экрана: полоса Roblox с шапкой и запас на спад.
+local function fitShade()
+	shadeTop.Size = UDim2.new(1, 0, 0, MobileUI.Topbar.height + (mobile and 60 or 100))
+end
+MobileUI.OnViewportChanged(fitShade)
 
 -- ============ Шапка в полосе Roblox ============
 
@@ -396,6 +437,7 @@ local function setInRun(value)
 	inRun = value
 	frame.Visible = value
 	headerGui.Enabled = value
+	shadeGui.Enabled = value
 	placeJournal()
 end
 
