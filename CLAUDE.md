@@ -14,6 +14,8 @@
   (форма каждого вида — `tools/beetles/species.py` и `species2.py`, все виды разом — `all_beetles.glb`),
   шаблоны из них собирает `tools/prepare_beetles.luau` (Command Bar в Studio после Import 3D). Поменял цвета в `species.py` — таблицу COLORS для
   `prepare_beetles` печатает `tools/beetles/colors_lua.py` (`--lengths` — длины для его SPECS).
+  Без Import 3D: `tools/upload_models.py` грузит .glb в Roblox (Open Cloud, ключ в `ROBLOX_API_KEY`),
+  id — в `Модели/asset_ids.json`; агент вставляет их через MCP `insert_asset` и запускает `prepare_beetles`.
 - `inbox/` — сюда автор заливает файлы через GitHub; агент раскладывает их по папкам.
 
 ## Где что живёт
