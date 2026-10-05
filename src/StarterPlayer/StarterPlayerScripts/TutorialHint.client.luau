@@ -1,6 +1,8 @@
--- Плашка подсказки обучения (задача #298): текущий шаг сверху по центру экрана.
+-- Подсказка обучения (задача #298): текущий шаг строкой в подвале рамки забега, над
+-- строкой стройки (MobileUI.FooterLine). Плашки нет: в рамке забега текст лежит прямо
+-- на арене под тенью от края экрана (Hud), как субтитры.
 -- Номер шага решает сервер (Tutorial) и кладёт атрибутом TutorialStep на ReplicatedStorage;
--- 0 — плашки нет (не обучение, шаги пройдены или введён промокод test). Текст шага —
+-- 0 — строки нет (не обучение, шаги пройдены или введён промокод test). Текст шага —
 -- из TutorialConfig: на телефоне свой, там нет клавиш.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -17,49 +19,25 @@ gui.ResetOnSpawn = false
 gui.DisplayOrder = MobileUI.Layer.Controls
 gui.Parent = playerGui
 
-local frame = Instance.new("Frame")
-frame.AnchorPoint = Vector2.new(0.5, 0)
-frame.Position = UDim2.new(0.5, 0, 0, MobileUI.EDGE)
--- Высота растёт под текст: строке шага добавилась метка раздела, и в фиксированные
--- 52 пикселя длинный шаг на три строки уже не встал бы.
-frame.Size = UDim2.new(0.5, 0, 0, 0)
-frame.AutomaticSize = Enum.AutomaticSize.Y
-frame.BorderSizePixel = 0
-frame.Visible = false
-frame.Parent = gui
--- Плашка языком рамки главного меню (до этого — соты забега, чужие меню).
-Theme.Plate(frame)
-
-local constraint = Instance.new("UISizeConstraint")
-constraint.MinSize = Vector2.new(280, 52)
-constraint.MaxSize = Vector2.new(560, math.huge)
-constraint.Parent = frame
-
-local pad = Instance.new("UIPadding")
-pad.PaddingTop = UDim.new(0, 14)
-pad.PaddingBottom = UDim.new(0, 14)
-pad.PaddingLeft = UDim.new(0, 16)
-pad.PaddingRight = UDim.new(0, 16)
-pad.Parent = frame
-
--- Строка как подвал меню: «ОБУЧЕНИЕ  //  шаг», по левому краю.
+-- Строка как подвал меню: «ОБУЧЕНИЕ  //  шаг», по центру. Длинный шаг переносится
+-- и растёт вверх — низ строки стоит на своём месте подвала.
 local label = Instance.new("TextLabel")
-label.BackgroundTransparency = 1
-label.Size = UDim2.new(1, 0, 0, 0)
-label.AutomaticSize = Enum.AutomaticSize.Y
+MobileUI.FooterLine(label, 1)
 label.FontFace = Theme.font.body
-label.TextSize = MobileUI.isMobile and 14 or 16
+label.TextSize = MobileUI.isMobile and Theme.MIN_TEXT or 16
 label.TextWrapped = true
 label.RichText = true
-label.TextXAlignment = Enum.TextXAlignment.Left
+label.TextXAlignment = Enum.TextXAlignment.Center
 label.TextColor3 = Theme.color.text
-label.Parent = frame
+label.Visible = false
+label.Parent = gui
+Theme.ArenaLabel(label)
 
 local function refresh()
 	local step = TutorialConfig.steps[ReplicatedStorage:GetAttribute("TutorialStep") or 0]
 	local text = step and (MobileUI.isMobile and step.mobile or step.text) or ""
-	frame.Visible = text ~= ""
-	local shown = Theme.StatusText("обучение", text)
+	label.Visible = text ~= ""
+	local shown = Theme.ArenaText("обучение", Theme.Escape(text))
 	if text ~= "" and label.Text ~= shown then
 		label.Text = shown
 		Theme.Blink(label)

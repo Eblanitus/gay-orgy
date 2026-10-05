@@ -325,41 +325,23 @@ local function refreshList()
 
 end
 
--- ============ Кнопка-переключатель и клавиша I ============
+-- ============ Открытие: главное меню и клавиша I ============
 
-local toggleButton = Instance.new("TextButton")
-toggleButton.Name = "InventoryToggle"
--- На мобильном кнопка квадратная с текстом-ярлыком (палец не промахнётся), на ПК
--- остаётся прежней широкой кнопкой с подписью про клавишу I. Угол и высоту считает
--- MobileUI.TopRight: под этой кнопкой стоит кнопка меню из другого скрипта, и оба
--- числа должны браться из одного места.
-MobileUI.TopRight(toggleButton, MobileUI.CornerSlot.Inventory)
-if MobileUI.isMobile then
-	toggleButton.Text = "I"
-	toggleButton.TextSize = 20
-else
-	toggleButton.Text = "ИНВЕНТАРЬ (I)"
-	toggleButton.TextSize = 15
-end
-toggleButton.FontFace = Theme.font.strong
--- Кнопка-переключатель живёт на слое HUD, а не вместе с самим окном: окно теперь
--- во весь экран, и в общем ScreenGui кнопка ложилась поверх него и закрывала крестик.
--- Со слоя Hud её накрывает любое окно — и своё, и Лаборатория.
-local toggleGui = Instance.new("ScreenGui")
-toggleGui.Name = "InventoryToggle"
-toggleGui.ResetOnSpawn = false
-toggleGui.DisplayOrder = MobileUI.Layer.Hud
-toggleGui.Parent = playerGui
-
-toggleButton.Parent = toggleGui
-
--- Кнопка на краю экрана — языком рамки главного меню (Theme.HudButton).
-Theme.HudButton(toggleButton)
+-- Кнопки-переключателя в углу экрана больше нет (просьба автора): в забеге в углу
+-- осталось только меню, а инвентарь открывается пунктом «Инвентарь» главного меню
+-- (MainMenu) и по-прежнему клавишей I. Меню зовёт окно через это событие: скрипты
+-- собираются независимо, и общего модуля у них нет.
+local openEvent = Instance.new("BindableEvent")
+openEvent.Name = "Open"
+openEvent.Parent = script
 
 -- Открытие сбрасывает прокрутку списка — тот же фикс, что и в TowerInteraction.openPicker,
 -- иначе окно может открыться промотанным вниз с прошлого раза.
-local function setOpen(open)
+local function setOpen(open, overMenu)
 	root.Visible = open
+	-- Из главного меню окно открывается поверх него (слой Menu выше окон): закрыв
+	-- инвентарь, игрок возвращается в то же меню, а не в игру за ним.
+	gui.DisplayOrder = (open and overMenu) and MobileUI.Layer.Menu + 1 or MobileUI.Layer.Window
 	if open then
 		-- Шапка пересчитывается на каждом открытии: на первых кадрах клиента
 		-- высота полосы Roblox ещё нулевая, и окно, собранное в этот момент, осталось бы
@@ -371,8 +353,8 @@ local function setOpen(open)
 	end
 end
 
-toggleButton.MouseButton1Click:Connect(function()
-	setOpen(not root.Visible)
+openEvent.Event:Connect(function()
+	setOpen(true, true)
 end)
 
 closeButton.MouseButton1Click:Connect(function()
@@ -384,7 +366,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		return
 	end
 	if input.KeyCode == Enum.KeyCode.I then
-		setOpen(not root.Visible)
+		local menu = playerGui:FindFirstChild("MainMenu")
+		setOpen(not root.Visible, menu ~= nil and menu.Enabled)
 	end
 end)
 

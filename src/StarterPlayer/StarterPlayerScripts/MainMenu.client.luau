@@ -1,4 +1,6 @@
--- Главное меню: экран, с которого начинается игра. Три пункта — Играть, Журнал, Настройки.
+-- Главное меню: экран, с которого начинается игра. Пункты — Играть, Аркада, Журнал,
+-- Настройки, Инвентарь и Промокод (последние два переехали сюда из угла экрана забега:
+-- на арене остались только показания, подсказки и кнопка меню — просьба автора).
 --
 -- ВИД. Собрано на том же языке, что и весь остальной интерфейс (UITheme, задача #90):
 -- почти чёрный фон, кант в пиксель, моноширинный шрифт, заглавные, скобка «>»
@@ -407,9 +409,14 @@ local columnLimit = Instance.new("UISizeConstraint")
 columnLimit.MaxSize = Vector2.new(COLUMN_W, math.huge)
 columnLimit.Parent = menuHolder
 
-local menuLayout = Instance.new("UIListLayout")
+-- Сетка, а не список: шесть пунктов друг под другом на телефоне в альбоме не встают
+-- (шесть по MIN_TAP с зазорами — 338 пикселей при колонке около двухсот), и тогда
+-- пункты идут в два столбца (fitItems). На ПК столбец один, как и был.
+local menuLayout = Instance.new("UIGridLayout")
 menuLayout.SortOrder = Enum.SortOrder.LayoutOrder
-menuLayout.Padding = UDim.new(0, BTN_GAP)
+menuLayout.FillDirection = Enum.FillDirection.Horizontal
+menuLayout.CellPadding = UDim2.fromOffset(BTN_GAP, BTN_GAP)
+menuLayout.CellSize = UDim2.new(1, 0, 0, BTN_H)
 menuLayout.Parent = menuHolder
 
 -- ---- Страницы журнала и настроек ----
@@ -426,6 +433,84 @@ journal = JournalUI.Mount(body, function(status)
 end)
 
 local settings = SettingsUI.Mount(body)
+
+-- ---- Страница промокода ----
+
+-- Промокод переехал сюда из угла экрана забега: поле и кнопка висели над ареной
+-- весь забег ради действия, нужного раз в жизни. Проверка кода — на сервере
+-- (ServerScriptService.PromoCode), ответ приходит сообщением в журнал на экране.
+local PROMO_FIELD_H = mobile and MobileUI.MIN_TAP or 40
+
+local promoPage = Instance.new("Frame")
+promoPage.Name = "PromoPage"
+promoPage.Size = UDim2.new(1, 0, 1, 0)
+promoPage.BackgroundTransparency = 1
+promoPage.BorderSizePixel = 0
+promoPage.Visible = false
+promoPage.Parent = body
+
+local promoColumn = Instance.new("Frame")
+promoColumn.Size = UDim2.new(1, 0, 1, 0)
+promoColumn.BackgroundTransparency = 1
+promoColumn.BorderSizePixel = 0
+promoColumn.Parent = promoPage
+
+local promoLimit = Instance.new("UISizeConstraint")
+promoLimit.MaxSize = Vector2.new(COLUMN_W, math.huge)
+promoLimit.Parent = promoColumn
+
+local promoList = Instance.new("UIListLayout")
+promoList.SortOrder = Enum.SortOrder.LayoutOrder
+promoList.Padding = UDim.new(0, mobile and 8 or 12)
+promoList.Parent = promoColumn
+
+local promoCaption = Instance.new("TextLabel")
+promoCaption.LayoutOrder = 1
+promoCaption.Size = UDim2.new(1, 0, 0, 26)
+promoCaption.TextSize = Theme.MIN_TEXT
+promoCaption.Parent = promoColumn
+Theme.Section(promoCaption, "промокод")
+
+local promoInput = Instance.new("TextBox")
+promoInput.LayoutOrder = 2
+promoInput.Size = UDim2.new(1, 0, 0, PROMO_FIELD_H)
+promoInput.FontFace = Theme.font.body
+promoInput.TextSize = 16
+promoInput.PlaceholderText = "Введите код…"
+promoInput.ClearTextOnFocus = false
+promoInput.Text = ""
+promoInput.Parent = promoColumn
+Theme.Field(promoInput)
+
+local promoInputPad = Instance.new("UIPadding")
+promoInputPad.PaddingLeft = UDim.new(0, 12)
+promoInputPad.PaddingRight = UDim.new(0, 12)
+promoInputPad.Parent = promoInput
+
+local promoApply = Instance.new("TextButton")
+promoApply.LayoutOrder = 3
+promoApply.Size = UDim2.new(1, 0, 0, PROMO_FIELD_H)
+promoApply.FontFace = Theme.font.strong
+promoApply.TextSize = 16
+promoApply.Text = Theme.Caps("Применить")
+promoApply.Parent = promoColumn
+Theme.Button(promoApply, "action")
+
+local function submitPromoCode()
+	local code = promoInput.Text
+	if code == "" then
+		return
+	end
+	Remotes.RedeemCode:FireServer(code)
+	promoInput.Text = ""
+end
+
+promoApply.MouseButton1Click:Connect(submitPromoCode)
+promoInput.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		submitPromoCode()
+	end
+end)
 
 -- Одна кнопка на два действия, справа вверху рамки — там же, где выход и возврат во всех
 -- окнах игры: в журнале и настройках это «назад», в главном меню — «свернуть». Стоит
@@ -575,18 +660,24 @@ local function showPage(name)
 		settings.Close()
 	end
 
+	promoPage.Visible = name == "promo"
+
 	if name == "journal" then
 		pathLabel.Text = "> " .. Theme.Caps("Журнал")
 		setStatus("Журнал", journal.Status())
 	elseif name == "settings" then
 		pathLabel.Text = "> " .. Theme.Caps("Настройки")
 		setStatus("Настройки", settings.status)
+	elseif name == "promo" then
+		pathLabel.Text = "> " .. Theme.Caps("Промокод")
+		setStatus("Промокод", "ответ появится в журнале на экране")
 	else
 		pathLabel.Text = "> " .. Theme.Caps(inRun and "забег идёт" or "лобби")
 		setStatus("Главное меню", rootHint())
 	end
 
-	Theme.SetScene(screen, name == "root" and "menu" or name)
+	-- У промокода своей обстановки нет — фон как у настроек.
+	Theme.SetScene(screen, (name == "root" and "menu") or (name == "promo" and "settings") or name)
 	-- Помеха при смене страницы — только когда меню на экране: страницу выставляют
 	-- и у закрытого меню.
 	if screenGui.Enabled then
@@ -659,6 +750,21 @@ addItem("Settings", "Настройки", function()
 	showPage("settings")
 end)
 
+-- Окно инвентаря — своё (InventoryUI), меню его только зовёт: открывается поверх меню,
+-- закрыл — и снова в меню.
+addItem("Inventory", "Инвентарь", function()
+	local inventory = script.Parent:FindFirstChild("InventoryUI")
+	local open = inventory and inventory:FindFirstChild("Open")
+	if open then
+		open:Fire()
+	end
+end)
+
+addItem("Promo", "Промокод", function()
+	showPage("promo")
+	promoInput:CaptureFocus()
+end)
+
 for _, item in items do
 	item.button.MouseButton1Click:Connect(function()
 		selectItem(item.index)
@@ -693,11 +799,17 @@ local function fitItems()
 	if available < 40 then
 		return -- до первой отрисовки размера ещё нет
 	end
-	local height = math.floor((available - BTN_GAP * (#items - 1)) / #items)
-	height = math.clamp(height, MobileUI.MIN_TAP, BTN_H)
-	for _, item in items do
-		item.button.Size = UDim2.new(1, 0, 0, height)
+	-- Один столбец, пока пункты влезают хотя бы по MIN_TAP; не влезают — два.
+	local columns = 1
+	local rows = #items
+	if available < rows * MobileUI.MIN_TAP + BTN_GAP * (rows - 1) then
+		columns = 2
+		rows = math.ceil(#items / 2)
 	end
+	local height = math.floor((available - BTN_GAP * (rows - 1)) / rows)
+	height = math.clamp(height, MobileUI.MIN_TAP, BTN_H)
+	menuLayout.CellSize = columns == 1 and UDim2.new(1, 0, 0, height)
+		or UDim2.new(0.5, -math.ceil(BTN_GAP / 2), 0, height)
 
 	-- Сводка в правой колонке прячется, если ей не хватает высоты: на низком
 	-- альбомном экране строки запуска и пять строк сводки друг под друга не встают,
@@ -726,15 +838,43 @@ openGui.DisplayOrder = MobileUI.Layer.Controls
 openGui.Parent = playerGui
 
 local openButton = Instance.new("TextButton")
--- Правый верхний угол под кнопкой инвентаря: левый верхний занят показаниями
--- забега и плутонием, низ — панелью стройки. Место в столбце считает MobileUI:
--- раньше этот скрипт брал угол своим числом и на телефоне накрывал кнопку инвентаря.
+openButton.Name = "MenuButton"
+-- Правый верхний угол, внутри рамки забега (Hud): квадратная кнопка со знаком «≡»
+-- без надписи (просьба автора). Знак — три черты кадрами: в шрифте темы «≡» мелкий
+-- и стоит не по центру. Место в столбце считает MobileUI.
 MobileUI.TopRight(openButton, MobileUI.CornerSlot.Menu)
-openButton.FontFace = Theme.font.strong
-openButton.TextSize = Theme.MIN_TEXT
-openButton.Text = Theme.Caps("Меню")
+openButton.Size = UDim2.fromOffset(MobileUI.CORNER_H, MobileUI.CORNER_H)
+openButton.Text = ""
 openButton.Parent = openGui
 Theme.HudButton(openButton)
+
+local menuIcon = Instance.new("Frame")
+menuIcon.Name = "Icon"
+menuIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+menuIcon.Position = UDim2.fromScale(0.5, 0.5)
+menuIcon.Size = UDim2.fromOffset(mobile and 20 or 16, mobile and 14 or 12)
+menuIcon.BackgroundTransparency = 1
+menuIcon.ZIndex = openButton.ZIndex + 1
+menuIcon.Parent = openButton
+local menuBars = {}
+for index = 0, 2 do
+	local bar = Instance.new("Frame")
+	bar.AnchorPoint = Vector2.new(0, index / 2)
+	bar.Position = UDim2.fromScale(0, index / 2)
+	bar.Size = UDim2.new(1, 0, 0, 2)
+	bar.BorderSizePixel = 0
+	bar.ZIndex = menuIcon.ZIndex
+	bar.Parent = menuIcon
+	table.insert(menuBars, bar)
+end
+-- Черты горят цветом надписи кнопки: наведение подсвечивает их вместе с ней (Theme.Button).
+local function paintMenuIcon()
+	for _, bar in menuBars do
+		bar.BackgroundColor3 = openButton.TextColor3
+	end
+end
+paintMenuIcon()
+openButton:GetPropertyChangedSignal("TextColor3"):Connect(paintMenuIcon)
 
 openButton.MouseButton1Click:Connect(showMenu)
 
