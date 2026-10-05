@@ -44,5 +44,18 @@ local function refresh()
 	end
 end
 
+-- Пока обучение держит волну (TutorialWaveLocked), кнопки «Начать» справа внизу нет,
+-- и строке шага место не нужно уступать: на всю ширину рамки она не переносится
+-- посреди фразы (скрин автора: «…клавиша E у / турели»).
+local function fitWidth()
+	-- На телефоне по краям низа — джойстик и прыжок Roblox, там отступ остаётся всегда.
+	local locked = ReplicatedStorage:GetAttribute("TutorialWaveLocked") == true and not MobileUI.isMobile
+	local side = locked and (MobileUI.FRAME_INSET + 24) or MobileUI.FOOTER_SIDE
+	label.Size = UDim2.new(1, -2 * side, 0, 0)
+end
+
+ReplicatedStorage:GetAttributeChangedSignal("TutorialWaveLocked"):Connect(fitWidth)
+fitWidth()
+
 ReplicatedStorage:GetAttributeChangedSignal("TutorialStep"):Connect(refresh)
 refresh()

@@ -839,38 +839,41 @@ openGui.Parent = playerGui
 
 local openButton = Instance.new("TextButton")
 openButton.Name = "MenuButton"
--- Правый верхний угол, внутри рамки забега (Hud): квадратная кнопка со знаком «≡»
--- без надписи (просьба автора). Знак — три черты кадрами: в шрифте темы «≡» мелкий
--- и стоит не по центру. Место в столбце считает MobileUI.
+-- Правый верхний угол, внутри рамки забега (Hud): квадратная кнопка со значком
+-- без надписи (просьба автора). Значок — четыре квадрата, а не «≡»: три черты
+-- уже стоят у самого Roblox в его панели слева сверху, и два одинаковых значка
+-- на экране читались как одна и та же кнопка. Место в столбце считает MobileUI.
 MobileUI.TopRight(openButton, MobileUI.CornerSlot.Menu)
 openButton.Size = UDim2.fromOffset(MobileUI.CORNER_H, MobileUI.CORNER_H)
 openButton.Text = ""
 openButton.Parent = openGui
 Theme.HudButton(openButton)
 
+local ICON_CELL = mobile and 8 or 6
+local ICON_GAP = mobile and 4 or 3
 local menuIcon = Instance.new("Frame")
 menuIcon.Name = "Icon"
 menuIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 menuIcon.Position = UDim2.fromScale(0.5, 0.5)
-menuIcon.Size = UDim2.fromOffset(mobile and 20 or 16, mobile and 14 or 12)
+menuIcon.Size = UDim2.fromOffset(ICON_CELL * 2 + ICON_GAP, ICON_CELL * 2 + ICON_GAP)
 menuIcon.BackgroundTransparency = 1
 menuIcon.ZIndex = openButton.ZIndex + 1
 menuIcon.Parent = openButton
-local menuBars = {}
-for index = 0, 2 do
-	local bar = Instance.new("Frame")
-	bar.AnchorPoint = Vector2.new(0, index / 2)
-	bar.Position = UDim2.fromScale(0, index / 2)
-	bar.Size = UDim2.new(1, 0, 0, 2)
-	bar.BorderSizePixel = 0
-	bar.ZIndex = menuIcon.ZIndex
-	bar.Parent = menuIcon
-	table.insert(menuBars, bar)
+local menuCells = {}
+for index = 0, 3 do
+	local cell = Instance.new("Frame")
+	cell.Position = UDim2.fromOffset((index % 2) * (ICON_CELL + ICON_GAP), math.floor(index / 2) * (ICON_CELL + ICON_GAP))
+	cell.Size = UDim2.fromOffset(ICON_CELL, ICON_CELL)
+	cell.BorderSizePixel = 0
+	cell.ZIndex = menuIcon.ZIndex
+	cell.Parent = menuIcon
+	Theme.Corner(cell, 1)
+	table.insert(menuCells, cell)
 end
--- Черты горят цветом надписи кнопки: наведение подсвечивает их вместе с ней (Theme.Button).
+-- Значок горит цветом надписи кнопки: наведение подсвечивает его вместе с ней (Theme.Button).
 local function paintMenuIcon()
-	for _, bar in menuBars do
-		bar.BackgroundColor3 = openButton.TextColor3
+	for _, cell in menuCells do
+		cell.BackgroundColor3 = openButton.TextColor3
 	end
 end
 paintMenuIcon()

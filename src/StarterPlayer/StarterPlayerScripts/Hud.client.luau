@@ -74,18 +74,21 @@ local function edgeShade(top, height)
 
 	local fade = Instance.new("UIGradient")
 	fade.Rotation = top and 90 or -90
+	-- Плавный спад без ступеньки: прежние 0.12 → 0.4 на середине давали плотную
+	-- полосу с видимым краем, и на светлой стене она резала арену (скрин автора).
 	fade.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.12),
-		NumberSequenceKeypoint.new(0.55, 0.4),
+		NumberSequenceKeypoint.new(0, 0.25),
+		NumberSequenceKeypoint.new(0.3, 0.45),
+		NumberSequenceKeypoint.new(0.65, 0.8),
 		NumberSequenceKeypoint.new(1, 1),
 	})
 	fade.Parent = shade
 	return shade
 end
 
-edgeShade(true, HEADER_H + (mobile and 24 or 40))
+edgeShade(true, HEADER_H + (mobile and 40 or 80))
 -- Подвал: две строки подсказок, кнопка волны на ПК и запас под тень.
-edgeShade(false, MobileUI.FOOTER_BOTTOM + 2 * MobileUI.FOOTER_LINE + (mobile and 40 or 70) - INSET)
+edgeShade(false, MobileUI.FOOTER_BOTTOM + 2 * MobileUI.FOOTER_LINE + (mobile and 60 or 110) - INSET)
 
 -- Скобки после теней: уголки должны лечь поверх них.
 Theme.Brackets(frame)
@@ -118,12 +121,13 @@ Theme.ArenaLabel(titleLabel)
 
 local levelLabel = Instance.new("TextLabel")
 levelLabel.Position = UDim2.fromOffset(mobile and 16 or 22, mobile and 34 or 44)
-levelLabel.Size = UDim2.fromOffset(mobile and 120 or 320, 18)
+levelLabel.Size = UDim2.fromOffset(mobile and 120 or 340, 20)
 levelLabel.FontFace = Theme.font.body
-levelLabel.TextSize = Theme.MIN_TEXT
+-- Крупнее минимума и светлее: в 14 приглушённым на светлой стене строка терялась.
+levelLabel.TextSize = mobile and Theme.MIN_TEXT or 16
 levelLabel.TextXAlignment = Enum.TextXAlignment.Left
 levelLabel.TextTruncate = Enum.TextTruncate.AtEnd
-levelLabel.TextColor3 = Theme.color.textDim
+levelLabel.TextColor3 = Theme.color.text
 levelLabel.Text = ""
 levelLabel.Parent = frame
 Theme.ArenaLabel(levelLabel)
@@ -173,6 +177,8 @@ local function makeStat(caption, x, width, align, valueSize)
 	cap.Text = Theme.Caps(caption)
 	cap.Parent = readouts
 	Theme.StatCaption(cap)
+	-- Подпись светлее обычной (textDim, а не textMute): под ней арена, а не тёмное окно.
+	cap.TextColor3 = Theme.color.textDim
 	cap.TextXAlignment = align
 	Theme.ArenaLabel(cap)
 
