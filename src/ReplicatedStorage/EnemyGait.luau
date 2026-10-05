@@ -255,10 +255,18 @@ local DEATH_DROP = 0.3
 local IDLE_SPEED = 2
 -- Как быстро жук переходит между «идёт» и «стоит», 1/сек: без сглаживания дыхание
 -- включалось бы рывком на каждой заминке в толкучке.
-local IDLE_EASE = 3
--- Потолок шагов в секунду для фазы подскока: на рывке толкучки или просадке кадра
--- сырая каденция уходит в десятки, и подскок превращался бы в дрожь.
-local CADENCE_MAX = 6
+local IDLE_EASE = 2
+-- Потолки частоты подскока и валкости, колебаний в секунду. Каденция у мелкого жука
+-- честно высокая (Мини на Scale 0.6 делает шагов в 5 раз чаще Стандарта), и подскок
+-- «дважды за шаг» на ней давал 10-12 Гц — это читалось не как бег, а как дрожь
+-- (жалоба автора после #415: «жуки трясутся, особенно маленькие»). Выше потолка
+-- частота не растёт, а амплитуда падает пропорционально: частый мелкий шаг даёт
+-- ровный корпус, как у живого бегущего насекомого.
+local BOB_HZ_MAX = 2.5
+local LURCH_HZ_MAX = 1.2
+-- Сглаживание каденции, 1/сек: толкучка дёргает скорость покадрово, и без него
+-- фаза подскока скакала бы вместе с ней.
+local CADENCE_EASE = 3
 -- Потолок тангажа дыхания, рад: вдох чуть приподнимает нос, а не кивает жуком.
 local BREATH_PITCH = 0.5
 
@@ -736,23 +744,33 @@ local function flourish(state, body, dt)
 	local style = state.style or EnemyGaitStyles.Default
 	local strut = state.strut or 1
 	local scale = state.gaitScale or 1
-	local speed = (state.velocity or Vector3.zero).Magnitude / scale
-	-- Доля полной силы: на рабочей скорости вида — 1, на медленном ходу меньше.
-	local drive = math.clamp(speed / style.refSpeed, 0, 1.3)
+	local worldSpeed = (state.velocity or Vector3.zero).Magnitude
+	-- Доля полной силы: на рабочей скорости вида — 1, на медленном ходу меньше. Скорость
+	-- мировая, как и refSpeed (скорость вида в Enemies): в единицах Стандарта мелкий жук
+	-- «бежал» бы в разы быстрее своей скорости и трясся в потолок.
+	local drive = math.clamp(worldSpeed / style.refSpeed, 0, 1)
 
-	-- Фаза шагового цикла: шагов в секунду = ход / длина шага. Считается по факту, а не
-	-- по задуманной скорости вида: в толкучке и на замедлении подскок замедляется вместе
-	-- с ногами, иначе тело трясётся отдельно от них.
-	local cadence = math.min(speed / math.max(MODEL_STRIDE * style.stride, 0.1), CADENCE_MAX)
-	state.gaitPhase = (state.gaitPhase or 0) + dt * cadence
-	local phase = state.gaitPhase * math.pi * 2 + state.phase
+	-- Шагов в секунду = ход / длина шага. Считается по факту, а не по задуманной скорости
+	-- вида: в толкучке и на замедлении подскок замедляется вместе с ногами.
+	local rawCadence = worldSpeed / scale / math.max(MODEL_STRIDE * style.stride, 0.1)
+	state.cadence = (state.cadence or rawCadence)
+		+ (rawCadence - (state.cadence or rawCadence)) * math.clamp(dt * CADENCE_EASE, 0, 1)
+	local cadence = state.cadence
 
 	local rise, pitch, roll = 0, 0, 0
 	if style.bob.amp > 0 and drive > 0.01 then
-		rise += math.sin(phase * style.bob.freq) * style.bob.amp * drive * strut
+		local hz = cadence * style.bob.freq
+		local capped = math.min(hz, BOB_HZ_MAX)
+		state.bobPhase = (state.bobPhase or 0) + dt * capped
+		local fade = hz > BOB_HZ_MAX and BOB_HZ_MAX / hz or 1
+		rise += math.sin(state.bobPhase * math.pi * 2 + state.phase) * style.bob.amp * drive * fade * strut
 	end
 	if style.lurch.amp > 0 and drive > 0.01 then
-		roll += math.sin(phase * style.lurch.freq) * style.lurch.amp * drive
+		local hz = cadence * style.lurch.freq
+		local capped = math.min(hz, LURCH_HZ_MAX)
+		state.lurchPhase = (state.lurchPhase or 0) + dt * capped
+		local fade = hz > LURCH_HZ_MAX and LURCH_HZ_MAX / hz or 1
+		roll += math.sin(state.lurchPhase * math.pi * 2 + state.phase) * style.lurch.amp * drive * fade
 	end
 
 	local idle = state.idle or 0
