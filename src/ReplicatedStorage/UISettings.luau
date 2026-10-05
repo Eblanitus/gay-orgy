@@ -82,6 +82,24 @@ UISettings.List = {
 		default = "100",
 	},
 	{
+		-- #412: свет и постэффекты по уровню, пресеты — ReplicatedStorage.GraphicsPresets.
+		-- «Авто» берёт уровень по ползунку графики в меню Roblox, а если там «Автоматически» —
+		-- по устройству (телефон — средняя, ПК — высокая).
+		key = "graphics",
+		name = "Качество графики",
+		note = "Тени, свечение, дымка и цвет. Ниже — легче для слабых устройств",
+		affects = "Graphics.client",
+		tab = "graphics",
+		options = {
+			{ value = "auto", label = "АВТО" },
+			{ value = "low", label = "НИЗКАЯ" },
+			{ value = "medium", label = "СРЕДНЯЯ" },
+			{ value = "high", label = "ВЫСОКАЯ" },
+			{ value = "ultra", label = "УЛЬТРА" },
+		},
+		default = "auto",
+	},
+	{
 		key = "volumeMaster",
 		name = "Общая громкость",
 		note = "Все звуки игры сразу",
@@ -147,6 +165,7 @@ UISettings.List = {
 UISettings.Tabs = {
 	{ key = "view", name = "Интерфейс" },
 	{ key = "sound", name = "Звук" },
+	{ key = "graphics", name = "Графика" },
 }
 
 UISettings.ByKey = {}
