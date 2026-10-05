@@ -21,7 +21,9 @@
 --   lampLight, lampGlow — множители к лампам карты: lampLight — к Light.Brightness,
 --     lampGlow — к цвету Neon-рассеивателя, на котором висит лампа (яркость свечения Neon
 --     идёт от цвета). Белые рассеиватели под LightingStyle Realistic пересвечивались
---     (автор, #414), 1 — как в месте;
+--     (автор, #414), а с 0,75/0,45 стали тусклыми (автор, #415) — теперь 0,9/0,7; 1 — как в месте;
+--   ambient — множитель к общей заливке места (Lighting.Ambient, OutdoorAmbient, Brightness):
+--     без него всё, что не под лампой, светилось чуть лишнее (автор, #415);
 --   bloom, sunRays, depthOfField, atmosphere, colorCorrection — таблица свойств эффекта
 --     или false (эффект выключен). Bloom даёт свечение Neon (у жуков
 --     материалы *_glow — Neon): Neon в Future много ярче освещённых деталей, и порог между ними — ореол только вокруг Neon.
@@ -35,8 +37,9 @@ GraphicsPresets.Levels = {
 		specular = 0,
 		diffuse = 0.5,
 		lampShadows = false,
-		lampLight = 0.8,
-		lampGlow = 0.5,
+		ambient = 0.8,
+		lampLight = 0.9,
+		lampGlow = 0.7,
 		bloom = false,
 		sunRays = false,
 		depthOfField = false,
@@ -50,8 +53,9 @@ GraphicsPresets.Levels = {
 		specular = 0.5,
 		diffuse = 1,
 		lampShadows = false,
-		lampLight = 0.8,
-		lampGlow = 0.5,
+		ambient = 0.8,
+		lampLight = 0.9,
+		lampGlow = 0.7,
 		bloom = { Intensity = 0.4, Size = 18, Threshold = 2 },
 		sunRays = false,
 		depthOfField = false,
@@ -65,8 +69,9 @@ GraphicsPresets.Levels = {
 		specular = 1,
 		diffuse = 1,
 		lampShadows = "map",
-		lampLight = 0.75,
-		lampGlow = 0.45,
+		ambient = 0.8,
+		lampLight = 0.9,
+		lampGlow = 0.7,
 		bloom = { Intensity = 0.5, Size = 24, Threshold = 1.8 },
 		sunRays = { Intensity = 0.01, Spread = 0.1 },
 		depthOfField = false,
@@ -80,8 +85,9 @@ GraphicsPresets.Levels = {
 		specular = 1,
 		diffuse = 1,
 		lampShadows = true,
-		lampLight = 0.75,
-		lampGlow = 0.45,
+		ambient = 0.8,
+		lampLight = 0.9,
+		lampGlow = 0.7,
 		bloom = { Intensity = 0.6, Size = 28, Threshold = 1.6 },
 		sunRays = { Intensity = 0.03, Spread = 0.2 },
 		depthOfField = { FarIntensity = 0.1, FocusDistance = 0.05, InFocusRadius = 30, NearIntensity = 0.75 },
