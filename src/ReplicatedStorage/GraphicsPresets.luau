@@ -11,17 +11,21 @@
 -- телефон тянет.
 --
 -- Поля уровня:
---   globalShadows, shadowSoftness, specular, diffuse — свойства Lighting
---     (GlobalShadows, ShadowSoftness, EnvironmentSpecularScale, EnvironmentDiffuseScale);
+--   exposure, globalShadows, shadowSoftness, specular, diffuse — свойства Lighting
+--     (ExposureCompensation, GlobalShadows, ShadowSoftness, EnvironmentSpecularScale,
+--     EnvironmentDiffuseScale). Под Future белый пластик под лампой ярче единицы, поэтому
+--     на высоких уровнях экспозиция чуть ниже нуля, а порог Bloom не ниже 1,6: с порогом
+--     около единицы светились белая одежда, окна и турели (скрин автора, #413);
 --   lampShadows — тени ламп карты (Light.Shadows в Workspace.Location): false — выключить
 --     все, "map" — как поставлено в месте, true — включить у всех;
 --   bloom, sunRays, depthOfField, atmosphere, colorCorrection — таблица свойств эффекта
---     или false (эффект выключен). Bloom со слабым порогом даёт свечение Neon (у жуков
---     материалы *_glow — Neon): Neon в Future ярче единицы, и порог ниже — ореол вокруг него.
+--     или false (эффект выключен). Bloom даёт свечение Neon (у жуков
+--     материалы *_glow — Neon): Neon в Future много ярче освещённых деталей, и порог между ними — ореол только вокруг Neon.
 local GraphicsPresets = {}
 
 GraphicsPresets.Levels = {
 	low = {
+		exposure = 0,
 		globalShadows = false,
 		shadowSoftness = 0.2,
 		specular = 0,
@@ -34,42 +38,45 @@ GraphicsPresets.Levels = {
 		colorCorrection = false,
 	},
 	medium = {
+		exposure = 0,
 		globalShadows = true,
 		shadowSoftness = 0.2,
 		specular = 0.5,
 		diffuse = 1,
 		lampShadows = false,
-		bloom = { Intensity = 0.6, Size = 18, Threshold = 1.4 },
+		bloom = { Intensity = 0.4, Size = 18, Threshold = 2 },
 		sunRays = false,
 		depthOfField = false,
 		atmosphere = { Density = 0.3, Haze = 0, Glare = 0 },
 		colorCorrection = { Brightness = 0, Contrast = 0.05, Saturation = 0.05, TintColor = Color3.new(1, 1, 1) },
 	},
 	high = {
+		exposure = -0.2,
 		globalShadows = true,
 		shadowSoftness = 0.15,
 		specular = 1,
 		diffuse = 1,
 		lampShadows = "map",
-		bloom = { Intensity = 0.8, Size = 28, Threshold = 1.15 },
+		bloom = { Intensity = 0.5, Size = 24, Threshold = 1.8 },
 		sunRays = { Intensity = 0.01, Spread = 0.1 },
 		depthOfField = false,
 		atmosphere = { Density = 0.32, Haze = 0.5, Glare = 0 },
 		colorCorrection = { Brightness = 0, Contrast = 0.1, Saturation = 0.1, TintColor = Color3.new(1, 1, 1) },
 	},
 	ultra = {
+		exposure = -0.3,
 		globalShadows = true,
 		shadowSoftness = 0.1,
 		specular = 1,
 		diffuse = 1,
 		lampShadows = true,
-		bloom = { Intensity = 1, Size = 40, Threshold = 0.95 },
+		bloom = { Intensity = 0.6, Size = 28, Threshold = 1.6 },
 		sunRays = { Intensity = 0.03, Spread = 0.2 },
 		depthOfField = { FarIntensity = 0.1, FocusDistance = 0.05, InFocusRadius = 30, NearIntensity = 0.75 },
 		atmosphere = { Density = 0.34, Haze = 1, Glare = 0.2 },
 		colorCorrection = {
-			Brightness = 0.02,
-			Contrast = 0.15,
+			Brightness = 0,
+			Contrast = 0.1,
 			Saturation = 0.15,
 			TintColor = Color3.fromRGB(245, 250, 255),
 		},

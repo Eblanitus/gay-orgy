@@ -87,6 +87,7 @@ end
 
 local function apply()
 	local p = GraphicsPresets.Levels[level()]
+	Lighting.ExposureCompensation = p.exposure
 	Lighting.GlobalShadows = p.globalShadows
 	Lighting.ShadowSoftness = p.shadowSoftness
 	Lighting.EnvironmentSpecularScale = p.specular
