@@ -59,6 +59,8 @@ def lua():
             vals = ", ".join(f"{c:.3f}".rstrip("0").rstrip(".") for c in rgb)
             names = ", ".join(f'"{k}"' for k in keys)
             tail = f", alpha = {alpha}" if alpha < 1 else ""
+            if name.endswith("_glow"):
+                tail += ", neon = true"
             out.append(f"\t\t{{ {vals}, {names}{tail} }},")
         out.append("\t},")
     out.append("}")
