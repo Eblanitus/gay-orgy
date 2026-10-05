@@ -47,17 +47,36 @@ end
 -- Тени ламп карты. Как стоит в месте, запоминается при первой встрече с лампой: уровни
 -- «Низкая» и «Средняя» тени выключают, а «Высокая» должна вернуть именно то, что
 -- поставлено в Studio, а не «включить у всех».
+-- Так же запоминаются яркость лампы и цвет её Neon-рассеивателя: множители уровня
+-- (lampLight, lampGlow) считаются от места, а не от уже убавленного.
+-- Лампы карты — только SurfaceLight: вспышки и снаряды светят PointLight, у них яркость
+-- своя и её не трогаем.
 local mapShadows = setmetatable({}, { __mode = "k" })
+local mapBrightness = setmetatable({}, { __mode = "k" })
+local mapGlow = setmetatable({}, { __mode = "k" })
 local lampMode = "map"
+local lampLight = 1
+local lampGlow = 1
 
 local function applyLamp(light)
 	if mapShadows[light] == nil then
 		mapShadows[light] = light.Shadows
+		mapBrightness[light] = light.Brightness
 	end
 	if lampMode == "map" then
 		light.Shadows = mapShadows[light]
 	else
 		light.Shadows = lampMode
+	end
+	light.Brightness = mapBrightness[light] * lampLight
+
+	local diffuser = light.Parent
+	if diffuser and diffuser:IsA("BasePart") and diffuser.Material == Enum.Material.Neon then
+		if mapGlow[diffuser] == nil then
+			mapGlow[diffuser] = diffuser.Color
+		end
+		local c = mapGlow[diffuser]
+		diffuser.Color = Color3.new(c.R * lampGlow, c.G * lampGlow, c.B * lampGlow)
 	end
 end
 
@@ -67,7 +86,7 @@ local function eachLamp(fn)
 		return
 	end
 	for _, d in location:GetDescendants() do
-		if d:IsA("Light") then
+		if d:IsA("SurfaceLight") then
 			fn(d)
 		end
 	end
@@ -105,6 +124,8 @@ local function apply()
 	end
 
 	lampMode = p.lampShadows
+	lampLight = p.lampLight
+	lampGlow = p.lampGlow
 	eachLamp(applyLamp)
 end
 
@@ -112,7 +133,7 @@ end
 -- выставляем по текущему уровню.
 local function watchLocation(location)
 	location.DescendantAdded:Connect(function(d)
-		if d:IsA("Light") then
+		if d:IsA("SurfaceLight") then
 			applyLamp(d)
 		end
 	end)
