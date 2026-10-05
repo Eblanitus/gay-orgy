@@ -20,24 +20,38 @@ gui.Parent = playerGui
 local frame = Instance.new("Frame")
 frame.AnchorPoint = Vector2.new(0.5, 0)
 frame.Position = UDim2.new(0.5, 0, 0, MobileUI.EDGE)
-frame.Size = UDim2.new(0.5, 0, 0, 52)
+-- Высота растёт под текст: строке шага добавилась метка раздела, и в фиксированные
+-- 52 пикселя длинный шаг на три строки уже не встал бы.
+frame.Size = UDim2.new(0.5, 0, 0, 0)
+frame.AutomaticSize = Enum.AutomaticSize.Y
 frame.BorderSizePixel = 0
 frame.Visible = false
 frame.Parent = gui
-Theme.Panel(frame, { scene = "run" })
+-- Плашка языком рамки главного меню (до этого — соты забега, чужие меню).
+Theme.Plate(frame)
 
 local constraint = Instance.new("UISizeConstraint")
-constraint.MinSize = Vector2.new(280, 0)
+constraint.MinSize = Vector2.new(280, 52)
 constraint.MaxSize = Vector2.new(560, math.huge)
 constraint.Parent = frame
 
+local pad = Instance.new("UIPadding")
+pad.PaddingTop = UDim.new(0, 14)
+pad.PaddingBottom = UDim.new(0, 14)
+pad.PaddingLeft = UDim.new(0, 16)
+pad.PaddingRight = UDim.new(0, 16)
+pad.Parent = frame
+
+-- Строка как подвал меню: «ОБУЧЕНИЕ  //  шаг», по левому краю.
 local label = Instance.new("TextLabel")
 label.BackgroundTransparency = 1
-label.Position = UDim2.new(0, 14, 0, 0)
-label.Size = UDim2.new(1, -28, 1, 0)
-label.FontFace = Theme.font.strong
+label.Size = UDim2.new(1, 0, 0, 0)
+label.AutomaticSize = Enum.AutomaticSize.Y
+label.FontFace = Theme.font.body
 label.TextSize = MobileUI.isMobile and 14 or 16
 label.TextWrapped = true
+label.RichText = true
+label.TextXAlignment = Enum.TextXAlignment.Left
 label.TextColor3 = Theme.color.text
 label.Parent = frame
 
@@ -45,8 +59,9 @@ local function refresh()
 	local step = TutorialConfig.steps[ReplicatedStorage:GetAttribute("TutorialStep") or 0]
 	local text = step and (MobileUI.isMobile and step.mobile or step.text) or ""
 	frame.Visible = text ~= ""
-	if text ~= "" and label.Text ~= text then
-		label.Text = text
+	local shown = Theme.StatusText("обучение", text)
+	if text ~= "" and label.Text ~= shown then
+		label.Text = shown
 		Theme.Blink(label)
 	end
 end

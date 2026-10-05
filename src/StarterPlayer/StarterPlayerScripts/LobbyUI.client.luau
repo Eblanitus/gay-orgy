@@ -73,7 +73,7 @@ plutoniumCountLabel.AnchorPoint = Vector2.new(1, 1)
 plutoniumCountLabel.Position = UDim2.new(1, 4, 1, 4)
 -- Бейдж валюты собран теми же цветами, что и показания забега в Hud: янтарь в палитре
 -- закреплён за считаемым ресурсом — и материей, и плутонием.
-plutoniumCountLabel.BackgroundColor3 = Theme.color.panel
+plutoniumCountLabel.BackgroundColor3 = Theme.color.ink
 plutoniumCountLabel.BackgroundTransparency = 0.05
 plutoniumCountLabel.FontFace = Theme.font.strong
 plutoniumCountLabel.TextSize = 14
@@ -105,7 +105,7 @@ xpLabel.Name = "XpLabel"
 xpLabel.AutomaticSize = Enum.AutomaticSize.X
 xpLabel.Size = UDim2.new(0, 0, 0, XP_ROW_HEIGHT)
 xpLabel.Position = UDim2.new(0, PLUTONIUM_ICON_SIZE + XP_GAP, 0, (PLUTONIUM_ICON_SIZE - XP_ROW_HEIGHT) / 2)
-xpLabel.BackgroundColor3 = Theme.color.panel
+xpLabel.BackgroundColor3 = Theme.color.ink
 xpLabel.BackgroundTransparency = 0.05
 xpLabel.FontFace = Theme.font.strong
 xpLabel.TextSize = 14
@@ -119,7 +119,7 @@ xpPadding.PaddingRight = UDim.new(0, 6)
 xpPadding.Parent = xpLabel
 
 Theme.Corner(xpLabel, Theme.radius.mark)
-Theme.Stroke(xpLabel, Theme.Shadowed(Theme.color.text, 0.55), 1, 0)
+Theme.Stroke(xpLabel, Theme.color.frame, 1, 0)
 
 -- Карточка описания: сначала игровое назначение валюты, потом научная справка по элементу.
 -- Свой ScreenGui на слое Notify (200), а не внутри screenGui (Hud, 10): на телефоне панель стройки
@@ -144,7 +144,8 @@ plutoniumInfoPadding.PaddingLeft = UDim.new(0, 14)
 plutoniumInfoPadding.PaddingRight = UDim.new(0, 14)
 plutoniumInfoPadding.Parent = plutoniumInfoFrame
 
-Theme.Panel(plutoniumInfoFrame, { scene = "dialog" })
+-- Карточка — языком рамки главного меню (Theme.Plate), как и весь HUD.
+Theme.Plate(plutoniumInfoFrame)
 
 local plutoniumInfoLabel = Instance.new("TextLabel")
 plutoniumInfoLabel.Size = UDim2.new(1, 0, 0, 0)

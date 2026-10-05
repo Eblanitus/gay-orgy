@@ -32,12 +32,18 @@ local label = Instance.new("TextLabel")
 label.AnchorPoint = Vector2.new(0, 0)
 label.Position = UDim2.new(0, MobileUI.EDGE, 0, MobileUI.TopInset + MobileUI.EDGE)
 label.Size = UDim2.new(0, 240, 0, MobileUI.isMobile and 24 or 28)
-label.BackgroundTransparency = 1
 label.RichText = true
 label.TextXAlignment = Enum.TextXAlignment.Left
 label.TextSize = MobileUI.isMobile and 14 or 17
 label.Parent = screenGui
 Theme.Display(label)
+-- Счёт на плашке языком рамки главного меню, а не голым текстом поверх арены.
+-- Без скобок и сетки: плашка низкая, а у TextLabel дети легли бы на текст.
+Theme.Plate(label, { brackets = false, dots = false })
+local labelPad = Instance.new("UIPadding")
+labelPad.PaddingLeft = UDim.new(0, 12)
+labelPad.PaddingRight = UDim.new(0, 12)
+labelPad.Parent = label
 label.Text = Theme.Readout("раздавлено", "0", Theme.color.accent)
 
 local labelScale = Instance.new("UIScale")

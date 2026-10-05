@@ -353,7 +353,8 @@ toggleGui.Parent = playerGui
 
 toggleButton.Parent = toggleGui
 
-Theme.Button(toggleButton, "ghost")
+-- Кнопка на краю экрана — языком рамки главного меню (Theme.HudButton).
+Theme.HudButton(toggleButton)
 
 -- Открытие сбрасывает прокрутку списка — тот же фикс, что и в TowerInteraction.openPicker,
 -- иначе окно может открыться промотанным вниз с прошлого раза.
