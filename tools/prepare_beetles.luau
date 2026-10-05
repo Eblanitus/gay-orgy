@@ -1,11 +1,11 @@
--- Шаблоны жуков из авторских .glb (Мини, Хмурый брон, Моль, Работяга, Строитель, Пеликан).
+-- Шаблоны жуков из .glb: все 26 видов (список — SPECS ниже, файлы — «Модели/Жуки»).
+-- Сами .glb собирает tools/beetles/build_all.py (python3, numpy) — правка формы там, не в Blender.
 --
 -- Порядок:
---   1. Studio → Avatar/Home → Import 3D, по очереди все шесть файлов из папки «Модели/Жуки»:
---      mini_beetle.glb, hmuryi_bron.glb, moth.glb, worker_beetle.glb, builder_beetle.glb,
---      pelican_beetle.glb. Настройки импорта — по умолчанию. Импорт ляжет в Workspace
---      моделью AuxScene — переименовать в имя файла (worker_beetle и т.д.), по нему скрипт
---      и находит импорт.
+--   1. Studio → Avatar/Home → Import 3D файла «Модели/Жуки/all_beetles.glb» — в нём все виды сразу
+--      (можно и отдельные файлы видов из той же папки). Настройки импорта — по умолчанию.
+--      Переименовывать ничего не нужно: корень каждого вида назван его файлом (worker_beetle,
+--      acid_spitter…), по нему скрипт и находит импорт. Нет импорта вида — его шаблон не трогается.
 --   2. View → Command Bar, вставить весь файл, Enter. В Output — отчёт по каждому жуку.
 --   3. Ctrl+S / Save to Roblox.
 -- Отменить: Ctrl+Z сразу после запуска.
@@ -36,13 +36,13 @@ local SPECS = {
 		source = "hmuryi_bron",
 		template = "ArmoredBeetleTemplate",
 		length = 3.45,
-		head = { "^head_casque$", "^brow_ridge$", "^part_66$", "^part_67$", "^jaw_[LR]$", "^bite_muscle$" },
+		head = { "^head_casque$", "^brow_ridge$", "^bite_muscle$" },
 	},
 	{
 		source = "moth",
 		template = "MothTemplate",
 		length = 3.38,
-		head = { "^labial_palp", "^part_44$", "^part_46$", "^part_48$" },
+		head = { "^labial_palp" },
 		flap = { freq = 2.2, angle = 40 },
 	},
 	{ source = "worker_beetle", template = "WorkerBeetleTemplate", length = 3.82 },
@@ -59,68 +59,262 @@ local SPECS = {
 		mandible = { "^beak_tooth$" },
 		flap = { freq = 3.5, angle = 30 },
 	},
+	-- Остальные виды (#402): длина — тело в .glb × 3.1 / 2.8, как у Стандарта.
+	{ source = "acid_spitter", template = "AcidSpitterTemplate", length = 2.81 },
+	{ source = "medic", template = "MedicTemplate", length = 3.17 },
+	{ source = "queen", template = "QueenTemplate", length = 1.77, flap = { freq = 3, angle = 30 } },
+	{ source = "larva", template = "LarvaTemplate", length = 2.75 },
+	{ source = "bomber", template = "BomberTemplate", length = 2.77 },
+	{ source = "shield_bearer", template = "ShieldBearerTemplate", length = 2.98 },
+	{ source = "coordinator", template = "CoordinatorTemplate", length = 2.79 },
+	{ source = "ram", template = "RamTemplate", length = 3.23 },
+	{ source = "sprinter", template = "SprinterTemplate", length = 3.13 },
+	{ source = "giant", template = "GiantTemplate", length = 3.53 },
+	{ source = "knitter", template = "KnitterTemplate", length = 2.92 },
+	{ source = "facehugger", template = "FacehuggerTemplate", length = 1.88, flap = { freq = 6, angle = 25 } },
+	{ source = "absorber", template = "AbsorberTemplate", length = 1.66 },
+	{ source = "evolver", template = "EvolverTemplate", length = 2.92 },
+	{ source = "carrier", template = "CarrierTemplate", length = 3.58 },
+	{ source = "puppeteer", template = "PuppeteerTemplate", length = 3.22 },
+	{ source = "hive_architect", template = "HiveArchitectTemplate", length = 3.23 },
+	{ source = "mimic", template = "MimicTemplate", length = 2.86 },
+	{ source = "shadow", template = "ShadowTemplate", length = 2.97 },
+	-- Стандарт — последним: Root всех шаблонов берётся с прежнего NormalBeetleTemplate,
+	-- а его самого prepare заменяет новым (старый удаляется).
+	{ source = "standard_beetle", template = "NormalBeetleTemplate", length = 3.1 },
 }
 
 -- Цвета из .glb (baseColorFactor, линейные): Import 3D их не переносит, детали приходят серыми.
+-- Таблицу печатает tools/beetles/colors_lua.py — после правки жуков в species.py вставить её сюда.
 -- Группа — один цвет: { r, g, b, имена деталей..., alpha = непрозрачность, если не 1 }.
 -- Имя ищется целиком, затем без цифр в конце, без «_L/_R», затем по началу имени (cheek_L → cheek).
--- Крыльям Моли цвет даёт текстура (TextureID) — их Color не трогается.
 local COLORS = {
-	MiniBeetleTemplate = {
-		{ 0.254, 0.068, 0.014, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "MandibleBase", "MandibleJoint", "BeetleBodyInner", "BeetleNeckBottom", "BeetleNeckTop", "BeetlePlate", "BeetleSternite", "ROOT", "HeadBase", "AntNode", "AntSeg" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia", "MandibleTip", "Tooth1" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.01, 0.008, 0.008, "Eye" },
-	},
-	ArmoredBeetleTemplate = {
-		{ 0.023, 0.015, 0.009, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "HeadBase", "BeetleBodyInner", "BeetleNeckBottom", "BeetleNeckTop", "BeetlePlate", "BeetleSternite", "ROOT" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.107, 0.133, 0.162, "Armor_BeetlePlate", "head_casque", "bite_muscle" },
-		{ 0.042, 0.051, 0.065, "brow_ridge", "part_66", "part_67" },
-		{ 0.254, 0.275, 0.296, "jaw_L", "jaw_R" },
-	},
-	MothTemplate = {
-		{ 0.509, 0.456, 0.371, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "HeadBase", "thorax", "thorax_plate", "part_44", "labial_palp_1", "part_46", "labial_palp_-1" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.01, 0.008, 0.008, "Eye" },
-		{ 0.03, 0.036, 0.028, "neck_collar", "wing_costa" },
-		{ 0.042, 0.028, 0.018, "part_48" },
-		{ 1, 1, 1, "forewing", "hindwing", alpha = 0.7 },
+	NormalBeetleTemplate = {
+		{ 0.075, 0.032, 0.012, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.16, 0.07, 0.025, "BeetlePlate" },
+		{ 0.66, 0.57, 0.39, "elytra_spot" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
 	},
 	WorkerBeetleTemplate = {
-		{ 0.147, 0.042, 0.012, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "BeetleBodyInner", "BeetleNeckBottom", "BeetleNeckTop", "BeetleSternite", "ROOT", "BeetlePlate", "HeadBase", "AntNode", "AntSeg" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.01, 0.008, 0.008, "Eye" },
-		{ 0.027, 0.01, 0.004, "MandibleBase", "MandibleJoint", "MandibleTip", "Tooth1" },
+		{ 0.11, 0.05, 0.015, "BeetleBodyInner", "BeetleSternite", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.2, 0.1, 0.03, "BeetlePlate" },
+		{ 0.04, 0.02, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.02, 0.01, 0.004, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
+	},
+	MiniBeetleTemplate = {
+		{ 0.055, 0.02, 0.008, "BeetleBodyInner", "BeetleSternite", "ThoraxCore", "ROOT", "HeadBase", "MandibleJoint", "MandibleBase", "MandibleTip", "AntSeg", "AntNode" },
+		{ 0.34, 0.085, 0.016, "BeetlePlate" },
+		{ 0.025, 0.01, 0.006, "elytra_spot" },
+		{ 0.035, 0.014, 0.006, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
 	},
 	BuilderBeetleTemplate = {
-		{ 0.195, 0.068, 0.019, "AnkleJoint", "Femur", "KneeJoint", "ThoraxCore", "BeetleNeckBottom", "BeetleNeckTop", "BeetleSternite", "ROOT", "BeetlePlate", "BeetleBodyInner", "HeadBase", "AntNode", "AntSeg", "cheek" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.01, 0.008, 0.008, "Eye" },
-		{ 0.027, 0.01, 0.004, "MandibleBase", "MandibleJoint", "MandibleTip", "Tooth1" },
+		{ 0.195, 0.068, 0.019, "BeetleBodyInner", "BeetlePlate", "ThoraxCore", "ROOT", "HeadBase", "cheek" },
 		{ 0.687, 0.546, 0.332, "belly_fill" },
 		{ 0.254, 0.144, 0.065, "belly_seam" },
-		{ 0.068, 0.023, 0.007, "shovel" },
+		{ 0.045, 0.018, 0.007, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.068, 0.023, 0.007, "shovel_plate", "MandibleJoint", "MandibleBase", "MandibleTip", "AntSeg", "AntNode" },
+	},
+	ArmoredBeetleTemplate = {
+		{ 0.03, 0.018, 0.01, "BeetleBodyInner", "BeetleSternite", "ThoraxCore", "ROOT", "HeadBase", "bite_muscle", "AntSeg", "AntNode" },
+		{ 0.107, 0.133, 0.162, "Armor_BeetlePlate", "Armor_pronotum", "head_casque" },
+		{ 0.2, 0.23, 0.26, "Armor_edge" },
+		{ 0.028, 0.02, 0.014, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.042, 0.051, 0.065, "brow_ridge", "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
 	},
 	PelicanBeetleTemplate = {
-		{ 0.056, 0.021, 0.01, "ThoraxCore", "AnkleJoint", "Femur", "KneeJoint", "BeetleSternite", "ROOT", "BeetlePlate", "BeetleBodyInner", "AntNode", "AntSeg", "HeadBase", "neck" },
-		{ 0.03, 0.035, 0.028, "Tarsus1", "Tibia" },
-		{ 0.045, 0.05, 0.04, "Tarsus2" },
-		{ 0.687, 0.651, 0.539, "Eye" },
-		{ 0.023, 0.01, 0.005, "MandibleBase", "MandibleJoint", "MandibleTip", "Tooth1" },
-		{ 0.624, 0.552, 0.392, "beak_tooth" },
-		{ 0.013, 0.006, 0.003, "neck_ruff" },
-		{ 0.006, 0.002, 0.001, "abdomen_fold" },
+		{ 0.056, 0.021, 0.01, "BeetleBodyInner", "BeetlePlate", "ThoraxCore", "neck", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.13, 0.06, 0.03, "abdomen_fold" },
 		{ 0.61, 0.479, 0.296, "wing_membrane", alpha = 0.55 },
 		{ 0.048, 0.019, 0.008, "wing_vein" },
+		{ 0.013, 0.006, 0.003, "neck_ruff" },
+		{ 0.03, 0.014, 0.007, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.687, 0.651, 0.539, "EyeLeft", "EyeRight" },
+		{ 0.023, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip", "beak_tooth" },
+	},
+	MothTemplate = {
+		{ 0.509, 0.456, 0.371, "abdomen", "ThoraxCore", "thorax_plate", "ROOT", "HeadBase", "labial_palp", "AntSeg", "AntNode" },
+		{ 0.2, 0.16, 0.11, "abdomen_band" },
+		{ 0.03, 0.036, 0.028, "neck_collar", "wing_costa" },
+		{ 0.06, 0.05, 0.04, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.62, 0.55, 0.42, "forewing", "hindwing", alpha = 0.7 },
+		{ 0.16, 0.12, 0.08, "wing_vein_spot" },
+	},
+	AcidSpitterTemplate = {
+		{ 0.08, 0.045, 0.015, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.16, 0.09, 0.03, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.05, 0.03, 0.01, "acid_nozzle" },
+		{ 0.45, 0.8, 0.08, "acid_drip" },
+		{ 0.3, 0.55, 0.04, "acid_sac", alpha = 0.8 },
+		{ 0.1, 0.2, 0.01, "acid_vein" },
+	},
+	MedicTemplate = {
+		{ 0.09, 0.05, 0.02, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.18, 0.1, 0.04, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.55, 0.52, 0.45, "med_palp" },
+		{ 0.62, 0.62, 0.56, "med_band", "med_bundle" },
+		{ 0.05, 0.03, 0.015, "med_cradle" },
+	},
+	QueenTemplate = {
+		{ 0.07, 0.03, 0.015, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.04, 0.02, 0.01, "queen_crown" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip" },
+		{ 0.7, 0.58, 0.42, "queen_belly" },
+		{ 0.1, 0.05, 0.03, "queen_ring" },
+		{ 0.75, 0.68, 0.55, "wing_membrane", alpha = 0.5 },
+		{ 0.06, 0.03, 0.015, "wing_vein" },
+	},
+	LarvaTemplate = {
+		{ 0.35, 0.31, 0.24, "BeetleBodyInner", "ThoraxCore", "ROOT", "AntSeg", "AntNode" },
+		{ 0.45, 0.36, 0.25, "larva_fold" },
+		{ 0.2, 0.14, 0.08, "larva_spot" },
+		{ 0.3, 0.2, 0.1, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.22, 0.12, 0.05, "HeadBase" },
+		{ 0.05, 0.03, 0.015, "MandibleJoint", "MandibleBase", "MandibleTip" },
+	},
+	BomberTemplate = {
+		{ 0.11, 0.04, 0.02, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.22, 0.08, 0.04, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
+		{ 0.035, 0.035, 0.04, "bomb_charge" },
+		{ 0.3, 0.2, 0.1, "bomb_strap" },
+		{ 0.12, 0.08, 0.04, "bomb_fuse" },
+		{ 1, 0.45, 0.05, "bomb_spark" },
+	},
+	ShieldBearerTemplate = {
+		{ 0.1, 0.04, 0.02, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.2, 0.08, 0.04, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip" },
+		{ 0.13, 0.14, 0.16, "shield_plate" },
+		{ 0.25, 0.26, 0.28, "shield_rim" },
+		{ 0.05, 0.05, 0.06, "shield_boss", "shield_arm" },
+	},
+	CoordinatorTemplate = {
+		{ 0.1, 0.04, 0.02, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.2, 0.08, 0.04, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip" },
+		{ 0.62, 0.46, 0.08, "coord_crest" },
+		{ 0.4, 0.3, 0.06, "coord_feeler" },
+	},
+	RamTemplate = {
+		{ 0.085, 0.035, 0.018, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.17, 0.07, 0.035, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.03, 0.02, 0.015, "ram_horn" },
+	},
+	SprinterTemplate = {
+		{ 0.12, 0.045, 0.025, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.24, 0.09, 0.05, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.7, 0.58, 0.36, "spr_stripe" },
+	},
+	GiantTemplate = {
+		{ 0.075, 0.03, 0.015, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.15, 0.06, 0.03, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.06, 0.03, 0.02, "giant_horn", "giant_knob" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
+	},
+	KnitterTemplate = {
+		{ 0.1, 0.04, 0.025, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
+		{ 0.62, 0.22, 0.28, "knit_flesh" },
+		{ 0.2, 0.08, 0.05, "BeetlePlate" },
+		{ 0.75, 0.68, 0.55, "knit_suture" },
+	},
+	FacehuggerTemplate = {
+		{ 0.3, 0.26, 0.18, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase" },
+		{ 0.5, 0.42, 0.28, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.55, 0.2, 0.22, "hug_sucker" },
+		{ 0.45, 0.38, 0.26, "hug_tail" },
+		{ 0.75, 0.72, 0.6, "wing_membrane", alpha = 0.45 },
+		{ 0.3, 0.25, 0.15, "wing_vein" },
+	},
+	AbsorberTemplate = {
+		{ 0.07, 0.035, 0.05, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip" },
+		{ 0.55, 0.45, 0.65, "abs_flask", alpha = 0.45 },
+		{ 0.8, 0.7, 0.95, "abs_orb" },
+		{ 0.05, 0.03, 0.05, "abs_cap" },
+	},
+	EvolverTemplate = {
+		{ 0.06, 0.04, 0.05, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.12, 0.08, 0.1, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.1, 0.55, 0.48, "evo_crystal_head", "evo_crystal" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
+		{ 0.06, 0.3, 0.27, "evo_growth" },
+	},
+	CarrierTemplate = {
+		{ 0.06, 0.035, 0.035, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip" },
+		{ 0.4, 0.3, 0.3, "carr_membrane", alpha = 0.4 },
+		{ 0.05, 0.03, 0.03, "carr_rib" },
+		{ 0.55, 0.42, 0.2, "carr_brood" },
+	},
+	PuppeteerTemplate = {
+		{ 0.08, 0.05, 0.07, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.16, 0.1, 0.14, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip" },
+		{ 0.3, 0.22, 0.28, "pup_spinner" },
+		{ 0.85, 0.82, 0.78, "pup_silk", "pup_cocoon", alpha = 0.85 },
+	},
+	HiveArchitectTemplate = {
+		{ 0.05, 0.04, 0.05, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.1, 0.08, 0.1, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.45, 0.3, 0.05, "hive_resin" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip" },
+		{ 0.05, 0.12, 0.11, "hive_cell" },
+	},
+	MimicTemplate = {
+		{ 0.09, 0.075, 0.06, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.75, 0.55, 0.1, "mim_eyestalk" },
+		{ 0.022, 0.01, 0.005, "MandibleJoint", "MandibleBase", "MandibleTip", "Tooth" },
+		{ 0.3, 0.27, 0.22, "mim_lump" },
+	},
+	ShadowTemplate = {
+		{ 0.02, 0.018, 0.02, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.04, 0.035, 0.04, "BeetlePlate" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.1, 0.09, 0.12, "shd_veil", alpha = 0.4 },
+		{ 0.75, 0.8, 0.85, "shd_glint" },
 	},
 }
--- Детали, у которых цвет в вершинах меша: Color не трогать (у Моли брюшко полосатое).
-local VERTEX_COLORED = { MothTemplate = { AbdomenCore = true } }
+-- Детали, у которых цвет в вершинах меша: Color не трогать (сейчас таких нет).
+local VERTEX_COLORED = {}
 
 local function srgb(x)
 	x = math.clamp(x, 0, 1)
@@ -212,15 +406,28 @@ local function inGroup(part, name)
 	return false
 end
 
+-- Импорт ищется по имени вида на любой глубине (корень .glb назван видом, Import 3D может
+-- обернуть его в AuxScene) — переименовывать руками ничего не нужно.
 local function findImport(source)
 	for _, container in { workspace, ServerStorage, ReplicatedStorage } do
-		for _, child in container:GetChildren() do
-			if child:IsA("Model") and child.Name:lower() == source then
-				return child
+		for _, d in container:GetDescendants() do
+			if d:IsA("Model") and baseName(d.Name):lower() == source then
+				return d
 			end
 		end
 	end
 	return nil
+end
+
+-- Удаляет импорт и опустевшие обёртки над ним (AuxScene и т.п.).
+local function removeImport(source)
+	local parent = source.Parent
+	source:Destroy()
+	while parent and parent:IsA("Model") and #parent:GetChildren() == 0 do
+		local up = parent.Parent
+		parent:Destroy()
+		parent = up
+	end
 end
 
 -- Края детали вдоль направления dir (мировые углы её коробки).
@@ -483,13 +690,15 @@ local function prepare(spec, normalRoot)
 	template.WorldPivot = rootCF
 	local unpainted = paint(template)
 
-	local old = ReplicatedStorage:FindFirstChild(spec.template)
-	if old then
-		old:Destroy()
+	-- Все старые с этим именем: при двух одинаковых игра могла бы взять как раз старый.
+	for _, old in ReplicatedStorage:GetChildren() do
+		if old.Name == spec.template then
+			old:Destroy()
+		end
 	end
 	template.Parent = ReplicatedStorage
 	import:Destroy()
-	source:Destroy()
+	removeImport(source)
 
 	local _, size = template:GetBoundingBox()
 	local note = #unpainted > 0 and ("; без цвета: " .. table.concat(unpainted, ", ")) or ""
@@ -506,6 +715,28 @@ for _, spec in SPECS do
 		ok, message = false, "ошибка скрипта: " .. tostring(ok)
 	end
 	print(("[Жуки] %s %s: %s"):format(ok and "✔" or "✘", spec.template, message))
+end
+-- Старые авторские шаблоны узнаются по атрибуту ColorChitin: у новых его нет. Если рядом
+-- с новым остался старый дубль с тем же именем, игра могла взять его — убираем.
+for _, spec in SPECS do
+	local fresh, stale = false, {}
+	for _, t in ReplicatedStorage:GetChildren() do
+		if t.Name == spec.template then
+			if t:GetAttribute("ColorChitin") ~= nil then
+				table.insert(stale, t)
+			else
+				fresh = true
+			end
+		end
+	end
+	if fresh then
+		for _, t in stale do
+			t:Destroy()
+			print(("[Жуки] убран старый дубль %s"):format(spec.template))
+		end
+	elseif #stale > 0 then
+		warn(("[Жуки] %s всё ещё старый: импортируй %s.glb и запусти скрипт ещё раз"):format(spec.template, spec.source))
+	end
 end
 if recording then
 	ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
