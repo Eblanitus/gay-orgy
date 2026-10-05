@@ -232,24 +232,48 @@ waveLabel.Text = "- / -"
 local hpLabel = makeStat("прочность", center + SIDE_GAP, SIDE_W, Enum.TextXAlignment.Left, valueSize)
 hpLabel.Text = "-"
 
--- Полоска хода забега под числом волны: доля пройденных волн. Бирюза на арене —
+-- Ход забега под числом волны — черточками, по одной на каждую волну уровня (просьба
+-- автора): дошедшие до текущей бирюзовые, остальные тусклые. Бирюза на арене —
 -- только у полосок и кнопок.
+local WAVE_TICK_GAP = 3
+
 local waveTrack = Instance.new("Frame")
 waveTrack.Name = "WaveTrack"
-waveTrack.Position = UDim2.fromOffset(center - WAVE_W / 2, PILL_H - 4)
-waveTrack.Size = UDim2.fromOffset(WAVE_W, 2)
--- Пустая часть полоски видна: без неё одна пятая бирюзы под числом читалась
--- случайной чёрточкой, а не шкалой (скрин автора).
-waveTrack.BackgroundColor3 = Theme.color.textMute
-waveTrack.BackgroundTransparency = 0.45
-waveTrack.BorderSizePixel = 0
+waveTrack.Position = UDim2.fromOffset(center - WAVE_W / 2, PILL_H - 5)
+waveTrack.Size = UDim2.fromOffset(WAVE_W, 3)
+waveTrack.BackgroundTransparency = 1
 waveTrack.Parent = readouts
 
-local waveFill = Instance.new("Frame")
-waveFill.Size = UDim2.fromScale(0, 1)
-waveFill.BackgroundColor3 = Theme.color.accent
-waveFill.BorderSizePixel = 0
-waveFill.Parent = waveTrack
+local waveTickList = Instance.new("UIListLayout")
+waveTickList.FillDirection = Enum.FillDirection.Horizontal
+waveTickList.SortOrder = Enum.SortOrder.LayoutOrder
+waveTickList.Padding = UDim.new(0, WAVE_TICK_GAP)
+waveTickList.Parent = waveTrack
+
+local waveTicks = {}
+
+local function paintWaveTicks(waveNumber, totalWaves)
+	if #waveTicks ~= totalWaves then
+		for _, tick in waveTicks do
+			tick:Destroy()
+		end
+		table.clear(waveTicks)
+		for index = 1, totalWaves do
+			local tick = Instance.new("Frame")
+			tick.LayoutOrder = index
+			-- Доля ширины за вычетом своей части зазоров: черточки ровно заполняют дорожку.
+			tick.Size = UDim2.new(1 / totalWaves, -WAVE_TICK_GAP * (totalWaves - 1) / totalWaves, 1, 0)
+			tick.BorderSizePixel = 0
+			tick.Parent = waveTrack
+			waveTicks[index] = tick
+		end
+	end
+	for index, tick in waveTicks do
+		local lit = index <= waveNumber
+		tick.BackgroundColor3 = lit and Theme.color.accent or Theme.color.textMute
+		tick.BackgroundTransparency = lit and 0 or 0.45
+	end
+end
 
 -- Раскладка по полосе Roblox: плашки по её высоте, «ЗАБЕГ» сразу за кнопками Roblox,
 -- показания по центру экрана — но не налезая на «ЗАБЕГ» (на узком окне сдвигаются вправо).
@@ -266,7 +290,7 @@ titlePill:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutHeader)
 
 local function showWave(waveNumber, totalWaves)
 	waveLabel.Text = ("%d / %d"):format(waveNumber, totalWaves)
-	waveFill.Size = UDim2.fromScale(totalWaves > 0 and math.clamp(waveNumber / totalWaves, 0, 1) or 0, 1)
+	paintWaveTicks(waveNumber, math.max(0, math.floor(totalWaves)))
 	Theme.Blink(waveLabel)
 end
 
