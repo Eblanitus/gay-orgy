@@ -31,58 +31,6 @@
   "assetId": "138337541830654",
   "sha1": "9acc6fd1c170ff044669ff171e1ce4642ccf1c82"
  },
- "MenuBack": {
-  "assetId": "99961131667750",
-  "sha1": "b94f864d78fbae3a56801de911a28afbd9fa4fb6"
- },
- "MenuBoot": {
-  "assetId": "84607667496814",
-  "sha1": "dbb94aeeecf5538a7eea5a75480d0492b8c8d0ae"
- },
- "MenuClose": {
-  "assetId": "100626501873901",
-  "sha1": "7c5c7db683ffe272636487f16cd8601ea0aee41c"
- },
- "MenuDeny": {
-  "assetId": "101607355648405",
-  "sha1": "110724ef155e53fb63667fbc2de3825447d5abf1"
- },
- "MenuHover": {
-  "assetId": "70620859140603",
-  "sha1": "31d9376a947a5f81ca48bc9d5350bd407c8554e9"
- },
- "MenuOpen": {
-  "assetId": "115224685469834",
-  "sha1": "51ce5522fba4e714eb300767f95a1d3bf3a43aae"
- },
- "MenuPage": {
-  "assetId": "137078866117799",
-  "sha1": "e49e280513c3fde30abe1feacf13c3de003552d0"
- },
- "MenuSelect": {
-  "assetId": "114357988395942",
-  "sha1": "d9f5d7cf4b010b97056ba2dd3974feff8febc83b"
- },
- "MenuStart": {
-  "assetId": "89053776034902",
-  "sha1": "3cce73f04a7fdfbc97603f514d567ae3668d099d"
- },
- "MenuTab": {
-  "assetId": "97203670439027",
-  "sha1": "01576c4339fbb84e6a1cabca7337cc65067d69f0"
- },
- "MenuToggleOff": {
-  "assetId": "139493204520142",
-  "sha1": "0bcfe4733b1e180736484600d9149143283fba9a"
- },
- "MenuToggleOn": {
-  "assetId": "93745134701834",
-  "sha1": "4266532311a8a794f9443c971fe03f289007d34c"
- },
- "MenuType": {
-  "assetId": "93573569845121",
-  "sha1": "3f6ff37dc59b5c55a92a9b99f1b1d49985a807ec"
- },
  "MusicBattle": {
   "assetId": "87349932423647",
   "sha1": "95742cf6f5d978ad86f79978e9f2fe3bcf03575b"
