@@ -256,11 +256,12 @@ if ambient then
 	ambient:Play()
 end
 
--- Треки делаются один раз и дальше только плавно глохнут и разгораются: при смене
--- состояния старый трек уходит в тишину и встаёт на паузу, новый продолжает с того
--- места, где его оставили.
+-- Треки делаются один раз и дальше только гаснут и разгораются: при смене состояния
+-- старый трек уходит в тишину и встаёт на паузу. Новый либо продолжает с того места,
+-- где его оставили, либо (restart) играет с начала.
 local tracks = {} -- имя -> { sound, volume }
-local current
+local current -- имя трека, который звучит или разгорается
+local switches = 0 -- номер смены: отложенный старт проверяет, что его не перебили
 
 local function track(name)
 	if tracks[name] == nil then
@@ -276,15 +277,22 @@ local function track(name)
 	return tracks[name] or nil
 end
 
-local function musicFor(state)
-	local name = SoundBank.Music[state]
-	if name == current then
+-- Перейти на трек name. fadeOut — за сколько гаснет прежний; fadeIn — за сколько
+-- разгорается новый (0 — сразу на полную); restart — новый с начала; after — новый
+-- вступает только когда прежний догас.
+local function switchTo(name, opts)
+	opts = opts or {}
+	local fadeOut = opts.fadeOut or SoundBank.MUSIC_FADE
+	local fadeIn = opts.fadeIn or SoundBank.MUSIC_FADE
+	if name == current and not opts.restart then
 		return
 	end
-	local old = current and track(current)
+	switches += 1
+	local mine = switches
+	local old = current and current ~= name and track(current)
 	current = name
 	if old then
-		local fade = TweenService:Create(old.sound, TweenInfo.new(SoundBank.MUSIC_FADE), { Volume = 0 })
+		local fade = TweenService:Create(old.sound, TweenInfo.new(fadeOut), { Volume = 0 })
 		fade.Completed:Connect(function(playback)
 			if playback == Enum.PlaybackState.Completed and current ~= old.sound.Name then
 				old.sound:Pause()
@@ -293,26 +301,63 @@ local function musicFor(state)
 		fade:Play()
 	end
 	local new = name and track(name)
-	if new then
+	if not new then
+		return
+	end
+	local function start()
+		if switches ~= mine then
+			return
+		end
+		if opts.restart then
+			new.sound.TimePosition = 0
+		end
+		if fadeIn > 0 then
+			if opts.restart then
+				new.sound.Volume = 0
+			end
+			TweenService:Create(new.sound, TweenInfo.new(fadeIn), { Volume = new.volume }):Play()
+		else
+			new.sound.Volume = new.volume
+		end
 		if not new.sound.IsPlaying then
 			new.sound:Resume()
 		end
-		TweenService:Create(new.sound, TweenInfo.new(SoundBank.MUSIC_FADE), { Volume = new.volume }):Play()
+	end
+	if opts.after and old then
+		task.delay(fadeOut, start)
+	else
+		start()
 	end
 end
 
-musicFor("menu")
+-- Интро кончилось — бой с начала, встык, на той же громкости.
+local intro = track(SoundBank.Music.intro)
+if intro then
+	intro.sound.Ended:Connect(function()
+		if current == SoundBank.Music.intro then
+			switchTo(SoundBank.Music.battle, { fadeOut = 0, fadeIn = 0, restart = true })
+		end
+	end)
+end
+
+switchTo(SoundBank.Music.menu)
 
 Remotes:WaitForChild("WaveReady").OnClientEvent:Connect(function()
-	musicFor("calm")
+	-- Бой гаснет, и только потом тихо входит спокойная.
+	switchTo(SoundBank.Music.calm, { after = current ~= SoundBank.Music.menu })
 end)
 
 Remotes:WaitForChild("WaveChanged").OnClientEvent:Connect(function()
 	play("WaveStart")
-	musicFor("battle")
+	if intro then
+		switchTo(SoundBank.Music.intro, { fadeOut = SoundBank.MUSIC_INTRO_FADE, fadeIn = 0, restart = true })
+	else
+		-- Интро не загрузилось — Ended не придёт, сразу бой.
+		switchTo(SoundBank.Music.battle, { fadeOut = SoundBank.MUSIC_INTRO_FADE, restart = true })
+	end
 end)
 
 Remotes:WaitForChild("RunEnded").OnClientEvent:Connect(function(won)
 	play(won and "RunWin" or "RunLose")
-	musicFor("menu")
+	switchTo(SoundBank.Music.menu)
 end)
