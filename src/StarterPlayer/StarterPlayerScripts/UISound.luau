@@ -9,7 +9,7 @@
 --   SoundService.Master.Draw     — «Рулетка и апгрейдер» (volumeDraw)
 --   SoundService.Master.Combat   — «Бой» (volumeCombat): звуки GameAudio
 --   SoundService.Master.Ambient  — «Атмосфера» (volumeAmbient): фон бункера
---   SoundService.Master.Music    — «Музыка» (volumeMusic): трек и стинги забега.
+--   SoundService.Master.Music    — «Музыка» (volumeMusic): треки меню и боя.
 --                                  Пока не включено «Экспериментальное: музыка» (experimentalMusic), группа немая
 -- Группы Buttons, Draw, Combat, Ambient и Music лежат внутри Master, поэтому их громкость умножается на общую.
 -- Громкость групп — из настроек (UISettings) по кривой UISettings.Gain и меняется сразу.
