@@ -758,6 +758,18 @@ return function(deps)
 			distance *= relativeHit(elementData, damage)
 		end
 
+		-- Тяжёлая метка Суши: её тратит первая отдача другой земляной турели (heavy).
+		-- Одна метка — один усиленный толчок, дальше жук снова лёгкий.
+		local byKind = plan.heavy and kindMarks[target]
+		local heavy = byKind and byKind.heavy
+		if heavy then
+			distance *= heavy.plan.knockbackScale or 1
+			byKind.heavy = nil
+			target:SetAttribute(MARK_ATTRIBUTE.heavy, false)
+			print(("[Эффект] %s тратит тяжёлую метку на %s: отдача x%.1f")
+				:format(elementData.name, target.Name, heavy.plan.knockbackScale or 1))
+		end
+
 		addPush(target, target:GetPivot().LookVector * distance)
 	end
 

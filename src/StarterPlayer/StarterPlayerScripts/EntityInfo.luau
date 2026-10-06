@@ -364,7 +364,7 @@ EntityInfo.ZONE_NAMES = {
 -- Горение без поля chars: по вики их урон по времени — тоже Горение.
 local BURNS = { Lightning = true, Coal = true, Star = true, Island = true }
 
-local MARK_NAMES = { soil = "метка грунта", ash = "метка пепла", rust = "ржавчина" }
+local MARK_NAMES = { soil = "метка грунта", ash = "метка пепла", rust = "ржавчина", heavy = "тяжёлая метка" }
 
 -- *так* — выделение цветом: ReferenceDetail заменяет звёздочки на тег <font>.
 EntityInfo.ELEMENT_EFFECTS = {
