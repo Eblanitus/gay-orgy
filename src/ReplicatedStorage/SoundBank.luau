@@ -26,7 +26,7 @@ SoundBank.SFX_ENABLED = false
 
 -- Звуки главного меню (MenuSound): наведение, выбор, страницы, вкладки и переключатели
 -- журнала и настроек, запуск терминала. Свой выключатель, SFX_ENABLED их не трогает:
--- false — меню молчит, true — играет. Громкость — ползунок «Кнопки и покупка».
+-- false — меню молчит, true — играет. Громкость — у самих звуков в SoundService.UISounds.
 SoundBank.MENU_SFX_ENABLED = true
 
 SoundBank.Sounds = {
@@ -72,27 +72,24 @@ SoundBank.Sounds = {
 	MusicBattle = { group = "Music", volume = 0.45, pitch = { 1, 1 }, looped = true },
 }
 
--- Звуки меню: те же поля, что у Sounds, но только volume, gap и voices — все «в ушах»,
--- в группе Buttons. Файлы — «Звуки/Menu*.ogg» (tools/synth_sounds.py), высотные в ладу
--- ре-диез румынский, как музыка меню. Нарочно тихие: музыку меню не перекрывают.
+-- Звуки меню: какое событие меню каким готовым звуком интерфейса звучит. Сами звуки —
+-- те же, что у производителя и лаборатории: SoundService.UISounds (правятся в Studio),
+-- играет их UISound. cut — оборвать через столько секунд.
 SoundBank.Menu = {
-	MenuHover = { volume = 0.12, gap = 0.03, voices = 3 }, -- наведение и стрелки; высота — по пункту
-	MenuSelect = { volume = 0.25, gap = 0.08, voices = 2 }, -- пункт выбран, уровень в журнале
-	MenuTab = { volume = 0.2, gap = 0.05, voices = 2 }, -- вкладка, выбор из вариантов
-	MenuPage = { volume = 0.18, gap = 0.1, voices = 1 }, -- открылась страница (журнал, настройки, промокод)
-	MenuBack = { volume = 0.22, gap = 0.1, voices = 1 }, -- назад
-	MenuOpen = { volume = 0.22, gap = 0.2, voices = 1 }, -- меню вызвали (M, кнопка в углу)
-	MenuClose = { volume = 0.2, gap = 0.2, voices = 1 }, -- меню свернули, «Продолжить»
-	MenuStart = { volume = 0.3, gap = 0.5, voices = 1 }, -- «Играть», вход и выход из аркады
-	MenuBoot = { volume = 0.2, gap = 1, voices = 1 }, -- строки запуска терминала
-	MenuType = { volume = 0.06, gap = 0.035, voices = 2 }, -- буква строки запуска
-	MenuToggleOn = { volume = 0.2, gap = 0.05, voices = 2 }, -- настройка включена
-	MenuToggleOff = { volume = 0.2, gap = 0.05, voices = 2 }, -- выключена
-	MenuDeny = { volume = 0.22, gap = 0.15, voices = 1 }, -- нельзя (закрытый уровень, аркада в забеге)
+	MenuHover = { sound = "Tick" }, -- наведение и стрелки
+	MenuType = { sound = "Tick" }, -- буква строки запуска
+	MenuSelect = { sound = "Click" }, -- пункт выбран, уровень в журнале, промокод
+	MenuTab = { sound = "Click" }, -- вкладка, выбор из вариантов
+	MenuBack = { sound = "Click" }, -- назад
+	MenuToggleOn = { sound = "Click" }, -- настройка включена
+	MenuToggleOff = { sound = "Click" }, -- выключена
+	MenuOpen = { sound = "Click" }, -- меню вызвали (M, кнопка в углу)
+	MenuClose = { sound = "Click" }, -- меню свернули, «Продолжить»
+	MenuStart = { sound = "Click" }, -- «Играть», вход и выход из аркады
+	MenuPage = { sound = "Crackle", cut = 0.16 }, -- открылась страница: треск в пару помехе Theme.Static
+	MenuBoot = { sound = "Crackle", cut = 0.3 }, -- строки запуска терминала
+	MenuDeny = { sound = "Fail" }, -- нельзя (закрытый уровень, аркада в забеге, пустой промокод)
 }
--- Ступени лада в полутонах от D#: наведение на пункт N звучит N-й ступенью, и колонка
--- меню звучит гаммой D# F F# A A# C C#.
-SoundBank.MENU_SCALE = { 0, 2, 3, 6, 7, 9, 10 }
 
 -- Выстрел — по типу турели (атрибут Type, Towers). Нет строки — турель стреляет молча.
 SoundBank.Shot = {

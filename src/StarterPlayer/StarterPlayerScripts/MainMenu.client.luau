@@ -784,7 +784,7 @@ for _, item in items do
 	-- одновременно, и непонятно, что сработает по Enter.
 	item.button.MouseEnter:Connect(function()
 		if selected ~= item.index then
-			MenuSound.Hover(item.index)
+			MenuSound.Play("MenuHover")
 		end
 		selectItem(item.index)
 	end)
@@ -968,7 +968,7 @@ local function runBoot()
 				bootLabel.Text = bootText(shown, true)
 				-- Щелчок на каждую вторую букву: на каждую — сливается в треск.
 				if i % 2 == 1 and shown[#shown]:sub(-1) ~= " " then
-					MenuSound.Play("MenuType", 0.9 + (i % 5) * 0.05)
+					MenuSound.Play("MenuType")
 				end
 				task.wait(0.018)
 			end
@@ -1046,10 +1046,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
 	if input.KeyCode == Enum.KeyCode.Up or input.KeyCode == Enum.KeyCode.W then
 		selectItem(selected - 1)
-		MenuSound.Hover(selected)
+		MenuSound.Play("MenuHover")
 	elseif input.KeyCode == Enum.KeyCode.Down or input.KeyCode == Enum.KeyCode.S then
 		selectItem(selected + 1)
-		MenuSound.Hover(selected)
+		MenuSound.Play("MenuHover")
 	elseif input.KeyCode == Enum.KeyCode.Return or input.KeyCode == Enum.KeyCode.KeypadEnter then
 		local item = items[selected]
 		if item then

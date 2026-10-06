@@ -118,6 +118,6 @@ Rojo-проект — `default.project.json`. Он управляет тольк
 - Игра — `GameAudio.client` по событиям, которые сервер уже шлёт для эффектов (`ShotFired`, `Explosion`,
   `EnemyFX`, `WaveChanged`, `RunEnded`). Какой звук на что, громкость, разброс высоты, дальность, лимит
   копий — таблицы `SoundBank`. Новый звук: файл в `Звуки/`, строка в `SoundBank`, `upload_sounds.py`.
-- Главное меню (с журналом, настройками, промокодом) — `MenuSound` по таблице `SoundBank.Menu`, файлы `Звуки/Menu*.ogg`,
-  группа `Master.Buttons`. Выключатель — `SoundBank.MENU_SFX_ENABLED` (отдельно от `SFX_ENABLED`).
+- Главное меню (с журналом, настройками, промокодом) — `MenuSound`: событие → готовый звук `UISounds` (таблица `SoundBank.Menu`).
+  Выключатель — `SoundBank.MENU_SFX_ENABLED` (отдельно от `SFX_ENABLED`).
 - Звук без id в `SoundIds` молча не играет — игра не ломается, пока звуки не загружены.
