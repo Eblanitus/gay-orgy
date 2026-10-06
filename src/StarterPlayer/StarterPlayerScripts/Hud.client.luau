@@ -737,7 +737,6 @@ Remotes.RunEnded.OnClientEvent:Connect(function(won, levelNumber)
 	end
 	resultFrame.Visible = true
 	Theme.Open(resultFrame)
-	Theme.Static()
 	startWaveButton.Visible = false
 	cancelWaveHold()
 	-- Сервер тут же возвращает игрока в лобби — рамку забега прячем,

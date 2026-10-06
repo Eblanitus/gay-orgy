@@ -349,7 +349,6 @@ local function setOpen(open, overMenu)
 		applyChrome()
 		list.CanvasPosition = Vector2.new(0, 0)
 		Theme.Open(root)
-		Theme.Static()
 	end
 end
 
