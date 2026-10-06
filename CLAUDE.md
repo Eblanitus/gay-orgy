@@ -16,6 +16,8 @@
   `prepare_beetles` печатает `tools/beetles/colors_lua.py` (`--lengths` — длины для его SPECS).
   Без Import 3D: `tools/upload_models.py` грузит .glb в Roblox (Open Cloud, ключ в `ROBLOX_API_KEY`),
   id — в `Модели/asset_ids.json`; агент вставляет их через MCP `insert_asset` и запускает `prepare_beetles`.
+- `Звуки/` — звуки игры (.ogg). Черновой набор собирает `tools/synth_sounds.py`, в Roblox их грузит
+  `tools/upload_sounds.py` (нужен `ROBLOX_API_KEY`) и сам пишет id в `src/ReplicatedStorage/SoundIds.luau`.
 - `inbox/` — сюда автор заливает файлы через GitHub; агент раскладывает их по папкам.
 
 ## Где что живёт
@@ -24,11 +26,12 @@
 |---|---|---|
 | Скрипты (~100 шт.) | `src/` | файлами; в Studio их переносит Rojo |
 | RemoteEvent'ы | `src/ReplicatedStorage/Remotes/*.model.json` | файлами: новый remote — новый файл `Имя.model.json` с `{"className": "RemoteEvent"}` |
-| Группа звука `SoundService.Master.Music` | `src/SoundService/Master/Music.model.json` | файлом, как remote |
+| Группы звука `SoundService.Master.Music`, `.Combat`, `.Ambient` | `src/SoundService/Master/*.model.json` | файлом, как remote |
+| Звуки игры (бой, жуки, фон, музыка) | файлы — `Звуки/`, что и как звучит — `ReplicatedStorage/SoundBank.luau`, id — `SoundIds.luau` | см. «Звук» ниже |
 | Карта, модели, шаблоны, GUI, звук, свет | только в месте Studio (`Workspace`, `ServerStorage`, `ReplicatedStorage.NormalBeetleTemplate`, `StarterGui`, `Lighting`, `SoundService`) | через MCP в Edit-режиме |
 | Снимок всего места | `place/game.rbxl` | не править; обновляется экспортом из Studio |
 
-Rojo-проект — `default.project.json`. Он управляет только скриптами, `Remotes` и `SoundService.Master.Music`, всё остальное
+Rojo-проект — `default.project.json`. Он управляет только скриптами, `Remotes` и группами `SoundService.Master` (Music, Combat, Ambient), всё остальное
 в сервисах не трогает (`$ignoreUnknownInstances`).
 
 ## Главное правило после переезда на Rojo
@@ -108,3 +111,11 @@ Rojo-проект — `default.project.json`. Он управляет тольк
 
 Правит `src/`, затем `tools/bin/lune run tools/sync build` пересобирает `place/game.rbxl`
 (`tools/get-lune.sh` — скачать Lune). Тест в Studio делает автор или локальная сессия.
+
+## Звук
+
+- Интерфейс — `UISound` + `SoundService.UISounds` (Sound'ы живут в месте, правятся в Studio).
+- Игра — `GameAudio.client` по событиям, которые сервер уже шлёт для эффектов (`ShotFired`, `Explosion`,
+  `EnemyFX`, `WaveChanged`, `RunEnded`). Какой звук на что, громкость, разброс высоты, дальность, лимит
+  копий — таблицы `SoundBank`. Новый звук: файл в `Звуки/`, строка в `SoundBank`, `upload_sounds.py`.
+- Звук без id в `SoundIds` молча не играет — игра не ломается, пока звуки не загружены.
