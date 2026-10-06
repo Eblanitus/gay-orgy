@@ -32,6 +32,7 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
+local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 -- Цвета полоски HP — из общей палитры интерфейса.
 local Theme = require(script.Parent:WaitForChild("UITheme"))
 
@@ -960,6 +961,9 @@ end)
 local POP_LIFT = 1 -- над серверной точкой жука: пыль из пола не видно
 local POP_DUST = 6
 local POP_SPARKS = 10
+-- Обычная смерть (добивающий слабее PhysicsFX.death.hardFraction): жук оседает, а не
+-- разлетается — и хлопок тише: немного пыли и без искр.
+local POP_DUST_SOFT = 3
 -- Потолок хлопков за короткое окно: взрыв по толпе кладёт десятки жуков в один кадр,
 -- и частиц хватит с первых POP_BURST — остальные смерти и так видны трупами.
 local POP_WINDOW = 0.1
@@ -1007,7 +1011,7 @@ popSparks.Parent = popPoint
 local popWindowStart = 0
 local popCount = 0
 
-EnemyDiedRemote.OnClientEvent:Connect(function(position)
+EnemyDiedRemote.OnClientEvent:Connect(function(position, fraction)
 	if typeof(position) ~= "Vector3" then
 		return
 	end
@@ -1021,6 +1025,10 @@ EnemyDiedRemote.OnClientEvent:Connect(function(position)
 	end
 	popCount += 1
 	popPoint.WorldPosition = position + Vector3.new(0, POP_LIFT, 0)
-	popDust:Emit(POP_DUST)
-	popSparks:Emit(POP_SPARKS)
+	if typeof(fraction) == "number" and fraction < PhysicsFX.death.hardFraction then
+		popDust:Emit(POP_DUST_SOFT)
+	else
+		popDust:Emit(POP_DUST)
+		popSparks:Emit(POP_SPARKS)
+	end
 end)

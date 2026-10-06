@@ -444,6 +444,69 @@ local Remains = require(ReplicatedStorage:WaitForChild("CorpseRemains"))({
 	EnemyGait = EnemyGait,
 })
 
+-- Мягкая смерть (PhysicsFX.death): поза частей трупа относительно корня — до позы смерти
+-- (живая) и после (трупная). Между ними и идёт оседание.
+local function snapshot(model, root)
+	local pose = {}
+	local frame = root.CFrame
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") and part ~= root then
+			pose[part] = { frame:ToObjectSpace(part.CFrame), part.Size, part.Color }
+		end
+	end
+	return pose
+end
+
+-- Насколько опустить корень, чтобы туша легла на пол, — или nil, если мягко оседать нельзя:
+-- жук на стене, в воздухе или высоко над опорой. Тогда по-старому — роняет физика.
+local function softSink(root, hull, floorY, scale)
+	local plan = PhysicsFX.death
+	if not hull or root.CFrame.UpVector.Y < plan.upright then
+		return nil
+	end
+	local bottom = math.huge
+	for _, part in hull.Parent:GetChildren() do
+		if part:IsA("BasePart") and (part.Name == "Hull" or part.Name == "HullEnd") then
+			bottom = math.min(bottom, part.Position.Y - part.Size.Y / 2)
+		end
+	end
+	local gap = bottom - floorY
+	if gap ~= gap or gap > plan.maxSink * scale then
+		return nil
+	end
+	return math.max(gap, 0)
+end
+
+-- Оседание: лапы подламываются сразу (ease-out), тело опускается с разгоном (ease-in),
+-- цвет выцветает ровно. Всё анкорнуто и ставится руками; в конце — ровно трупная поза
+-- и release(), который включает физику так же, как при резкой смерти.
+local function settleSoftly(corpse, root, livePose, deadPose, sink, release)
+	local plan = PhysicsFX.death
+	local start = root.CFrame
+	local finish = start - Vector3.yAxis * sink
+	local began = os.clock()
+	while corpse.Parent and root.Parent do
+		local t = math.min((os.clock() - began) / plan.time, 1)
+		local legs = 1 - (1 - t) * (1 - t)
+		root.CFrame = start:Lerp(finish, t * t)
+		for part, dead in deadPose do
+			if part.Parent then
+				local live = livePose[part] or dead
+				part.CFrame = root.CFrame * live[1]:Lerp(dead[1], legs)
+				part.Size = live[2]:Lerp(dead[2], legs)
+				part.Color = live[3]:Lerp(dead[3], t)
+			end
+		end
+		if t >= 1 then
+			break
+		end
+		RunService.Heartbeat:Wait()
+	end
+	if corpse.Parent and root.Parent then
+		release()
+	end
+end
+
 -- enemy — ВИДИМОЕ тело жука (модель EnemyRender). hit — чем убили (присылает сервер):
 -- { remains = вид останков (Effects.RemainsOf), scorched = обугливается (вид «char»),
 -- fraction = доля макс. HP добивающего удара,
@@ -492,6 +555,13 @@ function Corpses.Leave(enemy, hit, id)
 	end
 
 	local root = corpse.PrimaryPart
+	-- Резкая смерть — только от сильного удара (PhysicsFX.death); остальные оседают мягко,
+	-- и для этого нужна живая поза до выцветания и позы смерти.
+	local fraction = hit and hit.fraction or 0
+	local hard = fraction >= PhysicsFX.death.hardFraction or (hit and hit.carry ~= nil)
+	-- Летающий (атрибут серверной модели) падает с высоты — его роняет физика, как раньше.
+	local flying = enemy.Parent and enemy.Parent:GetAttribute("Flying")
+	local livePose = not hard and not flying and snapshot(corpse, root) or nil
 	for _, part in corpse:GetDescendants() do
 		if part:IsA("BasePart") then
 			part.CanQuery = false -- труп не ловит ни лучи походки, ни курсор стройки
@@ -524,7 +594,6 @@ function Corpses.Leave(enemy, hit, id)
 
 	-- Отрыв — после позы (лапы улетают уже подогнутыми) и до сборки Hull и сварки:
 	-- тело не должно ни быть габаритнее из-за улетевшей лапы, ни быть приварено к ней.
-	local fraction = hit and hit.fraction or 0
 	local from = hit and hit.from or nil
 	local bodyCenter = corpse:GetBoundingBox().Position
 	for _, group in chooseLimbs(corpse, fraction) do
@@ -533,63 +602,91 @@ function Corpses.Leave(enemy, hit, id)
 
 	local hull = buildHull(corpse, root, scale * 3)
 
-	-- Физика включается ПОСЛЕ позы: сварка запоминает взаимное положение частей в момент
-	-- своего создания, и собери мы тушу до того — она застыла бы в позе живого.
-	for _, part in corpse:GetDescendants() do
-		if part:IsA("BasePart") and part ~= root then
-			local weld = Instance.new("WeldConstraint")
-			weld.Part0 = root
-			weld.Part1 = part
-			weld.Parent = root
+	local floorY = hit and hit.floorY or floorUnder(corpse)
+	local sink = livePose and softSink(root, hull, floorY, scale)
+
+	local function release()
+		-- Физика включается ПОСЛЕ позы: сварка запоминает взаимное положение частей в момент
+		-- своего создания, и собери мы тушу до того — она застыла бы в позе живого.
+		for _, part in corpse:GetDescendants() do
+			if part:IsA("BasePart") and part ~= root then
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0 = root
+				weld.Part1 = part
+				weld.Parent = root
+			end
+		end
+		for _, part in corpse:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Anchored = false
+			end
+		end
+
+		-- Центр тяжести в брюхе (см. BALLAST_DENSITY). Ставится последним и сваривается с корпусом
+		-- так же, как остальные части.
+		local ballast = Instance.new("Part")
+		ballast.Name = "Ballast"
+		ballast.Size = root.Size * Vector3.new(0.5, 0.35, 0.5)
+		-- Глубже, чем половина толщины тела, то есть НАРУЖУ (деталь невидимая и не
+		-- сталкивается, так что торчать ей не мешает). Именно это делает стойку на торце
+		-- НЕУСТОЙЧИВОЙ: центр тяжести выходит за опорную площадку торца (половина толщины
+		-- тела), и туша валится на брюхо сама. С неглубоким балластом (0.45) центр ещё
+		-- попадал в эту площадку, и труп так и стоял на носу — замерено.
+		ballast.CFrame = root.CFrame * CFrame.new(0, -root.Size.Y * 0.95, 0)
+		ballast.Transparency = 1
+		ballast.CanCollide = false
+		ballast.CanQuery = false
+		ballast.CanTouch = false
+		ballast.CastShadow = false
+		ballast.CollisionGroup = CORPSE_GROUP
+		ballast.CustomPhysicalProperties = PhysicalProperties.new(BALLAST_DENSITY, 0.9, 0, 1, 1)
+		ballast.Anchored = false
+		ballast.Parent = corpse
+
+		local ballastWeld = Instance.new("WeldConstraint")
+		ballastWeld.Part0 = root
+		ballastWeld.Part1 = ballast
+		ballastWeld.Parent = root
+
+		-- Лёгкий кувырок при падении. Толкают тушу видимые тела жуков и машина Аркады —
+		-- все на этом же клиенте, поэтому симуляция одна.
+		root.AssemblyAngularVelocity = Vector3.new(0, (math.random() - 0.5) * 2 * TUMBLE, 0)
+		if hit and hit.carry then
+			root.AssemblyLinearVelocity += hit.carry
+		end
+
+		-- Добивающий удар толкает и саму тушу — тем сильнее, чем больше доля урона.
+		if from and fraction > 0 then
+			local away = bodyCenter - from
+			away = Vector3.new(away.X, 0, away.Z)
+			if away.Magnitude > 1e-3 then
+				root.AssemblyLinearVelocity += (away.Unit + Vector3.yAxis * 0.3).Unit
+					* PhysicsFX.hit.speed * math.min(fraction, 1.5)
+			end
 		end
 	end
-	for _, part in corpse:GetDescendants() do
-		if part:IsA("BasePart") then
-			part.Anchored = false
+
+	if sink then
+		-- Мягкая смерть: туша уже в трупной позе (по ней собран Hull) — запоминаем её,
+		-- возвращаем живую и оседаем. Кувырка нет: туша ложится, а не падает.
+		local deadPose = snapshot(corpse, root)
+		for part, live in livePose do
+			if part.Parent and deadPose[part] then
+				part.Anchored = true
+				part.CFrame = root.CFrame * live[1]
+				part.Size = live[2]
+				part.Color = live[3]
+			end
 		end
-	end
-
-	-- Центр тяжести в брюхе (см. BALLAST_DENSITY). Ставится последним и сваривается с корпусом
-	-- так же, как остальные части.
-	local ballast = Instance.new("Part")
-	ballast.Name = "Ballast"
-	ballast.Size = root.Size * Vector3.new(0.5, 0.35, 0.5)
-	-- Глубже, чем половина толщины тела, то есть НАРУЖУ (деталь невидимая и не
-	-- сталкивается, так что торчать ей не мешает). Именно это делает стойку на торце
-	-- НЕУСТОЙЧИВОЙ: центр тяжести выходит за опорную площадку торца (половина толщины
-	-- тела), и туша валится на брюхо сама. С неглубоким балластом (0.45) центр ещё
-	-- попадал в эту площадку, и труп так и стоял на носу — замерено.
-	ballast.CFrame = root.CFrame * CFrame.new(0, -root.Size.Y * 0.95, 0)
-	ballast.Transparency = 1
-	ballast.CanCollide = false
-	ballast.CanQuery = false
-	ballast.CanTouch = false
-	ballast.CastShadow = false
-	ballast.CollisionGroup = CORPSE_GROUP
-	ballast.CustomPhysicalProperties = PhysicalProperties.new(BALLAST_DENSITY, 0.9, 0, 1, 1)
-	ballast.Anchored = false
-	ballast.Parent = corpse
-
-	local ballastWeld = Instance.new("WeldConstraint")
-	ballastWeld.Part0 = root
-	ballastWeld.Part1 = ballast
-	ballastWeld.Parent = root
-
-	-- Лёгкий кувырок при падении. Толкают тушу видимые тела жуков и машина Аркады —
-	-- все на этом же клиенте, поэтому симуляция одна.
-	root.AssemblyAngularVelocity = Vector3.new(0, (math.random() - 0.5) * 2 * TUMBLE, 0)
-	if hit and hit.carry then
-		root.AssemblyLinearVelocity += hit.carry
-	end
-
-	-- Добивающий удар толкает и саму тушу — тем сильнее, чем больше доля урона.
-	if from and fraction > 0 then
-		local away = bodyCenter - from
-		away = Vector3.new(away.X, 0, away.Z)
-		if away.Magnitude > 1e-3 then
-			root.AssemblyLinearVelocity += (away.Unit + Vector3.yAxis * 0.3).Unit
-				* PhysicsFX.hit.speed * math.min(fraction, 1.5)
-		end
+		root.Anchored = true
+		task.spawn(settleSoftly, corpse, root, livePose, deadPose, sink, function()
+			release()
+			-- Лёгкий удар туша не отбрасывает: она уже легла, толчок после оседания читался бы рывком.
+			root.AssemblyAngularVelocity = Vector3.zero
+			root.AssemblyLinearVelocity = Vector3.zero
+		end)
+	else
+		release()
 	end
 
 	if charred then
