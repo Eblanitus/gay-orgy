@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
 local Theme = require(script.Parent:WaitForChild("UITheme"))
+local MenuSound = require(script.Parent:WaitForChild("MenuSound"))
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
@@ -440,7 +441,11 @@ function Journal.Mount(parent, onStatus)
 			pick.Activated:Connect(function()
 				local data = profile.levels[number]
 				if not data or not data.unlocked then
+					MenuSound.Play("MenuDeny")
 					return
+				end
+				if chosenLevel ~= number then
+					MenuSound.Play("MenuSelect")
 				end
 				chosenLevel = number
 				RequestSelectLevelRemote:FireServer(number)
@@ -554,7 +559,9 @@ function Journal.Mount(parent, onStatus)
 		{ caption = "Элементы", frame = elementsScroll },
 	}
 	local buttons = {}
+	local currentTab
 	local function selectTab(index)
+		currentTab = index
 		for i, tab in TABS do
 			tab.frame.Visible = i == index
 			Theme.Button(buttons[i], i == index and "active" or "ghost")
@@ -569,6 +576,9 @@ function Journal.Mount(parent, onStatus)
 		button.Parent = tabBar
 		buttons[i] = button
 		button.MouseButton1Click:Connect(function()
+			if currentTab ~= i then
+				MenuSound.Play("MenuTab")
+			end
 			selectTab(i)
 		end)
 	end
