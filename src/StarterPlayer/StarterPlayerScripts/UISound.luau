@@ -7,9 +7,11 @@
 --   SoundService.Master          — «Общая громкость» (volumeMaster)
 --   SoundService.Master.Buttons  — «Кнопки и покупка» (volumeButtons)
 --   SoundService.Master.Draw     — «Рулетка и апгрейдер» (volumeDraw)
---   SoundService.Master.Music    — «Музыка» (volumeMusic); музыка будет — её Sound ставить в эту группу.
+--   SoundService.Master.Combat   — «Бой» (volumeCombat): звуки GameAudio
+--   SoundService.Master.Ambient  — «Атмосфера» (volumeAmbient): фон бункера
+--   SoundService.Master.Music    — «Музыка» (volumeMusic): трек и стинги забега.
 --                                  Пока не включено «Экспериментальное: музыка» (experimentalMusic), группа немая
--- Группы Buttons, Draw и Music лежат внутри Master, поэтому их громкость умножается на общую.
+-- Группы Buttons, Draw, Combat, Ambient и Music лежат внутри Master, поэтому их громкость умножается на общую.
 -- Громкость групп — из настроек (UISettings) по кривой UISettings.Gain и меняется сразу.
 -- Правее 100% на ползунке группа громче записанного звука (Volume больше 1).
 local ContentProvider = game:GetService("ContentProvider")
@@ -34,6 +36,8 @@ local groups = {
 	volumeMaster = master,
 	volumeButtons = master:WaitForChild("Buttons"),
 	volumeDraw = master:WaitForChild("Draw"),
+	volumeCombat = master:WaitForChild("Combat"),
+	volumeAmbient = master:WaitForChild("Ambient"),
 	volumeMusic = master:WaitForChild("Music"),
 }
 local folder = SoundService:WaitForChild("UISounds")
