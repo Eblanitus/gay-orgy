@@ -692,8 +692,10 @@ local function hideMenu()
 end
 
 local function showMenu()
-	screenGui.Enabled = true
+	-- Страница выставляется до показа: у закрытого меню showPage не зовёт общую помеху,
+	-- а при открытии шум даёт сам Theme.Open — только на окне.
 	showPage("root")
+	screenGui.Enabled = true
 	Theme.Open(frame)
 end
 
