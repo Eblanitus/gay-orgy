@@ -116,33 +116,17 @@ local WING_FLAP_ANGLE = math.rad(35)
 -- Как быстро крыло складывается в покой после посадки, 1/сек.
 local WING_FOLD = 6
 
--- ======================= Тело несут ноги =======================
+-- ======================= Тело ровное =======================
 --
--- Референс — живой жук (автор так и сформулировал: «у нас есть референс из самой лучшей
--- игры в мире — Real life»). Что там происходит и чего у нас не было:
+-- Референс — живой жук: корпус у него на ходу НЕ качается. Шесть ног держат его тройками,
+-- и тело плывёт ровно, без подскока, валкости и крена; двигаются только ноги (решение
+-- автора: «у реальных жуков тело не качается при ходьбе»). Раньше здесь была качка по
+-- стоящим ступням (carryBody: просадка, крен, тангаж, рывки скорости), поверх неё почерк
+-- вида (подскок, валкость) и крен в повороте — всё это убрано.
 --
--- 1. Тело НЕ едет с постоянной скоростью. Ступня, вставшая впереди, сначала тормозит
---    корпус, а к концу опоры толкает его вперёд. Скорость корпуса дёргается дважды за
---    цикл — это и читается как «ноги несут тело».
--- 2. Тело НЕ едет на постоянной высоте. Нога работает как распорка постоянной длины:
---    ступня под бедром — тело в верхней точке, ступня уехала вперёд или назад — тело
---    просело. Вертикальная качка идёт вдвое чаще шага.
--- 3. Тело переваливается. Трипод меняется — опора смещается вбок, и корпус кренится
---    к той стороне, которая его держит.
---
--- До этой задачи всё было наоборот: спавнер вёл тело по маршруту с постоянной скоростью
--- и постоянной высотой, а ноги пририсовывались к нему. Сколько ни чини ноги, тело
--- оставалось независимым объектом — отсюда жалоба «торс просто плавно плывёт, а лапы
--- пытаются его догнать».
---
--- Теперь маршрут и тело — РАЗНЫЕ вещи. Маршрут остаётся у спавнера (по нему считаются
--- сетка, толкучка, прицел башен, дистанция до выхода — их качка трогать не должна),
--- а видимое тело каждый кадр собирается из СТОЯЩИХ ступней: где они стоят, туда корпус
--- и смещается. Ступни задают и подъём, и крен, и рывки скорости — см. carryBody.
---
--- Из смещения вычитается его же среднее (BODY_MEAN): нужна именно КАЧКА вокруг маршрута,
--- а постоянная составляющая означала бы, что жук едет мимо своей маршрутной точки —
--- и копилась бы, потому что стойки ног отсчитываются от тела.
+-- Видимое тело стоит ровно в маршрутном кадре спавнера. Поверх него остаются только
+-- реакции, не связанные с ходьбой: вздрагивание от попадания (react) и дыхание стоящего
+-- (flourish).
 -- Поворот. Маршрут меняет направление мгновенно (угол пути, испуг, отскок от стены),
 -- а тело доворачивается к нему с ограниченной угловой скоростью: быстрее при большом
 -- рассогласовании, мягко «доезжает» у цели. Ступни стоят, пока тело крутится, поэтому
@@ -151,12 +135,6 @@ local TURN_EASE = 8 -- 1/сек: угловая скорость = рассог�
 local TURN_RATE_MIN = 1.5 -- рад/сек: чтобы последние градусы не тянулись вечно
 local TURN_RATE_MAX = 4 -- рад/сек: потолок, ~230°/сек
 local headings = setmetatable({}, { __mode = "k" })
-
--- Наклон в повороте: крен внутрь дуги пропорционален «центробежному» угловая скорость × ход.
--- Скорость берётся в единицах Стандарта (÷ gaitScale), чтобы гигант не заваливался на бок.
-local LEAN_GAIN = 0.012 -- рад крена на (рад/сек × ст/сек)
-local LEAN_MAX = 0.16 -- рад, ~9°
-local LEAN_FOLLOW = 7 -- 1/сек: как быстро крен догоняет цель
 
 -- Вздрагивание от попадания: тело отскакивает от точки удара и возвращается критически
 -- демпфированной пружиной (без колебаний). Размер — в долях распорки ноги (см. state.strut).
@@ -181,31 +159,6 @@ local MANDIBLE_OPEN = 0.12 -- рад
 local MANDIBLE_FREQ = 3 -- рад/сек
 local MANDIBLE_CHEW_OPEN = 0.35 -- рад
 local MANDIBLE_CHEW_FREQ = 16 -- рад/сек
-
-local BODY_FOLLOW = 0.6 -- какую долю расхождения «где тело по ногам» отыгрывать
-local BODY_MEAN = 1.5 -- 1/сек, скорость забывания постоянной составляющей (τ ≈ 0.7с)
-local BODY_SETTLE = 12 -- 1/сек, подтягивание к цели: сглаживает пересменку трипода
-
--- Потолки качки в долях длины ноги. Вдоль хода потолок вдвое ниже, чем по высоте,
--- и это не вкусовщина: продольное смещение ПРИБАВЛЯЕТСЯ к скорости хода, и качок
--- амплитудой A на частоте f даёт прибавку 2πfA. На наших ~3.3 шагах в секунду
--- амплитуда 0.35 стоила ±10-16 studs/сек при ходе 10 (замерено стендом) — жук
--- не толкался, а дёргался и на мгновение ехал назад. У живого насекомого продольный
--- рывок тоже малый — единицы процентов длины тела за шаг; походка читается
--- вертикалью и креном, а не рывками взад-вперёд.
-local BODY_SWAY = 0.05
-local BODY_LIFT = 0.08
-
--- Крен и тангаж, радиан на единицу перекоса (перекос — в долях длины ноги).
---
--- Крен нарочно МЕНЬШЕ геометрически честного. Замеренный перекос бортов — ±1.2 studs
--- на колее шириной ~3.5, то есть «честный» крен был бы около 9°. Живое насекомое так
--- не болтается — оно активно держит корпус мышцами, и переваливание у него в градусах
--- единицы. С полным креном жук упирался в потолок каждый кадр (замерено: средний 4.8°
--- при потолке 5.2°) — то есть качался квадратной волной, что читается как дефект.
-local BODY_ROLL = 0.15
-local BODY_ROLL_MAX = 0.07 -- потолок крена, рад (~4°): страховка на резкие случаи, а не рабочий режим
-local BODY_PITCH = 0.6
 
 -- Луч опоры: откуда и насколько далеко светить вниз по телу, studs. Запас вверх нужен
 -- для ступенек (плита Бура, крошка Горы): её верх выше номинальной ступни, и луч из-под
@@ -245,28 +198,17 @@ local DEATH_DROP = 0.3
 
 -- ======================= Почерк вида (EnemyGaitStyles) =======================
 --
--- Поверх общей походки каждый вид получает свой подскок, валкость, дыхание и озирание.
--- Все четыре слоя считаются над ОДНИМ кадром тела, который и так пересчитывается каждый
--- кадр (см. carryBody/react): ни одной лишней детали и ни одного лишнего прохода по
--- деталям они не добавляют — важно на телефоне, где жуков до ~39.
+-- Поверх общей походки каждый вид получает своё дыхание и озирание — только у стоящего:
+-- на ходу корпус ровный (см. «Тело ровное»). Оба слоя считаются над ОДНИМ кадром тела,
+-- который и так пересчитывается каждый кадр: ни одной лишней детали и ни одного лишнего
+-- прохода по деталям — важно на телефоне, где жуков до ~39.
 --
 -- Ниже какого хода (в единицах Стандарта, ст/сек) жук считается стоящим: дыхание и
--- озирание видны только на остановке, на ходу их не видно за качкой от ног.
+-- озирание бывают только на остановке.
 local IDLE_SPEED = 2
 -- Как быстро жук переходит между «идёт» и «стоит», 1/сек: без сглаживания дыхание
 -- включалось бы рывком на каждой заминке в толкучке.
 local IDLE_EASE = 2
--- Потолки частоты подскока и валкости, колебаний в секунду. Каденция у мелкого жука
--- честно высокая (Мини на Scale 0.6 делает шагов в 5 раз чаще Стандарта), и подскок
--- «дважды за шаг» на ней давал 10-12 Гц — это читалось не как бег, а как дрожь
--- (жалоба автора после #415: «жуки трясутся, особенно маленькие»). Выше потолка
--- частота не растёт, а амплитуда падает пропорционально: частый мелкий шаг даёт
--- ровный корпус, как у живого бегущего насекомого.
-local BOB_HZ_MAX = 2.5
-local LURCH_HZ_MAX = 1.2
--- Сглаживание каденции, 1/сек: толкучка дёргает скорость покадрово, и без него
--- фаза подскока скакала бы вместе с ней.
-local CADENCE_EASE = 3
 -- Потолок тангажа дыхания, рад: вдох чуть приподнимает нос, а не кивает жуком.
 local BREATH_PITCH = 0.5
 
@@ -395,22 +337,24 @@ local function placeModelLeg(leg, hip, foot, bodyCF)
 	local cosA = math.clamp((leg.l1 * leg.l1 + clamped * clamped - leg.l2t * leg.l2t) / (2 * leg.l1 * clamped), -1, 1)
 	local sinA = math.sqrt(math.max(0, 1 - cosA * cosA))
 	local knee = hip + dir * (leg.l1 * cosA) + pole * (leg.l1 * sinA)
-	-- Лодыжка — в той же доле голени, что в покое; лапка — между ней и кончиком.
-	local ankle = knee + (target - knee) * (leg.l2 / leg.l2t)
 	local femurBone = boneFrame(hip, knee, pole)
 	local tibiaBone = boneFrame(knee, target, pole)
-	local tarsusBone = boneFrame(ankle, target, pole)
 	local rest = leg.rest0
 	placeSegment(leg.femur, femurBone, rest and rest.femur)
 	placeSegment(leg.knee, femurBone, rest and rest.knee)
+	-- Голень, лодыжка и лапка — одно жёсткое звено от колена до кончика: инверсия и так
+	-- считает его одной длиной l2t. Раньше лапка ставилась своим кадром от лодыжки,
+	-- пересчитанной на прямую колено–кончик, а в покое лодыжка лежит не на этой прямой
+	-- (голень идёт круто вниз, лапка — по полу). Кадр лапки на ходу расходился с кадром
+	-- покоя, и она отрывалась от голени и торчала отдельной палочкой (жалоба автора).
 	placeSegment(leg.tibia, tibiaBone, rest and rest.tibia)
 	placeSegment(leg.ankle, tibiaBone, rest and rest.ankle)
-	placeSegment(leg.tarsus1, tarsusBone, rest and rest.tarsus1)
-	placeSegment(leg.tarsus, tarsusBone, rest and rest.tarsus)
+	placeSegment(leg.tarsus1, tibiaBone, rest and rest.tarsus1)
+	placeSegment(leg.tarsus, tibiaBone, rest and rest.tarsus)
 	if not rest then
 		-- Лапа из примитивов: суставы — шарики, им кадр кости не нужен.
 		leg.knee.CFrame = CFrame.new(knee)
-		leg.ankle.CFrame = CFrame.new(ankle)
+		leg.ankle.CFrame = CFrame.new(knee + (target - knee) * (leg.l2 / leg.l2t))
 		leg.tarsus.CFrame = CFrame.new(target)
 	end
 end
@@ -475,19 +419,6 @@ local function plantAhead(hip, nominal, travel, reach, limit)
 end
 
 
--- Где стоит тело, если его несут ноги (см. блок BODY_* выше). Ответ собирается по тем
--- ступням, что СЕЙЧАС на земле; нога в переносе не считается — она ничего не держит.
---
--- Горизонталь. Стоящая ступня говорит: «тело полагается вот здесь» — там, где стойка
--- этой ноги совпала бы с её ступнёй. Пока ступня стоит, а маршрут уезжает, эта точка
--- отстаёт и тянет корпус назад (торможение). На пересменке трипода свежие ступни встают
--- впереди, точка прыгает вперёд — корпус толкается. Дважды за цикл, как у живого.
---
--- Вертикаль считается отдельно и по-другому — как перевёрнутый маятник. Нога держит свою
--- длину, значит бедро может быть выше ступни ровно на sqrt(распорка² − вынос²): ступня
--- под бедром — тело в верхней точке, ступня уехала — тело просело. Через «где была бы
--- стойка» это не выразить: на ровном полу все ступни на одной высоте, и подъём вышел бы
--- постоянным.
 -- Голова, усики и жвалы шаблонного жука: детали в кадре тела в покое и точки шарниров.
 -- У примитивов модели head нет — nil, и оживление головы просто не запускается.
 local function captureHead(model)
@@ -685,19 +616,11 @@ local function poseWings(rig, body, openOverride, freqMul)
 	workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
 end
 
--- Крен в повороте и вздрагивание — поверх качки от ног (см. carryBody).
-local function react(state, body, dt, turnRate)
+-- Вздрагивание от попадания поверх ровного тела. Крена в повороте нет: живой жук
+-- поворачивает на ногах, корпус не заваливается (см. «Тело ровное»).
+local function react(state, body, dt)
 	local up = body.UpVector
-	local speed = (state.velocity or Vector3.zero).Magnitude / (state.gaitScale or 1)
-	local leanTarget = math.clamp(turnRate * speed * LEAN_GAIN, -LEAN_MAX, LEAN_MAX)
-	state.lean = (state.lean or 0) + (leanTarget - (state.lean or 0)) * math.clamp(dt * LEAN_FOLLOW, 0, 1)
-
 	local rotation = CFrame.identity
-	if math.abs(state.lean) > 1e-4 then
-		-- Положительный угол доворота — поворот налево; поворот вокруг хвоста на +φ валит
-		-- верх туда же, внутрь дуги. Хвост — это LookVector: голова модели по +Z.
-		rotation = CFrame.fromAxisAngle(body.LookVector, state.lean)
-	end
 
 	local offset = state.flinchOffset or Vector3.zero
 	local velocity = state.flinchVelocity
@@ -734,45 +657,12 @@ local function idleAmount(state, dt)
 	return state.idle
 end
 
--- Почерк вида поверх качки от ног: собственный подскок корпуса на ходу, валкость
--- (перевалка с борта на борт) и дыхание на остановке. Числа — EnemyGaitStyles.
---
--- Почему это отдельный слой, а не правка carryBody: качка от ног — следствие ГЕОМЕТРИИ
--- (где стоят ступни), и подкручивать её значило бы врать про опору. Подскок и дыхание —
--- работа мышц самого жука, они и должны лежать поверх, в кадре тела.
-local function flourish(state, body, dt)
+-- Дыхание стоящего поверх ровного тела. Числа — EnemyGaitStyles. На ходу его нет:
+-- корпус идущего жука не качается (см. «Тело ровное»).
+local function flourish(state, body)
 	local style = state.style or EnemyGaitStyles.Default
 	local strut = state.strut or 1
-	local scale = state.gaitScale or 1
-	local worldSpeed = (state.velocity or Vector3.zero).Magnitude
-	-- Доля полной силы: на рабочей скорости вида — 1, на медленном ходу меньше. Скорость
-	-- мировая, как и refSpeed (скорость вида в Enemies): в единицах Стандарта мелкий жук
-	-- «бежал» бы в разы быстрее своей скорости и трясся в потолок.
-	local drive = math.clamp(worldSpeed / style.refSpeed, 0, 1)
-
-	-- Шагов в секунду = ход / длина шага. Считается по факту, а не по задуманной скорости
-	-- вида: в толкучке и на замедлении подскок замедляется вместе с ногами.
-	local rawCadence = worldSpeed / scale / math.max(MODEL_STRIDE * style.stride, 0.1)
-	state.cadence = (state.cadence or rawCadence)
-		+ (rawCadence - (state.cadence or rawCadence)) * math.clamp(dt * CADENCE_EASE, 0, 1)
-	local cadence = state.cadence
-
-	local rise, pitch, roll = 0, 0, 0
-	if style.bob.amp > 0 and drive > 0.01 then
-		local hz = cadence * style.bob.freq
-		local capped = math.min(hz, BOB_HZ_MAX)
-		state.bobPhase = (state.bobPhase or 0) + dt * capped
-		local fade = hz > BOB_HZ_MAX and BOB_HZ_MAX / hz or 1
-		rise += math.sin(state.bobPhase * math.pi * 2 + state.phase) * style.bob.amp * drive * fade * strut
-	end
-	if style.lurch.amp > 0 and drive > 0.01 then
-		local hz = cadence * style.lurch.freq
-		local capped = math.min(hz, LURCH_HZ_MAX)
-		state.lurchPhase = (state.lurchPhase or 0) + dt * capped
-		local fade = hz > LURCH_HZ_MAX and LURCH_HZ_MAX / hz or 1
-		roll += math.sin(state.lurchPhase * math.pi * 2 + state.phase) * style.lurch.amp * drive * fade
-	end
-
+	local rise, pitch = 0, 0
 	local idle = state.idle or 0
 	if style.breath.amp > 0 and idle > 0.01 then
 		local wave = math.sin((state.clock + state.phase) * style.breath.rate * math.pi * 2)
@@ -780,96 +670,11 @@ local function flourish(state, body, dt)
 		pitch += wave * style.breath.amp * idle * BREATH_PITCH
 	end
 
-	if math.abs(rise) < 1e-4 and math.abs(roll) < 1e-4 and math.abs(pitch) < 1e-4 then
+	if math.abs(rise) < 1e-4 and math.abs(pitch) < 1e-4 then
 		return body
 	end
-	-- Смещение В КАДРЕ ТЕЛА, а не по миру: на стене «вверх» — это от поверхности,
-	-- и подскок там обязан идти от неё, а не в небо.
-	return body * CFrame.new(0, rise, 0) * CFrame.Angles(pitch, 0, roll)
-end
-
-local function carryBody(state, path, dt, now)
-	local up = path.UpVector
-	local sum, lift, stance = Vector3.zero, 0, 0
-	local sinkPlus, sinkMinus, nPlus, nMinus = 0, 0, 0, 0
-
-	for _, leg in state.legs do
-		local planted = leg.planted
-		if planted and now >= leg.stepUntil then
-			sum += planted - path:VectorToWorldSpace(leg.rest)
-
-			local strut = leg.strut
-			if strut and strut > 1e-3 then
-				local fromHip = planted - path * leg.hip
-				local alongUp = fromHip:Dot(up) -- отрицателен: ступня ниже бедра
-				local flat = (fromHip - up * alongUp).Magnitude
-				local hold = math.sqrt(math.max(strut * strut - flat * flat, 0))
-				local sink = hold + alongUp -- в покое ровно 0, дальше — только вниз
-				lift += sink
-
-				-- Просадка по бортам копится отдельно — отсюда переваливание (см. BODY_ROLL).
-				-- Среднее положение ступней для этого не годится: по боку оно тождественный ноль
-				-- (замерено стендом: 0.000) — шесть ног симметричны и гасят друг друга.
-				-- А вот НАГРУЗКА несимметрична: в триподе две лапы одного борта и одна
-				-- другого, поэтому борта проседают в противофазе, и тело валится то туда, то сюда.
-				if leg.rest.X > 0 then
-					sinkPlus += sink
-					nPlus += 1
-				else
-					sinkMinus += sink
-					nMinus += 1
-				end
-			end
-			stance += 1
-		end
-	end
-
-	if stance == 0 then
-		-- Все ноги в воздухе (кадр пересменки) — держим прошлое смещение, а не
-		-- обнуляем: иначе на каждый такой кадр тело дёргалось бы к маршруту.
-		return path * CFrame.new(state.carry or Vector3.zero)
-	end
-
-	local flatRaw = path:VectorToObjectSpace(sum / stance - path.Position)
-	local raw = Vector3.new(flatRaw.X, lift / stance, flatRaw.Z)
-
-	-- Постоянную составляющую забываем (см. BODY_MEAN): маршрут — правда о том, где жук,
-	-- качка — только рябь вокруг него.
-	state.carryMean = state.carryMean and state.carryMean:Lerp(raw, math.clamp(dt * BODY_MEAN, 0, 1)) or raw
-
-	local strutRef = state.strut or 1
-	local style = state.style or EnemyGaitStyles.Default
-	local sway = strutRef * BODY_SWAY * style.sway
-	local rise = strutRef * BODY_LIFT * style.lift
-	local wobble = (raw - state.carryMean) * BODY_FOLLOW
-	wobble = Vector3.new(
-		math.clamp(wobble.X, -sway, sway),
-		math.clamp(wobble.Y, -rise, rise),
-		math.clamp(wobble.Z, -sway, sway)
-	)
-	local settle = math.clamp(dt * BODY_SETTLE, 0, 1)
-	state.carry = state.carry and state.carry:Lerp(wobble, settle) or wobble
-
-	-- Крен — из разницы просадки бортов: тело валится на тот борт, чьи лапы сейчас
-	-- вытянуты сильнее (он ниже держит). Тангаж — из продольного смещения: опора
-	-- ушла назад — значит жука толкают сзади, и нос идёт кверху.
-	local tilt = 0
-	if nPlus > 0 and nMinus > 0 then
-		tilt = sinkPlus / nPlus - sinkMinus / nMinus
-	end
-	-- Из перекоса тоже вычитается среднее: борта шаблона не совсем зеркальны, и без
-	-- этого жук ехал с постоянным креном в 5° на один бок (замерено стендом) — это
-	-- читалось как криво собранная модель, а не как походка. Нужно переваливание, а не наклон.
-	state.tiltMean = state.tiltMean and state.tiltMean + (tilt - state.tiltMean) * math.clamp(dt * BODY_MEAN, 0, 1) or tilt
-	local swing = tilt - state.tiltMean
-	state.carryRoll = state.carryRoll and state.carryRoll + (swing - state.carryRoll) * settle or swing
-
-	local offset = state.carry
-	-- tilt < 0 — борт +X просел сильнее; поворот вокруг оси носа опускает его туда же.
-	local roll = math.clamp(state.carryRoll / strutRef * BODY_ROLL * style.roll,
-		-BODY_ROLL_MAX * style.roll, BODY_ROLL_MAX * style.roll)
-	local pitch = (offset.Z / strutRef) * BODY_PITCH * style.pitch
-	return path * CFrame.new(offset) * CFrame.Angles(pitch, 0, roll)
+	-- Смещение В КАДРЕ ТЕЛА, а не по миру: на стене «вверх» — это от поверхности.
+	return body * CFrame.new(0, rise, 0) * CFrame.Angles(pitch, 0, 0)
 end
 
 -- Где опора под номинальной стуйкой. Нет опоры (жук над краем, висит над проломом) —
@@ -1007,12 +812,10 @@ function EnemyGait.Attach(model, legs, styleKey)
 			index = index,
 		}
 
-		-- Нога как распорка: её рабочая длина в позе покоя (см. carryBody). По ней считается,
-		-- насколько тело оседает, когда ступня уходит от стойки вперёд или назад. Берётся
-		-- именно покой, а не анатомический предел: на пределе лапа выпрямлена в палку,
-		-- а держит тело она полусогнутой.
+		-- Нога как распорка: её рабочая длина в позе покоя. Из неё — мерка экземпляра
+		-- (state.strut ниже). Берётся покой, а не анатомический предел: на пределе лапа
+		-- выпрямлена в палку, а держит тело она полусогнутой.
 		local restFlat = Vector3.new(leg.foot.X - leg.hip.X, 0, leg.foot.Z - leg.hip.Z).Magnitude
-		entry.restFlat = restFlat
 		entry.strut = math.sqrt(restFlat * restFlat + (leg.hip.Y - leg.foot.Y) ^ 2)
 
 		if isModel then
@@ -1064,15 +867,15 @@ function EnemyGait.Attach(model, legs, styleKey)
 			poleWorld = poleWorld.Magnitude > 1e-3 and poleWorld.Unit or bodyCF:VectorToWorldSpace(bend)
 			local femurBone = boneFrame(hipWorld, entry.knee.Position, poleWorld)
 			local tibiaBone = boneFrame(entry.knee.Position, footWorld, poleWorld)
-			local tarsusBone = boneFrame(entry.ankle.Position, footWorld, poleWorld)
-			if femurBone and tibiaBone and tarsusBone then
+			if femurBone and tibiaBone then
 				entry.rest0 = {
 					femur = femurBone:Inverse() * entry.femur.CFrame,
 					knee = femurBone:Inverse() * entry.knee.CFrame,
 					tibia = tibiaBone:Inverse() * entry.tibia.CFrame,
 					ankle = tibiaBone:Inverse() * entry.ankle.CFrame,
-					tarsus1 = tarsusBone:Inverse() * entry.tarsus1.CFrame,
-					tarsus = tarsusBone:Inverse() * entry.tarsus.CFrame,
+					-- Лапка — от кадра голени (см. placeModelLeg): звено колено–кончик жёсткое.
+					tarsus1 = tibiaBone:Inverse() * entry.tarsus1.CFrame,
+					tarsus = tibiaBone:Inverse() * entry.tarsus.CFrame,
 				}
 			end
 		end
@@ -1080,8 +883,8 @@ function EnemyGait.Attach(model, legs, styleKey)
 	end
 
 	-- Средняя распорка — единственная физическая мерка этого экземпляра. От неё берутся
-	-- потолки качки тела (см. BODY_SWAY/BODY_LIFT): мелкий Мини качается мелко, гигант —
-	-- размашисто, и ни одной величины в studs подбирать под каждый вид не приходится.
+	-- вздрагивание и дыхание: у мелкого Мини мелкие, у гиганта крупные, и ни одной
+	-- величины в studs подбирать под каждый вид не приходится.
 	local strutSum = 0
 	for _, entry in state.legs do
 		strutSum += entry.strut or 0
@@ -1139,8 +942,8 @@ end
 -- уезжает от ступней, и порог шага не берётся сам собой.
 --
 -- pathCF — МАРШРУТНЫЙ кадр от спавнера: где жук находится для сетки, толкучки и прицела.
--- Передан — походка сама ставит модель (PivotTo), смещая видимое тело по ногам
--- (см. carryBody). Не передан — тело ведёт вызывающий, качки не будет.
+-- Передан — походка сама ставит модель (PivotTo): тело ровно в нём, плюс доворот,
+-- вздрагивание и дыхание. Не передан — тело ведёт вызывающий.
 -- На какой угол тело успевает довернуть за кадр при рассогласовании angle (рад).
 -- Этим же доворотом пользуется толкучка (Crowd.Resolve): капсула, сквозь которую жуки
 -- не проходят, обязана смотреть туда же, куда видимое тело, — иначе на повороте тело
@@ -1202,9 +1005,9 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 	local path = pathCF or model:GetPivot()
 	-- «Стоит или идёт» нужно и голове (озирание), и телу (дыхание) — считается один раз.
 	idleAmount(state, dt)
-	local body = pathCF and carryBody(state, path, dt, now) or path
+	local body = path
 	if pathCF then
-		body = flourish(state, react(state, body, dt, turnRate), dt)
+		body = flourish(state, react(state, body, dt))
 		model:PivotTo(body)
 	end
 	if state.head then
