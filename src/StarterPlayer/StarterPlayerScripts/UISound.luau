@@ -9,7 +9,8 @@
 --   SoundService.Master.Draw     — «Рулетка и апгрейдер» (volumeDraw)
 --   SoundService.Master.Combat   — «Бой» (volumeCombat): звуки GameAudio
 --   SoundService.Master.Ambient  — «Атмосфера» (volumeAmbient): фон бункера
---   SoundService.Master.Music    — «Музыка» (volumeMusic): трек и стинги забега
+--   SoundService.Master.Music    — «Музыка» (volumeMusic): трек и стинги забега.
+--                                  Пока не включено «Экспериментальное: музыка» (experimentalMusic), группа немая
 -- Группы Buttons, Draw, Combat, Ambient и Music лежат внутри Master, поэтому их громкость умножается на общую.
 -- Громкость групп — из настроек (UISettings) по кривой UISettings.Gain и меняется сразу.
 -- Правее 100% на ползунке группа громче записанного звука (Volume больше 1).
@@ -49,7 +50,16 @@ local function setVolume(key, value)
 	end
 end
 
+-- Музыка — опыт: пока выключатель experimentalMusic не включён, группа Music немая
+-- при любом положении ползунка. Её Sound могут играть — их просто не слышно.
 local function apply(key)
+	if key == "experimentalMusic" then
+		key = "volumeMusic"
+	end
+	if key == "volumeMusic" and not Settings.Get("experimentalMusic") then
+		groups.volumeMusic.Volume = 0
+		return
+	end
 	setVolume(key, Settings.Get(key))
 end
 
