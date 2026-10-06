@@ -624,7 +624,7 @@ function Detail.Element(scroll, key, ctx)
 	end
 	-- Антиматерия — загадка: у неё описания нет совсем (просьба автора), без заглушки.
 	if not EntityInfo.MYSTERY[key] then
-		text(scroll, 40, ReferenceTexts.elements[element.name] or "Описания в вики пока нет.", TEXT, Theme.color.text)
+		text(scroll, 40, ReferenceTexts.elements[element.name] or "Описания пока нет.", TEXT, Theme.color.text)
 	end
 end
 
@@ -747,10 +747,7 @@ function Detail.Enemy(scroll, key, ctx)
 	end
 
 	local wiki = ReferenceTexts.enemies[enemy.name]
-	text(scroll, 50, wiki and wiki.text or "Описания в вики пока нет.", TEXT, Theme.color.text)
-	if wiki and wiki.lesson then
-		text(scroll, 60, ("<b>%s</b>  %s"):format(Theme.Caps("урок:"), wiki.lesson), TEXT, Theme.color.accent)
-	end
+	text(scroll, 50, wiki and wiki.text or "Описания пока нет.", TEXT, Theme.color.text)
 
 	if open("model") then
 		enemyView(scroll, 70, enemy)
