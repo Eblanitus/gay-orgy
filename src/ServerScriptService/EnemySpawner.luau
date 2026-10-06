@@ -1387,7 +1387,9 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 			-- керамикой: ни вспышки смерти, ни трупа, ни последействий.
 			local petrified = enemy:GetAttribute("Petrified")
 			if not petrified then
-				EnemyDiedRemote:FireAllClients(enemy:GetPivot().Position)
+				-- Доля добивающего удара: слабый — тихий хлопок без искр (EnemyVisuals, PhysicsFX.death).
+				local dieMax = math.max(enemy:GetAttribute("MaxHP") or 1, 1)
+				EnemyDiedRemote:FireAllClients(enemy:GetPivot().Position, math.max(previousHp - currentHp, 0) / dieMax)
 			end
 			-- Погибший очищенный — потеря игрока, а не его добыча: ни материи, ни плутония,
 			-- ни строки в журнале убийств.
