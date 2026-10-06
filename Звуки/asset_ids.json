@@ -1,0 +1,94 @@
+{
+ "AmbientBunker": {
+  "assetId": "126970483736508",
+  "sha1": "13eb66a7b3885dac930d8f75609bbc85244b7e98"
+ },
+ "Boom": {
+  "assetId": "115892098490062",
+  "sha1": "274aca9d81053b90feec39682c8132e8c5e13e98"
+ },
+ "DeathBig": {
+  "assetId": "98115507845518",
+  "sha1": "e109786794a8be9a32ac3eafc7eb27f4e4d69f7d"
+ },
+ "DeathMedium": {
+  "assetId": "127648789099080",
+  "sha1": "6f20d73b750521093e91a19d9913d0ae8d8c7af5"
+ },
+ "DeathSmall": {
+  "assetId": "126399696193780",
+  "sha1": "f86060a603b4e844fc97890f64fc78386bd5a853"
+ },
+ "DroneBoom": {
+  "assetId": "79276043442991",
+  "sha1": "fc1e22f5ed3c1cc691866f4e890deda0b251ec0a"
+ },
+ "DroneLaunch": {
+  "assetId": "96275266476432",
+  "sha1": "f59a52ee3e3604cf27a086b0258d68bd7ce045f9"
+ },
+ "HumArea": {
+  "assetId": "138337541830654",
+  "sha1": "9acc6fd1c170ff044669ff171e1ce4642ccf1c82"
+ },
+ "MusicBattle": {
+  "assetId": "97298114043059",
+  "sha1": "dd7f95b6b6083eda7ea314d42a8e9ce207f0a395"
+ },
+ "MusicBattleCalm": {
+  "assetId": "128765369826274",
+  "sha1": "61bd2d0c60069ac9c33b826d2394a1ba9d71f12f"
+ },
+ "MusicBunker": {
+  "assetId": "71923168169104",
+  "sha1": "851107887d4ff58865e1767df7b64687078a174f"
+ },
+ "MusicMenu": {
+  "assetId": "130797681556953",
+  "sha1": "17ad1ebaf8a9ff1974f71a52ebed74e4d6045c22"
+ },
+ "Quake": {
+  "assetId": "83677967959541",
+  "sha1": "2d9027d4fc19670ec498fdf3b23a7d6d83f7b328"
+ },
+ "RunLose": {
+  "assetId": "88586223853162",
+  "sha1": "09283665d5111beb4aff805d6cd1fed8420c3265"
+ },
+ "RunWin": {
+  "assetId": "114830227554497",
+  "sha1": "6838aad98b917545ffcd924418c30b83c5bf7d67"
+ },
+ "Shatter": {
+  "assetId": "79095424994238",
+  "sha1": "eb983714bc6de37dbb0523a78c75781e61c7dabf"
+ },
+ "ShotFlask": {
+  "assetId": "80607620586366",
+  "sha1": "080068296d2032185e044cf3a7a2b9adcbd6d8be"
+ },
+ "ShotInjector": {
+  "assetId": "116657303418293",
+  "sha1": "06d8704dec7ab243744dc5c5ce7e76386e25b099"
+ },
+ "Sizzle": {
+  "assetId": "90619073551067",
+  "sha1": "24292330b0726b5fe1384707bcb055b50ec0a4b9"
+ },
+ "Splash": {
+  "assetId": "118160749493247",
+  "sha1": "a540595d8e3e47297f1d13b18cfe77114d31639c"
+ },
+ "Splat": {
+  "assetId": "106178963888611",
+  "sha1": "8b2626315b0ef20718b25dff49557b403ad1c80c"
+ },
+ "WaveStart": {
+  "assetId": "78020658052977",
+  "sha1": "1ecaae867f8ce3b017998c07c1c318b722e60b3f"
+ },
+ "WingBuzz": {
+  "assetId": "96633314524531",
+  "sha1": "2b576e8a3997419aa1f51a4c3d7f27d6a1a32630"
+ }
+}

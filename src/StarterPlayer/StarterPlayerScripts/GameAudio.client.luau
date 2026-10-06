@@ -3,7 +3,7 @@
 -- «по какому событию какой звук и где».
 --
 -- Слушает события, которые сервер и так шлёт ради картинки (CombatFX, EnemyRender):
--- ShotFired, Explosion, EnemyFX, WaveChanged, RunEnded. Своих remote'ов у звука нет.
+-- ShotFired, Explosion, EnemyFX, WaveReady, WaveChanged, RunEnded. Своих remote'ов у звука нет.
 --
 -- Звук в мире висит на Attachment в Terrain в точке события и стихает с расстоянием
 -- до камеры (near/far из таблицы). Петли (гул турели, крылья) живут на самой модели
@@ -253,26 +253,63 @@ if ambient then
 	ambient:Play()
 end
 
-local music = make(SoundBank.Music)
-local musicVolume = music and music.Volume
-if music then
-	music.Volume = musicVolume * SoundBank.MUSIC_IDLE
-	music.Parent = SoundService
-	music:Play()
+-- Треки делаются один раз и дальше только плавно глохнут и разгораются: при смене
+-- состояния старый трек уходит в тишину и встаёт на паузу, новый продолжает с того
+-- места, где его оставили.
+local tracks = {} -- имя -> { sound, volume }
+local current
+
+local function track(name)
+	if tracks[name] == nil then
+		local sound, def = make(name)
+		if sound then
+			sound.Volume = 0
+			sound.Parent = SoundService
+			tracks[name] = { sound = sound, volume = def.volume }
+		else
+			tracks[name] = false
+		end
+	end
+	return tracks[name] or nil
 end
 
-local function musicTo(factor)
-	if music then
-		TweenService:Create(music, TweenInfo.new(SoundBank.MUSIC_FADE), { Volume = musicVolume * factor }):Play()
+local function musicFor(state)
+	local name = SoundBank.Music[state]
+	if name == current then
+		return
+	end
+	local old = current and track(current)
+	current = name
+	if old then
+		local fade = TweenService:Create(old.sound, TweenInfo.new(SoundBank.MUSIC_FADE), { Volume = 0 })
+		fade.Completed:Connect(function(playback)
+			if playback == Enum.PlaybackState.Completed and current ~= old.sound.Name then
+				old.sound:Pause()
+			end
+		end)
+		fade:Play()
+	end
+	local new = name and track(name)
+	if new then
+		if not new.sound.IsPlaying then
+			new.sound:Resume()
+		end
+		TweenService:Create(new.sound, TweenInfo.new(SoundBank.MUSIC_FADE), { Volume = new.volume }):Play()
 	end
 end
 
+musicFor("menu")
+
+Remotes:WaitForChild("WaveReady").OnClientEvent:Connect(function()
+	musicFor("calm")
+end)
+
 Remotes:WaitForChild("WaveChanged").OnClientEvent:Connect(function()
 	play("WaveStart")
-	musicTo(1)
+	musicFor("battle")
 end)
 
 Remotes:WaitForChild("RunEnded").OnClientEvent:Connect(function(won)
 	play(won and "RunWin" or "RunLose")
-	musicTo(SoundBank.MUSIC_IDLE)
+	musicFor("menu")
 end)

@@ -193,7 +193,7 @@ UISettings.List = {
 		-- Выключено — группа Master.Music немая, что бы ни стояло на ползунке «Музыка».
 		key = "experimentalMusic",
 		name = "Экспериментальное: музыка",
-		note = "Трек бункера и стинги победы и поражения. Пока опыт, по умолчанию выключена",
+		note = "Музыка в меню и в бою. Пока опыт, по умолчанию выключена",
 		affects = "UISound (SoundService.Master.Music)",
 		tab = "sound",
 		default = false,

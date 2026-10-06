@@ -1,6 +1,6 @@
 -- Звуки игры (не интерфейса — тот в SoundService.UISounds, см. UISound): что звучит
 -- и как. Играет их клиент, GameAudio, по событиям, которые сервер и так шлёт для
--- эффектов (ShotFired, Explosion, EnemyFX, WaveChanged, RunEnded). Сервер про звук
+-- эффектов (ShotFired, Explosion, EnemyFX, WaveReady, WaveChanged, RunEnded). Сервер про звук
 -- ничего не знает.
 --
 -- Сами файлы — папка «Звуки/» в репозитории, id ассетов — ReplicatedStorage.SoundIds
@@ -45,12 +45,18 @@ SoundBank.Sounds = {
 
 	-- Забег
 	WaveStart = { group = "Combat", volume = 0.6, pitch = { 1, 1 }, gap = 1, voices = 1 },
-	RunWin = { group = "Music", volume = 0.7, pitch = { 1, 1 }, gap = 1, voices = 1 },
-	RunLose = { group = "Music", volume = 0.7, pitch = { 1, 1 }, gap = 1, voices = 1 },
+	-- Стинги исхода — в «Бою», а не в «Музыке»: звучат и при выключенной музыке.
+	RunWin = { group = "Combat", volume = 0.7, pitch = { 1, 1 }, gap = 1, voices = 1 },
+	RunLose = { group = "Combat", volume = 0.7, pitch = { 1, 1 }, gap = 1, voices = 1 },
 
 	-- Фон
 	AmbientBunker = { group = "Ambient", volume = 0.5, pitch = { 1, 1 }, looped = true },
 	MusicBunker = { group = "Music", volume = 0.35, pitch = { 1, 1 }, looped = true },
+
+	-- Музыка (вся в группе Music: молчит, пока не включено «Экспериментальное: музыка»)
+	MusicMenu = { group = "Music", volume = 0.4, pitch = { 1, 1 }, looped = true },
+	MusicBattleCalm = { group = "Music", volume = 0.4, pitch = { 1, 1 }, looped = true },
+	MusicBattle = { group = "Music", volume = 0.45, pitch = { 1, 1 }, looped = true },
 }
 
 -- Выстрел — по типу турели (атрибут Type, Towers). Нет строки — турель стреляет молча.
@@ -100,10 +106,15 @@ SoundBank.BLAST_GAIN = { 0.7, 1.4 }
 
 -- Фон и музыка
 SoundBank.Ambient = "AmbientBunker"
-SoundBank.Music = "MusicBunker"
--- Насколько тише музыка, пока забега нет (лобби, меню) — множитель громкости.
-SoundBank.MUSIC_IDLE = 0.6
--- За сколько секунд музыка плавно меняет громкость.
+-- Трек по состоянию игры: menu — лобби и главное меню (до забега и после RunEnded),
+-- calm — забег, волна ждёт кнопки (WaveReady), battle — волна идёт (WaveChanged).
+-- MusicBunker загружен, но пока не играет нигде.
+SoundBank.Music = {
+	menu = "MusicMenu",
+	calm = "MusicBattleCalm",
+	battle = "MusicBattle",
+}
+-- За сколько секунд один трек перетекает в другой.
 SoundBank.MUSIC_FADE = 2
 
 return SoundBank
