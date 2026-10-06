@@ -38,7 +38,8 @@ TYPES = {".png": "image/png"}
 
 def request(method, url, key, body=None, content_type=None):
     req = urllib.request.Request(url, data=body, method=method)
-    req.add_header("x-api-key", key)
+    if key:  # пустой ключ — режим прокси (roblox_auth): авторизацию подставляет прокси
+        req.add_header("x-api-key", key)
     if content_type:
         req.add_header("Content-Type", content_type)
     try:
@@ -72,7 +73,7 @@ def upload(path, key, creator):
         if op.get("done"):
             if "error" in op:
                 raise RuntimeError(f"{path.name}: {op['error']}")
-            return image_id(op["response"]["assetId"], key)
+            return op["response"]["assetId"]
         time.sleep(2)
         op = request("GET", API + op["path"], key)
     raise RuntimeError(f"{path.name}: загрузка не завершилась за 3 минуты")
@@ -98,7 +99,7 @@ def write_luau(ids):
         "-- ещё не загружен в Roblox, ячейка жука показывается без узора.",
         "return {",
     ]
-    for name in sorted(ids):
+    for name in sorted(n for n in ids if "assetId" in ids[n]):
         lines.append(f'\t{name} = "rbxassetid://{ids[name]["assetId"]}",')
     lines.append("}")
     LUAU_FILE.write_text("\n".join(lines) + "\n", "utf-8")
@@ -117,11 +118,22 @@ def main():
         for path in files:
             sha = hashlib.sha1(path.read_bytes()).hexdigest()
             known = ids.get(key_of(path))
-            if known and known["sha1"] == sha:
+            if known and known["sha1"] == sha and "assetId" in known:
                 print(f"{key_of(path)}: {known['assetId']} (без изменений)")
                 continue
-            asset_id = upload(path, key, creator)
-            ids[key_of(path)] = {"assetId": asset_id, "sha1": sha}
+            # Декаль уже загружена, а id картинки не достали (нет права Legacy Assets) — не грузим заново.
+            if known and known["sha1"] == sha and "decalId" in known:
+                decal_id = known["decalId"]
+            else:
+                decal_id = upload(path, key, creator)
+                ids[key_of(path)] = {"decalId": decal_id, "sha1": sha}
+                IDS_FILE.write_text(json.dumps(ids, ensure_ascii=False, indent=1, sort_keys=True), "utf-8")
+            try:
+                asset_id = image_id(decal_id, key)
+            except RuntimeError as e:
+                print(f"{key_of(path)}: декаль {decal_id}, id картинки не получен: {e}")
+                continue
+            ids[key_of(path)] = {"assetId": asset_id, "decalId": decal_id, "sha1": sha}
             IDS_FILE.write_text(json.dumps(ids, ensure_ascii=False, indent=1, sort_keys=True), "utf-8")
             print(f"{key_of(path)}: {asset_id}")
     finally:

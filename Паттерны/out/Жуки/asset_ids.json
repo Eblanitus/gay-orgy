@@ -1,0 +1,106 @@
+{
+ "Absorber": {
+  "decalId": "139522496698742",
+  "sha1": "36a8a41b6c0fbd35795ae279afa296acae732b9c"
+ },
+ "AcidSpitter": {
+  "decalId": "97270857884199",
+  "sha1": "1b95831331926f872cf68bac1d115e795dcb4891"
+ },
+ "Armored": {
+  "decalId": "137472699657022",
+  "sha1": "6febcc60d6be52d2fecaa571c874e27ec95ff01f"
+ },
+ "Bomber": {
+  "decalId": "109439645314214",
+  "sha1": "5d939cc188bd1cd3424509a8b1db119a52a5a0cc"
+ },
+ "Builder": {
+  "decalId": "130950499761338",
+  "sha1": "33ddd0ca18c5eaf3418d3c796c3ca7b01c31786f"
+ },
+ "Carrier": {
+  "decalId": "125964890241620",
+  "sha1": "a7bd8ecba85c54b947f95fda6a2e16db2e57da49"
+ },
+ "Coordinator": {
+  "decalId": "130084490727223",
+  "sha1": "59476917dfed19635bedb0759ccc5c3872426b10"
+ },
+ "Evolver": {
+  "decalId": "117240826312831",
+  "sha1": "edbac6aff4b5218651ca27f4aba9864644bacc24"
+ },
+ "Facehugger": {
+  "decalId": "101651841144931",
+  "sha1": "38bbcdaf1da60e690f22b272a27386cfda20ff5e"
+ },
+ "Giant": {
+  "decalId": "134829144352134",
+  "sha1": "af9223a54046fb69960c551ba3e33e269d88daf6"
+ },
+ "HiveArchitect": {
+  "decalId": "140016654123046",
+  "sha1": "1d4769a51e20b7341c02a867c683c7c7fa3a59f8"
+ },
+ "Knitter": {
+  "decalId": "98905866346313",
+  "sha1": "eb183d4f503bc838d80d05655ea311132518e225"
+ },
+ "Larva": {
+  "decalId": "140225373391283",
+  "sha1": "4c83967d31a112d99ad1200168aa4dcfe762faab"
+ },
+ "Medic": {
+  "decalId": "103697906102618",
+  "sha1": "2a8ad2e2551c5c091af4f2425d14798597f0ffe7"
+ },
+ "Mimic": {
+  "decalId": "88635677440710",
+  "sha1": "1509d68750956c6919e18b8915a11a9896e71448"
+ },
+ "Mini": {
+  "decalId": "96108291697597",
+  "sha1": "cb285601ea309b390263f4702350d8bf7541ae29"
+ },
+ "Moth": {
+  "decalId": "76950243123990",
+  "sha1": "3895e9c1d5f26a157765bf48e535dddd7f67cfea"
+ },
+ "Normal": {
+  "decalId": "127092951914076",
+  "sha1": "f771f14d236046417e0932142504cb61a172c2f2"
+ },
+ "Pelican": {
+  "decalId": "74972856960803",
+  "sha1": "68cf1d234e21851c80ee6aeedeeab07934e8fbc1"
+ },
+ "Puppeteer": {
+  "decalId": "100957677444003",
+  "sha1": "a12bc3d62577b14f0076bc880e4187a18d51c847"
+ },
+ "Queen": {
+  "decalId": "86861809763726",
+  "sha1": "35b3d0464fdc6366185aef870d972cb837e95aeb"
+ },
+ "Ram": {
+  "decalId": "110598934040318",
+  "sha1": "e510b24d7871d18539eaf28274fa807866b1cdcc"
+ },
+ "Shadow": {
+  "decalId": "127999668490732",
+  "sha1": "4897ce0db0b39b4d3b3f1703d4f254a91685d8bb"
+ },
+ "ShieldBearer": {
+  "decalId": "118536192388038",
+  "sha1": "28718c2b5a1e260fc50f209acc468ed030964de0"
+ },
+ "Sprinter": {
+  "decalId": "115291671567008",
+  "sha1": "6d430cf9f8bab8e59aac833034cb745288cb94fe"
+ },
+ "Worker": {
+  "decalId": "135486237449982",
+  "sha1": "9d047e99fcc2a85034b75167099a75c6bc044686"
+ }
+}
