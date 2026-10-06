@@ -61,6 +61,9 @@ SoundBank.Sounds = {
 	-- Музыка (вся в группе Music: молчит, пока не включено «Экспериментальное: музыка»)
 	MusicMenu = { group = "Music", volume = 0.4, pitch = { 1, 1 }, looped = true },
 	MusicBattleCalm = { group = "Music", volume = 0.4, pitch = { 1, 1 }, looped = true },
+	-- Интро и бой — одна запись, разрезанная на две: громкость у них одна, иначе на стыке
+	-- прыгнет. Calm в самом файле тише (около -22 LUFS против -14), поэтому ей не убавлено.
+	MusicBattleIntro = { group = "Music", volume = 0.45, pitch = { 1, 1 } },
 	MusicBattle = { group = "Music", volume = 0.45, pitch = { 1, 1 }, looped = true },
 }
 
@@ -112,14 +115,19 @@ SoundBank.BLAST_GAIN = { 0.7, 1.4 }
 -- Фон и музыка
 SoundBank.Ambient = "AmbientBunker"
 -- Трек по состоянию игры: menu — лобби и главное меню (до забега и после RunEnded),
--- calm — забег, волна ждёт кнопки (WaveReady), battle — волна идёт (WaveChanged).
+-- calm — забег, волна ждёт кнопки (WaveReady, и перед первой волной тоже), intro —
+-- волна началась (WaveChanged): интро играет один раз с начала, а когда кончится,
+-- с начала же идёт battle и крутится до конца волны.
 -- MusicBunker загружен, но пока не играет нигде.
 SoundBank.Music = {
 	menu = "MusicMenu",
 	calm = "MusicBattleCalm",
+	intro = "MusicBattleIntro",
 	battle = "MusicBattle",
 }
 -- За сколько секунд один трек перетекает в другой.
 SoundBank.MUSIC_FADE = 2
+-- Волна началась: за сколько секунд гаснет calm (интро вступает сразу, с начала).
+SoundBank.MUSIC_INTRO_FADE = 1
 
 return SoundBank

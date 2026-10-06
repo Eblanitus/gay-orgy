@@ -32,12 +32,16 @@
   "sha1": "9acc6fd1c170ff044669ff171e1ce4642ccf1c82"
  },
  "MusicBattle": {
-  "assetId": "97298114043059",
-  "sha1": "dd7f95b6b6083eda7ea314d42a8e9ce207f0a395"
+  "assetId": "87349932423647",
+  "sha1": "95742cf6f5d978ad86f79978e9f2fe3bcf03575b"
  },
  "MusicBattleCalm": {
-  "assetId": "128765369826274",
-  "sha1": "61bd2d0c60069ac9c33b826d2394a1ba9d71f12f"
+  "assetId": "103934382337088",
+  "sha1": "35919f93833da357a09cce240c94c69076c29970"
+ },
+ "MusicBattleIntro": {
+  "assetId": "128042493108274",
+  "sha1": "be1b6fc4ad7f16faa7085d70256dc7d69525f29a"
  },
  "MusicBunker": {
   "assetId": "71923168169104",
