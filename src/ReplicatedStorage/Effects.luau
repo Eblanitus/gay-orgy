@@ -105,13 +105,13 @@ local zones = {}
 local ZONE_APPLY_INTERVAL = 1
 
 -- kindMarks[target][kind] = { plan, expires } — метки помимо метки Пыли: Ржавчина ("rust"),
--- Пепел ("ash"), Грунт ("soil"). Отдельно от marks[target]: та одна на цель и означает
+-- Пепел ("ash"), Грунт ("soil"), Суша ("heavy"). Отдельно от marks[target]: та одна на цель и означает
 -- ровно усиление эффектов, а этих может висеть несколько разом, и каждая значит своё.
 local kindMarks = {}
 
 -- Имя атрибута на самой цели под каждую метку — для клиента и для тех, кому нужен
 -- сам факт метки, а не её цифры.
-local MARK_ATTRIBUTE = { rust = "Rusted", ash = "Ashed", soil = "Soiled" }
+local MARK_ATTRIBUTE = { rust = "Rusted", ash = "Ashed", soil = "Soiled", heavy = "Heavy" }
 
 -- deathMarks[target][elementData] = owner — метки при смерти (поле deathMark: Облако, Дождь,
 -- Снег, Метель, Кислотный дождь, Ураган, Засуха, Уголь, Растение, Дерево, Землетрясение, Гора).
