@@ -10,6 +10,8 @@
 - `Паттерны/` — картинки узоров элементов: `Исходники/` — исходники, `out/` — готовые маски `p_<Элемент>.png`
   (`неиспользуемое/`, `Переделать/` — отложенные), `build_patterns.py` — переводит исходники в маски.
   Картинки не открывать без задачи по паттернам — каждая стоит много контекста.
+  Узоры жуков — `out/Жуки/p_<ключ Enemies>.png` (пятна панциря, в негативе к элементам): строит
+  `tools/beetles/patterns.py` из .glb, в Roblox грузит `tools/upload_patterns.py` (id — в `BeetlePatternIds.luau`).
 - `Модели/` — авторские .glb. `Модели/Жуки/` — жуки (все 26 видов): сами .glb генерирует `tools/beetles/build_all.py`
   (форма каждого вида — `tools/beetles/species.py` и `species2.py`, все виды разом — `all_beetles.glb`),
   шаблоны из них собирает `tools/prepare_beetles.luau` (Command Bar в Studio после Import 3D). Поменял цвета в `species.py` — таблицу COLORS для

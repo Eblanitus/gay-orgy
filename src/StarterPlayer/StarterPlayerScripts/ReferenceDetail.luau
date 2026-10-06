@@ -409,7 +409,7 @@ local function rejectStamp(head, reason)
 	Theme.Corner(stamp, 6)
 end
 
--- color — цвет сущности (элемента или жука), spec — узор из Theme.patterns (у жуков нет).
+-- color — цвет сущности (элемента или жука), spec — её узор из Theme.patterns или nil.
 local function patternHead(scroll, order, color, spec)
 
 	local head = Instance.new("Frame")
@@ -722,7 +722,7 @@ function Detail.Enemy(scroll, key, ctx)
 	-- Та же шапка, что у элемента: сверху общее для всех жуков, под разделителем — своё.
 	local color = enemy.color or Theme.color.textMute
 	local tint = Theme.Legible(color)
-	local head = patternHead(scroll, 20, color, nil)
+	local head = patternHead(scroll, 20, color, Theme.patterns and Theme.patterns[Theme.BEETLE_PATTERN .. key])
 	title(head, 10, enemy.name, tint)
 	nextStep(head, 15, Mastery.ENEMY, kills, "этого жука")
 
