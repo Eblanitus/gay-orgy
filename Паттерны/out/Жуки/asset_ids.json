@@ -1,105 +1,131 @@
 {
  "Absorber": {
+  "assetId": "132508876838671",
   "decalId": "139522496698742",
   "sha1": "36a8a41b6c0fbd35795ae279afa296acae732b9c"
  },
  "AcidSpitter": {
+  "assetId": "100559615360112",
   "decalId": "97270857884199",
   "sha1": "1b95831331926f872cf68bac1d115e795dcb4891"
  },
  "Armored": {
+  "assetId": "91217317261790",
   "decalId": "137472699657022",
   "sha1": "6febcc60d6be52d2fecaa571c874e27ec95ff01f"
  },
  "Bomber": {
+  "assetId": "122349404466674",
   "decalId": "109439645314214",
   "sha1": "5d939cc188bd1cd3424509a8b1db119a52a5a0cc"
  },
  "Builder": {
+  "assetId": "80332388845960",
   "decalId": "130950499761338",
   "sha1": "33ddd0ca18c5eaf3418d3c796c3ca7b01c31786f"
  },
  "Carrier": {
+  "assetId": "92542262308679",
   "decalId": "125964890241620",
   "sha1": "a7bd8ecba85c54b947f95fda6a2e16db2e57da49"
  },
  "Coordinator": {
+  "assetId": "75136384037279",
   "decalId": "130084490727223",
   "sha1": "59476917dfed19635bedb0759ccc5c3872426b10"
  },
  "Evolver": {
+  "assetId": "102009810992915",
   "decalId": "117240826312831",
   "sha1": "edbac6aff4b5218651ca27f4aba9864644bacc24"
  },
  "Facehugger": {
+  "assetId": "91171701124461",
   "decalId": "101651841144931",
   "sha1": "38bbcdaf1da60e690f22b272a27386cfda20ff5e"
  },
  "Giant": {
+  "assetId": "127766656301828",
   "decalId": "134829144352134",
   "sha1": "af9223a54046fb69960c551ba3e33e269d88daf6"
  },
  "HiveArchitect": {
+  "assetId": "73198701584218",
   "decalId": "140016654123046",
   "sha1": "1d4769a51e20b7341c02a867c683c7c7fa3a59f8"
  },
  "Knitter": {
+  "assetId": "117899482207040",
   "decalId": "98905866346313",
   "sha1": "eb183d4f503bc838d80d05655ea311132518e225"
  },
  "Larva": {
+  "assetId": "98029453593086",
   "decalId": "140225373391283",
   "sha1": "4c83967d31a112d99ad1200168aa4dcfe762faab"
  },
  "Medic": {
+  "assetId": "132194109012974",
   "decalId": "103697906102618",
   "sha1": "2a8ad2e2551c5c091af4f2425d14798597f0ffe7"
  },
  "Mimic": {
+  "assetId": "82709906491536",
   "decalId": "88635677440710",
   "sha1": "1509d68750956c6919e18b8915a11a9896e71448"
  },
  "Mini": {
+  "assetId": "133247541106506",
   "decalId": "96108291697597",
   "sha1": "cb285601ea309b390263f4702350d8bf7541ae29"
  },
  "Moth": {
+  "assetId": "116096410604175",
   "decalId": "76950243123990",
   "sha1": "3895e9c1d5f26a157765bf48e535dddd7f67cfea"
  },
  "Normal": {
+  "assetId": "90776710659820",
   "decalId": "127092951914076",
   "sha1": "f771f14d236046417e0932142504cb61a172c2f2"
  },
  "Pelican": {
+  "assetId": "85645539624790",
   "decalId": "74972856960803",
   "sha1": "68cf1d234e21851c80ee6aeedeeab07934e8fbc1"
  },
  "Puppeteer": {
+  "assetId": "118617103256875",
   "decalId": "100957677444003",
   "sha1": "a12bc3d62577b14f0076bc880e4187a18d51c847"
  },
  "Queen": {
+  "assetId": "70978707596926",
   "decalId": "86861809763726",
   "sha1": "35b3d0464fdc6366185aef870d972cb837e95aeb"
  },
  "Ram": {
+  "assetId": "78296090927788",
   "decalId": "110598934040318",
   "sha1": "e510b24d7871d18539eaf28274fa807866b1cdcc"
  },
  "Shadow": {
+  "assetId": "117358456219757",
   "decalId": "127999668490732",
   "sha1": "4897ce0db0b39b4d3b3f1703d4f254a91685d8bb"
  },
  "ShieldBearer": {
+  "assetId": "129982890139666",
   "decalId": "118536192388038",
   "sha1": "28718c2b5a1e260fc50f209acc468ed030964de0"
  },
  "Sprinter": {
+  "assetId": "92905885019662",
   "decalId": "115291671567008",
   "sha1": "6d430cf9f8bab8e59aac833034cb745288cb94fe"
  },
  "Worker": {
+  "assetId": "117992899915721",
   "decalId": "135486237449982",
   "sha1": "9d047e99fcc2a85034b75167099a75c6bc044686"
  }
