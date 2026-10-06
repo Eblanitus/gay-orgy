@@ -28,6 +28,7 @@
 -- сняло этим ударом. Смерть — короткий хлопок пыли и искр из одного общего излучателя
 -- на клиенте (Remotes.EnemyDied): сколько бы жуков ни умерло разом, деталей не прибавится.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 
@@ -57,6 +58,16 @@ local TRAIL_COLOR = Color3.fromRGB(255, 235, 200)
 local TEX_FIRE = "rbxasset://textures/particles/fire_main.dds"
 local TEX_SPARK = "rbxasset://textures/particles/sparkles_main.dds"
 local TEX_SMOKE = "rbxasset://textures/particles/smoke_main.dds"
+
+-- Экономия кадра на толпе: частицы стихий у жука дальше AURA_FAR от камеры гаснут (их там
+-- не разглядеть, а считаются они так же, как вблизи), ближе — горят как раньше. Расстояние —
+-- в долях размера жука (Scale 3.0 = 1) и с поправкой на угол обзора, как у походки в
+-- EnemyRender. Проверка раз в AURA_CHECK секунд, а не каждый кадр. Обводка стана и полоска
+-- HP не трогаются: это сведения для игрока, а не украшение.
+local AURA_FAR = 130
+local AURA_CHECK = 0.25
+local AURA_REF_FOV = math.tan(math.rad(70) / 2)
+local auraLod = {} -- [enemy] = { anchor, size, far, refresh }
 
 local function rgb(r, g, b)
 	return Color3.fromRGB(r, g, b)
@@ -829,6 +840,11 @@ local function attachVisuals(enemy)
 	-- Почерки стихий: излучатели жука собираются при первом включении почерка и дальше
 	-- только гасятся и зажигаются. Сила (rate) масштабирует табличный Rate каждого.
 	local built = {}
+	local lod = {
+		anchor = anchor,
+		size = math.clamp(enemyScale / 3, 0.4, 3),
+		far = false,
+	}
 	local function updateAura(aura)
 		local active = aura.active(enemy)
 		local emitters = built[aura]
@@ -845,9 +861,19 @@ local function attachVisuals(enemy)
 		local strength = active and aura.rate and aura.rate(enemy) or 1
 		for i, emitter in emitters do
 			emitter.Rate = aura.emitters[i].Rate * strength
-			emitter.Enabled = active
+			emitter.Enabled = active and not lod.far
 		end
 	end
+	-- Жук ушёл за AURA_FAR или вернулся — перещёлкнуть уже собранные почерки.
+	lod.refresh = function()
+		for aura in built do
+			updateAura(aura)
+		end
+	end
+	auraLod[enemy] = lod
+	enemy.Destroying:Connect(function()
+		auraLod[enemy] = nil
+	end)
 
 	local shards = nil
 	local wasStunned = enemy:GetAttribute("Stunned") == true
@@ -938,6 +964,32 @@ local function attachVisuals(enemy)
 	enemy:GetAttributeChangedSignal("Drying"):Connect(updateMark)
 	enemy:GetAttributeChangedSignal("Ally"):Connect(updateMark)
 end
+
+local auraClock = 0
+RunService.Heartbeat:Connect(function(dt)
+	auraClock += dt
+	if auraClock < AURA_CHECK then
+		return
+	end
+	auraClock = 0
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return
+	end
+	local origin = camera.CFrame.Position
+	local zoom = math.tan(math.rad(camera.FieldOfView) / 2) / AURA_REF_FOV
+	for enemy, lod in auraLod do
+		if not enemy.Parent or not lod.anchor.Parent then
+			auraLod[enemy] = nil
+		else
+			local far = (lod.anchor.Position - origin).Magnitude * zoom / lod.size > AURA_FAR
+			if far ~= lod.far then
+				lod.far = far
+				lod.refresh()
+			end
+		end
+	end
+end)
 
 for _, enemy in enemiesFolder:GetChildren() do
 	attachVisuals(enemy)

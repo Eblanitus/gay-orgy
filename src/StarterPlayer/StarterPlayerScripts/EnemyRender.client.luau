@@ -32,6 +32,26 @@ local PRIMED_DARKEN = 0.5
 
 local tracked = {} -- [server model] = { visual, smooth, hp, gaitless, primed, colors, disguise }
 
+-- ============ Экономия кадра на толпе ============
+-- Полный шаг походки (лучи опоры, инверсия лап, голова, крылья) у ближних жуков — каждый
+-- кадр, как раньше. Дальний жук считает его раз в несколько кадров, а между ними тело
+-- целиком (с ногами) просто едет за якорем — на таком расстоянии разница не видна, а
+-- лучей и записей CFrame в кадре в разы меньше. Расстояние — от камеры, в долях размера
+-- жука (гигант читается дальше Мини) и с поправкой на угол обзора (зум Аркады).
+local LOD_NEAR = 50 -- studs у жука Scale 3.0: ближе — каждый кадр
+local LOD_FAR = 110 -- дальше — раз в LOD_EVERY_FAR кадров, между — раз в LOD_EVERY_MID
+local LOD_EVERY_MID = 2
+local LOD_EVERY_FAR = 3
+-- Вне кадра (за спиной, сбоку) и под маской Мимика ног не видно вовсе: тело ещё едет
+-- каждый кадр (тень, полоска HP), а шаг — редко.
+local LOD_EVERY_HIDDEN = 6
+-- Запас к рамке кадра, studs на единицу размера: лапы и крылья торчат за пивот.
+local LOD_MARGIN = 4
+-- Потолок накопленного шага: как и общий потолок кадра ниже.
+local LOD_DT_MAX = 0.1
+local LOD_REF_FOV = math.tan(math.rad(70) / 2)
+local frameCount = 0
+
 -- ============ Маскировка Мимика ============
 -- «Маскируется под мешок, обломок или даже турель». Сервер ставит атрибут Disguise
 -- ("sack" / "debris" / "turret", для турели ещё DisguiseTower — её вид), а облик собирается
@@ -288,6 +308,11 @@ local function track(model)
 		smooth = pivot,
 		hp = model:GetAttribute("HP"),
 		arcade = arcade,
+		-- Размер против Стандарта (Scale 3.0) и свой сдвиг по кадрам: дальние жуки шагают
+		-- не все в один кадр, нагрузка размазана.
+		size = math.clamp((model:GetAttribute("Scale") or 3) / 3, 0.4, 3),
+		slot = math.random(0, 59),
+		gaitDt = 0,
 	}
 	tracked[model] = entry
 
@@ -359,9 +384,43 @@ task.spawn(function()
 	end
 end)
 
+-- Раз в сколько кадров этому жуку полный шаг походки (см. LOD_*).
+local function gaitEvery(entry, position, view)
+	if entry.disguise then
+		return LOD_EVERY_HIDDEN
+	end
+	local margin = LOD_MARGIN * entry.size
+	local p = view.cf:PointToObjectSpace(position)
+	local depth = -p.Z
+	if depth < -margin
+		or math.abs(p.X) > depth * view.tanX + margin
+		or math.abs(p.Y) > depth * view.tanY + margin then
+		return LOD_EVERY_HIDDEN
+	end
+	local distance = p.Magnitude * view.zoom / entry.size
+	if distance < LOD_NEAR then
+		return 1
+	elseif distance < LOD_FAR then
+		return LOD_EVERY_MID
+	end
+	return LOD_EVERY_FAR
+end
+
+local view = { cf = CFrame.identity, tanX = 1, tanY = 1, zoom = 1 }
+
 RunService.RenderStepped:Connect(function(dt)
 	dt = math.min(dt, 0.1)
 	local alpha = 1 - math.exp(-FOLLOW * dt)
+	frameCount += 1
+	local camera = Workspace.CurrentCamera
+	if camera then
+		local tanY = math.tan(math.rad(camera.FieldOfView) / 2)
+		local size = camera.ViewportSize
+		view.cf = camera.CFrame
+		view.tanY = tanY
+		view.tanX = tanY * (size.Y > 0 and size.X / size.Y or 1)
+		view.zoom = tanY / LOD_REF_FOV
+	end
 	for model, entry in tracked do
 		local root = model.PrimaryPart
 		if not model.Parent or not entry.visual.Parent then
@@ -373,16 +432,32 @@ RunService.RenderStepped:Connect(function(dt)
 			else
 				entry.smooth = entry.smooth:Lerp(target, alpha)
 			end
+			local every = camera and gaitEvery(entry, entry.smooth.Position, view) or 1
+			local full = every == 1 or (frameCount + entry.slot) % every == 0
+			entry.gaitDt += dt
+			local stepDt = math.min(entry.gaitDt, LOD_DT_MAX)
 			local gait = model:GetAttribute("Gait") or (entry.arcade and "walk") or nil
 			if gait then
-				EnemyGait.Step(entry.visual, dt, gait, entry.smooth, model:GetAttribute("Look"),
-					model:GetAttribute("Crawling"))
+				if full or not entry.offset then
+					EnemyGait.Step(entry.visual, stepDt, gait, entry.smooth, model:GetAttribute("Look"),
+						model:GetAttribute("Crawling"))
+					entry.gaitDt = 0
+					-- Где тело стоит относительно якоря после шага (доворот, вздрагивание):
+					-- до следующего шага оно едет за якорем с этим же сдвигом.
+					entry.offset = entry.smooth:ToObjectSpace(entry.visual:GetPivot())
+				else
+					entry.visual:PivotTo(entry.smooth * entry.offset)
+				end
 			else
 				-- Летуны и жуки со своим циклом (Лицехват, Моль, Пеликан в воздухе): ног не
 				-- переставляют, тело просто идёт за якорем. Крылья в воздухе машут.
+				entry.offset = nil
 				entry.visual:PivotTo(entry.smooth)
-				if model:GetAttribute("Flying") then
-					EnemyGait.Flap(entry.visual, dt)
+				if full then
+					if model:GetAttribute("Flying") then
+						EnemyGait.Flap(entry.visual, stepDt)
+					end
+					entry.gaitDt = 0
 				end
 			end
 		end
