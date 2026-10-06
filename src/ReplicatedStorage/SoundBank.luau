@@ -19,6 +19,11 @@
 --   looped  — петля (эмбиент, музыка, гул турели, крылья).
 local SoundBank = {}
 
+-- Звуки игры, кроме музыки (бой, жуки, забег, фон). Автор послушал черновой набор и
+-- попросил пока убрать: false — молчат все, кроме группы Music. Вернуть — true.
+-- Звуки интерфейса (SoundService.UISounds) это не трогает.
+SoundBank.SFX_ENABLED = false
+
 SoundBank.Sounds = {
 	-- Выстрелы
 	ShotFlask = { group = "Combat", volume = 0.5, pitch = { 0.92, 1.08 }, near = 10, far = 140, gap = 0.04, voices = 6 },

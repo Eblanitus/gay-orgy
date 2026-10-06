@@ -35,6 +35,9 @@ local function make(name, gain)
 	if not def or not id then
 		return nil
 	end
+	if def.group ~= "Music" and not SoundBank.SFX_ENABLED then
+		return nil
+	end
 	local sound = Instance.new("Sound")
 	sound.Name = name
 	sound.SoundId = id
