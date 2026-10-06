@@ -87,7 +87,7 @@ end
 -- Одна страница: spec говорит, чем её наполнить.
 --   order         — ключи по порядку
 --   known(key)    — открыт ли (неоткрытое — «???» и приглушено)
---   paint(key)    — цвет ячейки и ключ узора (или nil)
+--   paint(key)    — цвет ячейки, ключ узора (или nil) и true, если засечка справа
 --   name(key)     — имя в ячейке и для поиска
 --   show(scroll, key) — собрать карточку
 local function page(parent, name, spec)
@@ -170,8 +170,8 @@ local function page(parent, name, spec)
 	local function paintCell(key)
 		local parts = cells[key]
 		local known = spec.known(key)
-		local color, pattern = spec.paint(key)
-		Theme.ElementFill(parts.cell, color, { dim = not known, element = known and pattern or nil })
+		local color, pattern, right = spec.paint(key)
+		Theme.ElementFill(parts.cell, color, { dim = not known, element = known and pattern or nil, right = right })
 		Theme.Inner(parts.inner)
 		parts.name.Text = Theme.Caps(known and spec.name(key) or "???")
 		parts.name.TextColor3 = known and Theme.color.text or Theme.color.textDim
@@ -356,7 +356,8 @@ function Pages.Mount(parent, ctx)
 			return Enemies[key].name
 		end,
 		paint = function(key)
-			return Enemies[key].color or Theme.color.steel, nil
+			-- Засечка и дымка справа, узор в негативе: жук — не наше (имя остаётся слева).
+			return Enemies[key].color or Theme.color.steel, Theme.BEETLE_PATTERN .. key, true
 		end,
 		show = function(scroll, key)
 			Detail.Enemy(scroll, key, { met = ctx.met, kills = ctx.enemyKills })
