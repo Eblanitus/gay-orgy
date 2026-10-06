@@ -31,7 +31,8 @@ API = "https://apis.roblox.com/assets/v1/"
 
 def request(method, url, key, body=None, content_type=None):
     req = urllib.request.Request(url, data=body, method=method)
-    req.add_header("x-api-key", key)
+    if key:  # пустой ключ — режим прокси (roblox_auth): авторизацию подставляет прокси
+        req.add_header("x-api-key", key)
     if content_type:
         req.add_header("Content-Type", content_type)
     try:

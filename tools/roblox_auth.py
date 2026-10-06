@@ -6,6 +6,10 @@ upload_patterns).
   2. файл tools/roblox_key.txt — строки ROBLOX_API_KEY=… и ROBLOX_USER_ID=… (или просто ключ
      одной строкой и id числом другой). В git он не попадает (.gitignore);
   3. вопрос в консоли: ответ сохраняется в tools/roblox_key.txt, второй раз не спросит.
+
+Режим прокси (ROBLOX_AUTH_PROXY=1, облачная сессия): ключ подставляет прокси окружения сам,
+скрипту он не нужен — load() отдаёт пустой ключ, и заголовок x-api-key не ставится.
+Нужен только владелец (ROBLOX_USER_ID или ROBLOX_GROUP_ID).
 """
 
 import os
@@ -40,17 +44,21 @@ def load():
     for name in NAMES:
         if os.environ.get(name):
             values[name] = os.environ[name]
+    proxy = os.environ.get("ROBLOX_AUTH_PROXY") not in (None, "", "0")
+    if proxy:
+        values["ROBLOX_API_KEY"] = ""
     asked = False
-    if not values.get("ROBLOX_API_KEY"):
+    if not proxy and not values.get("ROBLOX_API_KEY"):
         values["ROBLOX_API_KEY"] = input("Ключ Open Cloud (ROBLOX_API_KEY): ").strip()
         asked = True
     if not values.get("ROBLOX_USER_ID") and not values.get("ROBLOX_GROUP_ID"):
         values["ROBLOX_USER_ID"] = input("id аккаунта Roblox (ROBLOX_USER_ID): ").strip()
         asked = True
-    if not values["ROBLOX_API_KEY"]:
+    if not proxy and not values["ROBLOX_API_KEY"]:
         sys.exit("нет ключа ROBLOX_API_KEY")
     if asked:
         KEY_FILE.write_text("".join(f"{n}={values[n]}\n" for n in NAMES if values.get(n)), "utf-8")
+        # в режиме прокси ключа в values нет — в файл уходит только владелец
         print(f"сохранено в {KEY_FILE}, второй раз не спрошу")
     if values.get("ROBLOX_GROUP_ID"):
         return values["ROBLOX_API_KEY"], {"groupId": values["ROBLOX_GROUP_ID"]}
