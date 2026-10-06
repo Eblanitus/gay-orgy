@@ -186,6 +186,12 @@ local function invalidate()
 	Grid.Changed:Fire()
 end
 
+-- Свойства постройки сменились без смены занятости (Пандус, хитин на стене): цена её
+-- клеток другая, и поля, посчитанные по старой цене, устарели так же, как после стройки.
+function Grid.Touch()
+	invalidate()
+end
+
 function Grid.GetOccupant(cx, cz)
 	return occupants[key(cx, cz)]
 end
@@ -375,8 +381,27 @@ local NO_CHEW_COST = 1e6
 -- лишнего времени займёт клетка под постройкой по сравнению с обычным шагом.
 local CRAWL_COST = 1 / Arena.crawlSpeed - 1
 
+-- Как жук лезет именно на эту постройку. Обычно — своими climbSpeed/climbHeight. Но к стене
+-- с Пандусом Строителя или покрытой хитином Архитектора забегают все: «по пандусу жуки
+-- забегают на стену и спрыгивают за ней. Мелкие проходят быстро, крупные теряют скорость».
+-- scale — масштаб жука; нет его (поле волн считает на всех сразу) — скорость Стандарта.
+-- Своя скорость лучше пандусной — остаётся своя: альпинисту пандус не мешает.
+-- Отрицательная climbSpeed — «не лазает вовсе» (Хмурый брон): ему и пандус не лестница.
+function Grid.ClimbFor(building, climbSpeed, climbHeight, scale)
+	if climbSpeed >= 0 and (building:GetAttribute("Ramped") or building:GetAttribute("Chitin")) then
+		local factor = 1
+		if scale and scale > 0 then
+			local clamp = Arena.rampScaleClamp
+			factor = math.clamp(Arena.rampRefScale / scale, clamp[1], clamp[2])
+		end
+		return math.max(climbSpeed, Arena.rampSpeed * factor), math.huge
+	end
+	return climbSpeed, climbHeight
+end
+
 function Grid.Crossing(building, profile)
 	local chewDps, climbSpeed, climbHeight, bodyHeight = traversal(profile)
+	climbSpeed, climbHeight = Grid.ClimbFor(building, climbSpeed, climbHeight, nil)
 	if Grid.FitsUnder(building, bodyHeight) then
 		return "under", CRAWL_COST, building:GetAttribute("CrawlGap")
 	end
@@ -485,12 +510,32 @@ end
 -- A* на каждого жука стоит в тридцать раз дороже, чем стоил на крупной. Здесь остался
 -- случай произвольной цели — фолбэк «идти к ближайшей постройке» и проверки вручную.
 -- Цена и проходимость у обоих общие (blockerMap и CellCost), иначе они разошлись бы.
-function Grid.FindPath(startX, startZ, goalX, goalZ, profile)
+-- maxNodes — потолок раскрытых клеток. Точечные цели одного жука (укрытие, место за
+-- вожаком, засада) ищутся этим A* на ходу и часто: недостижимая точка без потолка
+-- обходила бы всю сетку в 75 тысяч клеток на каждый вызов. Упёрлись в потолок — пути нет.
+function Grid.FindPath(startX, startZ, goalX, goalZ, profile, maxNodes)
 	if not Grid.InBounds(startX, startZ) or not Grid.InBounds(goalX, goalZ) then
 		return nil
 	end
 
 	local blocked = blockerMap()
+	-- Цена прохода постройки — один раз на постройку за поиск, а не на каждую её клетку:
+	-- Crossing читает атрибуты, а клеток у постройки десятки (то же, что в buildField).
+	local crossing = {}
+	local function cellCost(nx, nz)
+		local blocker = blocked[key(nx, nz)]
+		if not blocker then
+			return 1
+		end
+		local seconds = crossing[blocker]
+		if not seconds then
+			local _, s = Grid.Crossing(blocker, profile)
+			seconds = s
+			crossing[blocker] = seconds
+		end
+		return 1 + seconds
+	end
+	local expanded = 0
 	local startKey, goalKey = key(startX, startZ), key(goalX, goalZ)
 	local cameFrom = {}
 	local gScore = { [startKey] = 0 }
@@ -518,6 +563,10 @@ function Grid.FindPath(startX, startZ, goalX, goalZ, profile)
 
 		if not closed[current] then
 			closed[current] = true
+			expanded += 1
+			if maxNodes and expanded > maxNodes then
+				return nil
+			end
 			local cx, cz = fromKey(current)
 
 			for _, step in NEIGHBOURS do
@@ -532,7 +581,7 @@ function Grid.FindPath(startX, startZ, goalX, goalZ, profile)
 
 					if passable then
 						local neighbourKey = key(nx, nz)
-						local tentative = gScore[current] + Grid.CellCost(nx, nz, profile) * step[3]
+						local tentative = gScore[current] + cellCost(nx, nz) * step[3]
 						if tentative < (gScore[neighbourKey] or math.huge) then
 							gScore[neighbourKey] = tentative
 							cameFrom[neighbourKey] = current
@@ -687,10 +736,22 @@ end
 -- Поэтому остаток строго убывает на каждом шаге и зациклиться скатывание не может.
 -- Маршрут к произвольной ОБЩЕЙ цели (выход, лабораторный стол). Цель — клетка, а не
 -- враг: поле считается один раз на всю волну и годится каждому жуку с тем же профилем.
-function Grid.GetRouteTo(fromX, fromZ, profile, goalX, goalZ)
+--
+-- wander — блуждание (по вики: разведчик «блуждает по полу», «десять солдат идут десятью
+-- разными путями»). Поле при этом то же самое, общее на всю волну, — меняется только
+-- скатывание: на части шагов жук берёт не лучшего соседа, а соседа в свою сторону
+-- (side), если тот всё ещё строго ближе к цели и дороже лучшего не больше чем на budget.
+-- Строгое убывание остатка сохраняется, поэтому маршрут по-прежнему конечен и приходит
+-- в цель, а дорогая клетка (стена) в сторону не выбирается — её цена не влезает в budget.
+--   chance — доля шагов со сворачиванием; flip — через сколько клеток сменить сторону
+--   (петляние разведчика); seed — свой у жука: маршрут повторяется, пока мир не изменится.
+function Grid.GetRouteTo(fromX, fromZ, profile, goalX, goalZ, wander)
 	if not Grid.InBounds(fromX, fromZ) or not Grid.InBounds(goalX, goalZ) then
 		return nil
 	end
+	local rng = wander and Random.new(wander.seed or 1)
+	local side = wander and (wander.side or 1) or 1
+	local sinceFlip = 0
 
 	local field = fieldFor(profile, key(goalX, goalZ))
 	local dist, cost, blocked = field.dist, field.cost, field.blocked
@@ -704,6 +765,8 @@ function Grid.GetRouteTo(fromX, fromZ, profile, goalX, goalZ)
 
 	while key(cx, cz) ~= field.goalKey do
 		local bestX, bestZ, bestScore = nil, nil, math.huge
+		local here = dist[key(cx, cz)]
+		local candidates = wander and {}
 
 		for _, step in NEIGHBOURS do
 			local nx, nz = cx + step[1], cz + step[2]
@@ -717,12 +780,40 @@ function Grid.GetRouteTo(fromX, fromZ, profile, goalX, goalZ)
 					if score < bestScore then
 						bestX, bestZ, bestScore = nx, nz, score
 					end
+					if candidates and dist[neighbourKey] < here then
+						table.insert(candidates, { x = nx, z = nz, dx = step[1], dz = step[2], score = score })
+					end
 				end
 			end
 		end
 
 		if not bestX or #path > CELLS then
 			return nil -- страховка: скатывание строго убывает, сюда попасть не должно
+		end
+
+		-- Блуждание: сосед в свою сторону от лучшего направления. Сторона — знак
+		-- векторного произведения «лучший шаг × шаг кандидата».
+		if candidates and rng:NextNumber() < (wander.chance or 1) then
+			local bdx, bdz = bestX - cx, bestZ - cz
+			local pick, pickTurn = nil, 0
+			for _, candidate in candidates do
+				if candidate.score <= bestScore + (wander.budget or 1) then
+					local turn = (bdx * candidate.dz - bdz * candidate.dx) * side
+					if turn > pickTurn or (turn == pickTurn and pick and candidate.score < pick.score) then
+						pick, pickTurn = candidate, turn
+					end
+				end
+			end
+			if pick then
+				bestX, bestZ = pick.x, pick.z
+			end
+			if wander.flip then
+				sinceFlip += 1
+				if sinceFlip >= wander.flip then
+					sinceFlip = 0
+					side = -side
+				end
+			end
 		end
 
 		cx, cz = bestX, bestZ

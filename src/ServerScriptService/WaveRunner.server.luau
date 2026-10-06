@@ -37,6 +37,8 @@ local LabStations = require(ServerScriptService:WaitForChild("LabStations"))
 -- волна идёт им, а не тем, что выписан в Waves.
 local WaveEditor = require(ServerScriptService:WaitForChild("WaveEditor"))
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
+-- Память колонии жуков (нашли ли разведчики лабораторию) — до конца забега.
+local EnemyBehavior = require(ServerScriptService:WaitForChild("EnemyBehavior"))
 local TowerDebris = require(ServerScriptService:WaitForChild("TowerDebris"))
 -- Рельеф бетонного пола — такая же часть арены, как постройки и трупы: новый
 -- забег начинается с ровного пола, а не с ям прошлого.
@@ -180,6 +182,8 @@ local function clearArena()
 	LabTable.Reset()
 	LabStations.Reset()
 	Effects.ResetElementUsage()
+	-- Колония снова не знает, где лаборатория: разведчики нового забега ищут её заново.
+	EnemyBehavior.Reset()
 
 	Grid.Reset()
 	Tutorial.Stop()

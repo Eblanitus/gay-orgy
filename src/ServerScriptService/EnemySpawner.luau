@@ -24,6 +24,9 @@ local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
 -- Касты и особые механики — всё, что различает виды.
 -- Здесь осталось только общее: ходьба по маршруту, грызня, перелезание, смерть.
 local EnemyBehavior = require(ServerScriptService:WaitForChild("EnemyBehavior"))
+-- Общие чувства жуков: в них спавнер кладёт то, что видит только он (во что жук упёрся,
+-- что грызёт), и через них же поведение спавнит новых жуков.
+local Sense = require(ServerScriptService:WaitForChild("EnemySense"))
 local LabTable = require(ServerScriptService:WaitForChild("LabTable"))
 local EnemyStructures = require(ServerScriptService:WaitForChild("EnemyStructures"))
 
@@ -84,6 +87,12 @@ local NO_BLOOD = { melt = true, dissolve = true, destroy = true }
 local LOOK_RESEND_COS = math.cos(math.rad(3))
 
 local FACEHUGGER_ATTACH_RANGE = 2 -- studs: на этом расстоянии до турели Лицехват считается «долетел и присосался»
+
+-- Потолок раскрытых клеток A* до точки заявки (укрытие, место за вожаком, засада): точка
+-- рядом, и если до неё не дойти за столько клеток, считаем её недостижимой (см. Grid.FindPath).
+local POINT_NODES = 6000
+-- Шаг регенерации, сек. Мельче секунды: «получил урон — восстановился почти сразу».
+local REGEN_TICK = 0.2
 
 -- Плоская часть вектора: маршрут, повороты и дистанции считаются только по XZ. Высотой
 -- жука распоряжается толкучка (Crowd) — в тесноте он едет на спине соседа, и если мерить
@@ -163,9 +172,14 @@ end
 -- что под ним. Если хоть одна из них ему не по зубам (выше climbHeight или вовсе без
 -- высоты) — перелезания нет, остаётся грызть: иначе низкая стенка впритык к турели
 -- стала бы пандусом сквозь турель.
-local function planClimb(position, points, cells, index, climbHeight, climbSpeed, speed)
+--
+-- Стена с Пандусом или в хитине (Grid.ClimbFor) по-своему: на неё забегает любой, со
+-- скоростью по своему размеру. Через несколько построек подъём идёт со скоростью самой
+-- медленной из них. scale — масштаб жука: мелкий по пандусу быстрее крупного.
+local function planClimb(position, points, cells, index, climbHeight, climbSpeed, speed, scale)
 	local exitPoint = nil
 	local peak = 0
+	local slowest = math.huge
 
 	for i = index, #points do
 		local blocker = Grid.GetBlocker(cells[i].x, cells[i].z)
@@ -175,11 +189,14 @@ local function planClimb(position, points, cells, index, climbHeight, climbSpeed
 		end
 
 		local height = blocker:GetAttribute("Height")
-		if not height or height > climbHeight then
+		local canSpeed, canHeight = Grid.ClimbFor(blocker, climbSpeed, climbHeight, scale)
+		if not height or height > canHeight or canSpeed <= 0 then
 			return nil
 		end
 		peak = math.max(peak, height)
+		slowest = math.min(slowest, canSpeed)
 	end
+	climbSpeed = slowest
 
 	-- Маршрут кончается внутри преграды — лезть некуда, остаётся грызть.
 	if not exitPoint or peak <= 0 then
@@ -324,9 +341,15 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 	-- с преградой, в которую жук упёрся (Grid.Crossing). Один объект на обоих нарочно:
 	-- разойдись решение поиска пути и решение на месте — и маршрут был бы посчитан по
 	-- перелезанию, а жук вставал бы грызть.
+	-- chewDps маршрута — не всегда настоящий. «Может грызть стены, но не будет» (Стандарт):
+	-- chewWill < 1 делает стену в его глазах дороже, и он её обходит или перелезает, а грызёт
+	-- только когда иначе никак. Таран и Гигант, наоборот, охотнее идут напролом (chewWill > 1).
+	-- Подрывник стену не грызёт вовсе, но и не обходит: заряд её снесёт (routeChewDps).
+	-- Грызёт на месте каждый по-настоящему — chewDamage и chewRate ниже не меняются.
 	local profile = {
-		chewDps = chewDps,
-		climbSpeed = enemyData.climbSpeed or 0,
+		chewDps = enemyData.routeChewDps or chewDps * (enemyData.chewWill or 1),
+		-- neverClimbs — «не лазает — любую преграду прогрызает»: даже по Пандусу (см. Grid.ClimbFor).
+		climbSpeed = enemyData.neverClimbs and -1 or (enemyData.climbSpeed or 0),
 		climbHeight = enemyData.climbHeight or 0,
 		-- Высота спины: пролезет ли жук под постройкой (подлаз, см. Grid.Crossing). Меряется
 		-- по ЭТОМУ экземпляру — у Мини масштаб случайный, и мелкий проползает там, где крупный грызёт.
@@ -344,6 +367,8 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 	-- Половина длины тела: на столько жук не доходит до стола, чтобы грызть его край,
 	-- а не стоять в его середине. Гигант берёт стол с большего расстояния, чем Мини.
 	local bodyReach = 1.7 * (enemy:GetAttribute("Scale") or enemyData.scale or 1)
+
+	local scale = enemy:GetAttribute("Scale") or enemyData.scale or 1
 
 	local points -- мировые точки текущего маршрута
 	local cells -- те же точки в клетках: по ним видно, во что жук упёрся
@@ -387,11 +412,25 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 
 		-- Куда идти, решает каста: разведчики и солдаты —
 		-- к лаборатории, Хмурый брон — по периметру, группа работяг — на турель.
-		local goalX, goalZ, mode = EnemyBehavior.Goal(enemy, enemyData, state)
-		goalMode = mode
+		local goalX, goalZ, mode, wander = EnemyBehavior.Goal(enemy, enemyData, state)
 
 		local path
-		if mode == "turret" or mode == "ally" then
+		if mode == "point" then
+			-- Точка заявки (укрытие, вожак, засада) — разовый A* с потолком. Не дошли —
+			-- заявка помечается неудачной (механика сама решит, что дальше), а жук сейчас
+			-- же идёт по своей обычной цели, а не стоит.
+			path = Grid.FindPath(cx, cz, goalX, goalZ, profile, POINT_NODES)
+			if not path and state.goTo then
+				state.goTo.failed = true
+				state.goTo.failedAt = os.clock()
+				goalX, goalZ, mode, wander = EnemyBehavior.Goal(enemy, enemyData, state)
+			end
+		end
+		goalMode = mode
+
+		if path then
+			-- уже найден до точки заявки
+		elseif mode == "turret" or mode == "ally" then
 			-- Точечная цель ОДНОГО жука — отдельный A*, а не поле волн: поле на 75 тысяч
 			-- клеток стоит около 120 мс, и заводить его под каждую турель значило бы вешать
 			-- сервер на каждую смену фокуса. Таких жуков единицы, а не вся волна.
@@ -399,7 +438,8 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 		else
 			-- Общая цель (стол, выход, угол периметра) — поле волн: оно считается один раз
 			-- на всю волну, и первый спросивший после смены занятости платит за всех.
-			path = Grid.GetRouteTo(cx, cz, profile, goalX, goalZ)
+			-- Блуждание (wander) поле не трогает — только то, как жук по нему скатывается.
+			path = Grid.GetRouteTo(cx, cz, profile, goalX, goalZ, wander)
 		end
 
 		if not path and mode ~= "ally" then
@@ -411,6 +451,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 
 		if not path then
 			points, cells, remaining = nil, nil, nil
+			state.points = nil
 			return
 		end
 
@@ -440,7 +481,36 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 		else
 			index = math.min(2, #points)
 		end
+		-- Маршрут виден механикам: Таран целится в точку на нём впереди.
+		state.points = points
 	end
+
+	-- Что жук грызёт: в общие чувства (Кислотник плюёт туда, где грызут свои; Строитель
+	-- прислоняет Пандус к стене, в которую упёрлись). Пишется только на смене.
+	local chewTarget = nil
+	local function setChewing(building)
+		if building ~= chewTarget then
+			chewTarget = building
+			Sense.chewing[enemy] = building
+		end
+	end
+
+	-- Усиленный укус (засада Мимика): урон умножается на mult, пока не кончится count.
+	local function boosted(bite)
+		local boost = state.biteBoost
+		if not boost then
+			return bite
+		end
+		boost.count -= 1
+		if boost.count <= 0 then
+			state.biteBoost = nil
+		end
+		return math.floor(bite * boost.mult + 0.5)
+	end
+
+	-- Ход рывками (Спринтер, поле pace): скорость гуляет вокруг средней — то бросок,
+	-- то короткая сбавка. Средняя та же, что в таблице.
+	local pace = enemyData.pace
 
 	-- Затухание толчка (доля накопленного смещения в секунду). Не баланс, а ощущение:
 	-- сама сила отдачи и притяжения живёт в таблице элементов, а здесь только то, за сколько
@@ -521,6 +591,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			local position = state.pathPosition or enemy:GetPivot().Position
 			local blocker = Grid.GetBlocker(cells[index].x, cells[index].z)
 			local desired = position
+			state.index = index
+			state.blocker = blocker
+			EnemyBehavior.Track(enemy, state, position)
 
 			-- Подлаз: постройка, под которой жук пролезает, ему не преграда — он не грызёт её
 			-- и не лезет, а ползёт дальше по маршруту, медленнее обычного (Arena.crawlSpeed).
@@ -546,8 +619,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 
 			-- Дошёл ли до стола. Стол не занимает клеток сетки (см. LabTable) — именно
 			-- поэтому «упёрся в него» — это расстояние, а не blocker.
-			local atTable = goalMode == "table" and LabTable.IsAlive()
-				and (position - LabTable.Position()).Magnitude <= LabTable.REACH + bodyReach
+			-- Хмурый брон стол не ищет, но и не обходит: «стол на пути» — грызёт (tableOnPath).
+			local atTable = (goalMode == "table" or enemyData.tableOnPath) and LabTable.IsAlive()
+				and flat(position - LabTable.Position()).Magnitude <= LabTable.REACH + bodyReach
 
 			-- Что жук делает по своей касте и трейтам: идёт, отходит или стоит.
 			local behavior = EnemyBehavior.State(enemy, enemyData, state)
@@ -560,6 +634,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			if chewing ~= (enemy:GetAttribute("Chewing") or false) then
 				enemy:SetAttribute("Chewing", chewing)
 			end
+			setChewing(chewing and blocker or nil)
 
 			-- Поза, которую отыгрывают ноги в этом кадре (см. EnemyGait), и то, куда жук
 			-- развёрнут телом. На земле «верх» у него мировой, на стене — сама стена.
@@ -607,7 +682,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				local mode = Grid.Crossing(blocker, profile)
 				if mode == "climb" then
 					climb = planClimb(position, points, cells, index,
-						profile.climbHeight, profile.climbSpeed, speed)
+						profile.climbHeight, profile.climbSpeed, speed, scale)
 					if climb then
 						print(("[Преграда] %s лезет через %s (высота %.1f)")
 							:format(enemy.Name, blocker.Name, climb.height))
@@ -622,24 +697,46 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			elseif state.dash then
 				-- Разгон Тарана: идёт строго по зафиксированному направлению и не поворачивает.
 				-- Маршрут на это время не спрашивается вовсе — в этом весь смысл прямого разгона.
+				-- Скорость набирается с ходу (accel), а удар тем сильнее, чем она выше в момент
+				-- столкновения: короткий разбег — слабый удар, но не слабее minImpact.
 				local dash = state.dash
-				local step = dash.speed * dt
+				local slowPercent = enemy:GetAttribute("SlowPercent") or 0
+				dash.speed = math.min(dash.top, dash.speed + (dash.accel or math.huge) * dt)
+				local dashSpeed = dash.speed * (1 - slowPercent)
+				local step = dashSpeed * dt
 				dash.left -= step
 				heading = dash.direction
 				desired = position + dash.direction * step
-				setVelocity(dash.direction * dash.speed)
+				setVelocity(dash.direction * dashSpeed)
 
-				-- Столкновение: проламывает препятствие и сам оглушается.
+				local impact = 1
+				if dash.top > dash.walk then
+					impact = math.clamp((dashSpeed - dash.walk) / (dash.top - dash.walk), dash.minImpact or 0, 1)
+				end
+				local hit = math.max(1, math.floor(dash.damage * impact + 0.5))
+
+				-- Столкновение: проламывает препятствие и сам оглушается. Стол — тоже
+				-- препятствие: Таран, вылетевший на лабораторию, бьёт её с разбега.
 				local ahead = Grid.GetBlocker(Grid.ToCell(desired))
-				if ahead then
-					local left = math.max(0, (ahead:GetAttribute("HP") or 0) - dash.damage)
-					ahead:SetAttribute("HP", left)
-					DamageDealtRemote:FireAllClients(ahead:GetPivot().Position, dash.damage, false)
+				local intoTable = not ahead and LabTable.IsAlive()
+					and flat(desired - LabTable.Position()).Magnitude <= LabTable.REACH + bodyReach
+				if ahead or intoTable then
+					local name
+					if ahead then
+						local left = math.max(0, (ahead:GetAttribute("HP") or 0) - hit)
+						ahead:SetAttribute("HP", left)
+						DamageDealtRemote:FireAllClients(ahead:GetPivot().Position, hit, false)
+						name = ahead.Name
+					else
+						LabTable.Bite(hit)
+						name = "стол"
+					end
 					enemy:SetAttribute("StunnedUntil", now + dash.stun)
 					enemy:SetAttribute("Stunned", true)
-					print(("[Таран] проломил %s на %d и оглушён на %.0f сек")
-						:format(ahead.Name, dash.damage, dash.stun))
+					print(("[Таран] проломил %s на %d (удар %.0f%%) и оглушён на %.0f сек")
+						:format(name, hit, impact * 100, dash.stun))
 					state.dash = nil
+					desired = position
 					dirty = true
 				elseif dash.left <= 0 then
 					-- Разгон ушёл в пустоту: смещённые стены и повороты — это и есть контр.
@@ -764,8 +861,8 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 					-- оттуда же. Срок истёк — множитель сам перестаёт действовать, снимать нечего.
 					local softens = now < (blocker:GetAttribute("SoftenedUntil") or 0)
 						and (blocker:GetAttribute("Softens") or 1) or 1
-					local bite = math.max(1,
-						math.floor(chewDamage * (1 - weakened) * (1 - resist) * softens + 0.5))
+					local bite = boosted(math.max(1,
+						math.floor(chewDamage * (1 - weakened) * (1 - resist) * softens + 0.5)))
 					local left = math.max(0, (blocker:GetAttribute("HP") or 0) - bite)
 					blocker:SetAttribute("HP", left)
 					DamageDealtRemote:FireAllClients(blocker:GetPivot().Position, bite, false)
@@ -784,17 +881,22 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				end
 
 				if not EnemyBehavior.BiteTable(enemy, enemyData, state) then
-					-- Грызть нечем (chewDamage = 0 у Спринтера, Координатора, Тени): для них
-					-- сам факт того, что они дошли до лаборатории, и есть прорыв: «Летит к
+					-- Грызть нечем (chewDamage = 0 у Спринтера, Координатора, Тени): что
+					-- дальше, решает вид (EnemyBehavior.TableReached). Прорыв — «Летит к
 					-- лаборатории мимо всего. Если не уничтожить в пути — добежит.»
 					-- Без этой ветки они встали бы у стола навечно и волна не кончилась бы.
-					break
+					if EnemyBehavior.TableReached(enemy, enemyData, state) == "breach" or not enemy.Parent then
+						break -- прорыв, или Подрывник подорвал стол вместе с собой
+					end
 				end
 			else
 				local slowPercent = enemy:GetAttribute("SlowPercent") or 0
 				local step = speed * (1 - slowPercent) * groundScale * dt
 				if crawling then
 					step *= Arena.crawlSpeed
+				end
+				if pace then
+					step *= 1 + pace.swing * math.sin(now * math.pi * 2 / pace.period + (state.seed or 0))
 				end
 
 				local delta = flat(points[index] - position)
@@ -853,13 +955,21 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			--
 			-- На преграде толкучки нет: толкать жука там некуда, и привёл его туда не маршрут,
 			-- а таймер перелезания. Но где он на самом деле, соседи знать обязаны (Crowd.Park).
+			-- Куда смотреть, механика может решить отдельно от того, куда идти: Щитоносец
+			-- держит щит к огню, Таран и Кислотник разворачиваются к цели, Кукольник — к жертве.
+			-- На стене, в разгоне и в стане взгляд не перехватывается.
+			local look = heading
+			if state.face and not climb and not state.dash and not stunned then
+				look = state.face
+			end
+
 			local resolved = desired
 			if climb then
 				Crowd.Park(enemy, resolved, facing)
 			else
 				-- Тела непроницаемы (см. Crowd): толкучка решает не только место, но и разворот —
 				-- длинный жук, довернувшись в тесноте, въехал бы головой или брюшком в соседа.
-				resolved, facing = Crowd.Resolve(enemy, desired, dt, heading)
+				resolved, facing = Crowd.Resolve(enemy, desired, dt, look)
 			end
 
 			-- Жук смотрит туда, куда идёт. Голова у модели по +Z, а LookVector в Roblox — это -Z,
@@ -868,8 +978,8 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			-- по которой он ползёт, поэтому мордой он смотрит вверх по стене, а брюхом прижат к ней.
 			--
 			-- Это МАРШРУТНЫЙ кадр: правда о том, где жук для сетки, толкучки, прицела
-			-- башен и дистанции до выхода. Саму модель ставит походка: видимое тело оседает,
-			-- кренится и дёргается вокруг этого кадра по стоящим ступням (см. EnemyGait.carryBody).
+			-- башен и дистанции до выхода. Саму модель ставит походка: тело идёт ровно в этом
+			-- кадре, без качки, поверх — только вздрагивание и дыхание (см. EnemyGait.Step).
 			-- Два PivotTo за кадр делать нельзя — жук дрожал бы между двумя положениями.
 			local pathCF = CFrame.lookAt(resolved, resolved + facing, facingUp) * CFrame.Angles(0, math.pi, 0)
 			-- След гемолимфы — ТОЛЬКО под Кровотечением (решение автора): капля через каждые
@@ -897,7 +1007,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				state.gaitPose = pose
 				enemy:SetAttribute("Gait", pose)
 			end
-			local want = heading and heading.Magnitude > 1e-3 and -heading or nil
+			local want = look and look.Magnitude > 1e-3 and -look or nil
 			if want then
 				local sent = state.sentLook
 				if not sent or sent:Dot(want) < LOOK_RESEND_COS then
@@ -911,6 +1021,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 	end
 
 	connection:Disconnect()
+	Sense.chewing[enemy] = nil
 
 	if enemy.Parent and not state.ally then
 		onBreach(enemy)
@@ -930,16 +1041,22 @@ end
 --
 -- Если свободных нет вовсе (все турели уже заняты или заняты другими Лицехватами), возвращает nil —
 -- лишний Жук просто ждёт (см. flyToTurret), а не летит к занятой — это и есть «1 турель = 1 Лицехват».
-local function findFreeTurret(fromPosition)
-	local best, bestDistance = nil, math.huge
+--
+-- prefersLoaded — залитая турель (с элементом) кажется ему во столько раз ближе: глушить
+-- стоит ту, что стреляет по-настоящему, а не пустую болванку рядом.
+local function findFreeTurret(fromPosition, prefersLoaded)
+	local best, bestScore = nil, math.huge
 	for _, tower in towersFolder:GetChildren() do
 		local towerData = Towers[tower:GetAttribute("Type")]
 		if towerData and towerData.fireRate
 			and not tower:GetAttribute("Suppressed")
 			and not tower:GetAttribute("Claimed") then
-			local distance = (tower:GetPivot().Position - fromPosition).Magnitude
-			if distance < bestDistance then
-				best, bestDistance = tower, distance
+			local score = (tower:GetPivot().Position - fromPosition).Magnitude
+			if prefersLoaded and tower:GetAttribute("Element") ~= nil then
+				score /= prefersLoaded
+			end
+			if score < bestScore then
+				best, bestScore = tower, score
 			end
 		end
 	end
@@ -979,6 +1096,7 @@ end
 
 local function flyToTurret(enemy, enemyData)
 	local reserved = nil -- турель, которую жук занял: Claimed на подлёте, Suppressed после присасывания
+	local weaveClock = math.random() * 10
 
 	enemy.Destroying:Connect(function()
 		if reserved and reserved.Parent then
@@ -988,7 +1106,7 @@ local function flyToTurret(enemy, enemyData)
 	end)
 
 	while enemy.Parent do
-		local target = findFreeTurret(enemy:GetPivot().Position)
+		local target = findFreeTurret(enemy:GetPivot().Position, enemyData.prefersLoaded)
 
 		if not target then
 			-- Свободных турелей нет (все заняты другими Лицехватами, или их нет вовсе) —
@@ -1016,9 +1134,19 @@ local function flyToTurret(enemy, enemyData)
 					return
 				end
 				local offset = targetPosition - position
-				if Vector3.new(offset.X, 0, offset.Z).Magnitude > 1 then
+				local across = Vector3.new(offset.X, 0, offset.Z)
+				if across.Magnitude > 1 then
 					local above = Vector3.new(targetPosition.X,
 						math.max(EnemyBehavior.AboveTower(enemy, target), targetPosition.Y), targetPosition.Z)
+					-- Подлёт зигзагом (weave): мотается поперёк курса, и снаряды с упреждением
+					-- уходят мимо. Ближе calm студов к турели выпрямляется и садится ровно.
+					local weave = enemyData.weave
+					if weave then
+						local fade = math.clamp((across.Magnitude - weave.calm) / weave.calm, 0, 1)
+						local side = Vector3.new(-across.Z, 0, across.X).Unit
+						weaveClock += dt
+						above += side * weave.amplitude * fade * math.sin(weaveClock * math.pi * 2 / weave.period)
+					end
 					EnemyBehavior.FlyStep(enemy, above, enemyData.speed, dt, 0.2, true)
 				else
 					EnemyBehavior.FlyStep(enemy, targetPosition, enemyData.speed, dt, 0.2, target)
@@ -1107,7 +1235,9 @@ end
 -- один и тот же тип встречается с разным HP).
 -- startPosition — мировая точка старта без учёта offset (по умолчанию вход арены). Используется
 -- Осколками Splitter: они появляются там, где погиб родитель, а не у входа.
-local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
+-- setup(enemy) — что сделать с жуком сразу после появления (высыпавшиеся из Носителя
+-- оглушены падением); зовётся до того, как жук сделает первый шаг.
+local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 	offset = offset or Vector3.new(0, 0, 0)
 	local enemyData = Enemies[enemyType]
 	assert(enemyData, ("[EnemySpawner] неизвестный тип врага: %s"):format(tostring(enemyType)))
@@ -1199,7 +1329,7 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 	-- Скорость регена — наружу числом: кровотечение бьёт тем сильнее, чем быстрее
 	-- жук заживает (Effects), а про Enemies тот не знает.
 	if enemyData.regen then
-		enemy:SetAttribute("Regen", enemyData.regen.amount)
+		enemy:SetAttribute("Regen", enemyData.regen.rate or enemyData.regen.amount)
 	end
 	if enemyData.flying then
 		-- Атрибутом, а не только полем в Enemies: по нему турели отличают воздушные цели
@@ -1223,6 +1353,9 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 	-- Каста и особые механики. Запускается ПОСЛЕ Parent: трейты ищут соседей
 	-- по enemiesFolder и сами должны в нём числиться.
 	local state = EnemyBehavior.Attach(enemy, enemyData)
+	if setup then
+		setup(enemy)
+	end
 
 	-- Смерть от урона (например, от горения) ловится через изменение атрибута HP,
 	-- не опросом каждый кадр.
@@ -1243,7 +1376,7 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 			-- «Жуки реагируют на стрельбу. Каждая каста реагирует по-разному.» Падение HP —
 			-- единственное место, куда сходится весь урон сразу (снаряд, площадь, горение),
 			-- поэтому паника считается здесь же, где и кровь.
-			EnemyBehavior.Damaged(enemy, enemyData, state)
+			EnemyBehavior.Damaged(enemy, enemyData, state, lastHp - currentHp)
 		end
 		local previousHp = lastHp
 		lastHp = currentHp
@@ -1267,6 +1400,11 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 			if petrified then
 				enemy:Destroy()
 				return
+			end
+
+			-- Разведчики рядом видят смерть своего и шарахаются (EnemyBehavior.Died).
+			if not enemy:GetAttribute("Ally") then
+				EnemyBehavior.Died(enemy, enemyData, enemy:GetPivot().Position)
 			end
 
 			-- Последействия смерти отдельных видов. Все три —
@@ -1346,42 +1484,57 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition)
 	end)
 
 	-- Регенерация — свойство самого врага, а не элемента, поэтому живёт здесь, а не в Effects.
-	-- Любое уменьшение HP (от чего угодно — горение, удар, тест) сбрасывает паузу.
+	-- Заживалка: «получил урон — восстановился почти сразу... не удаётся уничтожить пока
+	-- стреляешь. Нужен тяжёлый снаряд или комбо чтобы уничтожить за один раз». Отсюда две части:
+	--   amount — ровное заживление каждую секунду, под огнём тоже;
+	--   knit   — доля каждого удара, которая зарастает за knitTime секунд после него.
+	-- Частый слабый огонь наполовину зарастает, и Заживалка его переживает; удар, который
+	-- снимает всё HP разом, зарасти не успевает. Пауза после урона больше не нужна: раньше
+	-- она гасила весь реген под сплошным огнём — ровно наоборот вики.
 	if enemyData.regen then
-		local lastDamageTime = os.clock()
+		local regen = enemyData.regen
 		local lastHp = hp
+		local knitLeft, knitRate = 0, 0
+		local carry = 0
 
 		enemy:GetAttributeChangedSignal("HP"):Connect(function()
 			local currentHp = enemy:GetAttribute("HP") or 0
-			if currentHp < lastHp then
-				lastDamageTime = os.clock()
+			if currentHp < lastHp and currentHp > 0 and regen.knit then
+				knitLeft += (lastHp - currentHp) * regen.knit
+				knitRate = knitLeft / math.max(regen.knitTime or 1, 0.05)
 			end
 			lastHp = currentHp
 		end)
 
 		task.spawn(function()
 			while enemy.Parent do
-				task.wait(1)
+				local dt = task.wait(REGEN_TICK)
 				if not enemy.Parent then
 					break
 				end
 				local currentHp = enemy:GetAttribute("HP") or 0
-				-- Анти-реген из документа дебаффов v2 приходит атрибутом от Effects: ноль — реген
+				local maxHp = enemy:GetAttribute("MaxHP") or currentHp
+				-- Анти-реген из документа дебаффов приходит атрибутом от Effects: ноль — реген
 				-- выключен совсем (Яд навсегда, Кислота на время), доля — работает, но медленнее
 				-- (ветка холода), больше единицы — быстрее обычного (Лёд после разморозки).
-				-- Сам Effects про реген не знает, как не знает про грызню (Weakened).
-				local amount = math.floor(enemyData.regen.amount * (enemy:GetAttribute("RegenScale") or 1) + 0.5)
-				-- Потолок — собственный максимум жука. До этой задачи поля regen не было ни у
-				-- одного вида, и отсутствие ограничения никак не проявлялось. Заживалка с её
-				-- «очень высокой регенерацией» вылечилась с 60 до 204 за десяток секунд на первом
-				-- же прогоне: полоска HP ушла за край, и убить её стало невозможно в принципе.
-				local maxHp = enemy:GetAttribute("MaxHP") or currentHp
-				if amount > 0 and currentHp > 0 and currentHp < maxHp
-					and os.clock() - lastDamageTime >= enemyData.regen.pauseAfterDamage then
-					local newHp = math.min(maxHp, currentHp + amount)
-					print(("[Реген] %s восстанавливает %d HP: %d -> %d из %d")
-						:format(enemy.Name, newHp - currentHp, currentHp, newHp, maxHp))
-					enemy:SetAttribute("HP", newHp)
+				-- Отключённый реген не копит и зарастание: оно тратится впустую.
+				local scale = enemy:GetAttribute("RegenScale") or 1
+				local knit = math.min(knitLeft, knitRate * dt)
+				knitLeft -= knit
+				if currentHp <= 0 or currentHp >= maxHp then
+					carry = 0
+					if currentHp >= maxHp then
+						knitLeft = 0
+					end
+				else
+					carry += ((regen.amount or 0) * dt + knit) * scale
+					local whole = math.floor(carry)
+					if whole >= 1 then
+						carry -= whole
+						-- Потолок — собственный максимум жука: без него Заживалка вылечилась
+						-- с 60 до 204 за десяток секунд на первом же прогоне.
+						enemy:SetAttribute("HP", math.min(maxHp, currentHp + whole))
+					end
 				end
 			end
 		end)
@@ -1471,9 +1624,9 @@ end
 -- спавнер напрямую — он уже требует их, и require зациклился бы.
 
 -- Личинка Матки, высыпавшиеся из Носителя, вылупившиеся из личинки.
-EnemyBehavior.Spawn = function(enemyType, position)
+Sense.Spawn = function(enemyType, position, setup)
 	task.spawn(function()
-		spawnEnemy(enemyType, Vector3.zero, nil, position)
+		spawnEnemy(enemyType, Vector3.zero, nil, position, setup)
 	end)
 end
 
@@ -1490,8 +1643,14 @@ Effects.OnAreaBlast = function(position, radius, amount, elementData)
 end
 
 -- Разносчик впитывает элемент, которым в него попали.
+-- Возвращает, сколько урона ушло в заряд: Effects снимет это с удара до брони.
 Effects.OnAbsorb = function(enemy, elementName, damage)
-	EnemyBehavior.Absorb(enemy, elementName, damage)
+	return EnemyBehavior.Absorb(enemy, elementName, damage)
+end
+
+-- Эволюционер запоминает, чем его ранили.
+Effects.OnElementHit = function(enemy, elementName, damage)
+	EnemyBehavior.ElementHit(enemy, elementName, damage)
 end
 
 -- Литосфера меняет рельеф на месте смерти. Тот же мост, что и у Горы: элемент

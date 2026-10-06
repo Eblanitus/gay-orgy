@@ -474,6 +474,7 @@ return function(deps)
 		if not entry or entry.plan ~= plan then
 			entry = { percent = plan.start, plan = plan, name = elementData.name }
 			dryings[target] = entry
+			target:SetAttribute("Drying", true) -- визуальная метка для клиента (см. EnemyVisuals)
 			print(("[Эффект] %s начинает сушить %s: %.0f%% и глубже каждую секунду")
 				:format(elementData.name, target.Name, plan.start * 100))
 		end

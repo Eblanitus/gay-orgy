@@ -510,6 +510,15 @@ local function nearestMaterial(position, radius)
 	return best
 end
 
+-- Где лежит ближайшая деталь с материалом (или nil): к ней Строитель идёт есть.
+function TowerDebris.NearestMaterial(position, radius)
+	local piece = nearestMaterial(position, radius)
+	if not piece then
+		return nil
+	end
+	return Vector3.new(piece.x, position.Y, piece.z)
+end
+
 -- Строитель съедает деталь: она уходит с поля. true — съел.
 function TowerDebris.Consume(position, radius)
 	local piece = nearestMaterial(position, radius)

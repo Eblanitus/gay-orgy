@@ -36,6 +36,9 @@ local DEFAULT_DATA = {
 	-- таблицы не заглядывает, так что у старого профиля настройка, добавленная позже, всё
 	-- равно останется незаписанной. Умолчание подставляет UISettings.Read при чтении.
 	settings = {},
+	-- Аркада (ArcadeMode): рекорд очков, лучшая серия и сколько всего раздавлено. Ничего не
+	-- открывает — только показывается на табло режима.
+	arcade = { bestScore = 0, bestCombo = 0, squashed = 0 },
 }
 
 local Store = ProfileStore.New("PlayerSave", DEFAULT_DATA)
