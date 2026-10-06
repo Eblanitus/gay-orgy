@@ -3,7 +3,7 @@
     python tools/upload_patterns.py                   # все узоры жуков
     python tools/upload_patterns.py Паттерны/out/Жуки/p_Mini.png ...
 
-Нужно в окружении (как у upload_sounds.py):
+Ключ и владелец (tools/roblox_auth.py: окружение, tools/roblox_key.txt или вопрос в консоли):
     ROBLOX_API_KEY  — ключ Open Cloud (create.roblox.com → Open Cloud → API Keys, права
                       Assets: read + write и Legacy Assets: manage — без последнего не узнать id картинки)
     ROBLOX_USER_ID  — id аккаунта-владельца (или ROBLOX_GROUP_ID для группы)
@@ -18,7 +18,6 @@
 import gzip
 import hashlib
 import json
-import os
 import re
 import sys
 import time
@@ -26,6 +25,8 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
+
+import roblox_auth
 
 ROOT = Path(__file__).resolve().parent.parent
 PAT_DIR = ROOT / "Паттерны" / "out" / "Жуки"
@@ -108,15 +109,7 @@ def key_of(path):
 
 
 def main():
-    key = os.environ.get("ROBLOX_API_KEY")
-    if not key:
-        sys.exit("нет ROBLOX_API_KEY")
-    if os.environ.get("ROBLOX_GROUP_ID"):
-        creator = {"groupId": os.environ["ROBLOX_GROUP_ID"]}
-    elif os.environ.get("ROBLOX_USER_ID"):
-        creator = {"userId": os.environ["ROBLOX_USER_ID"]}
-    else:
-        sys.exit("нет ROBLOX_USER_ID (или ROBLOX_GROUP_ID)")
+    key, creator = roblox_auth.load()  # окружение, tools/roblox_key.txt или вопрос в консоли
 
     files = [Path(a).resolve() for a in sys.argv[1:]] or sorted(PAT_DIR.glob("p_*.png"))
     ids = json.loads(IDS_FILE.read_text("utf-8")) if IDS_FILE.exists() else {}

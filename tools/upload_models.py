@@ -3,7 +3,7 @@
     python tools/upload_models.py                    # все .glb из «Модели/Жуки» (кроме all_beetles.glb)
     python tools/upload_models.py Модели/Жуки/moth.glb ...
 
-Нужно в окружении:
+Ключ и владелец (tools/roblox_auth.py: окружение, tools/roblox_key.txt или вопрос в консоли):
     ROBLOX_API_KEY  — ключ Open Cloud (create.roblox.com → Open Cloud → API Keys, право Assets: read + write)
     ROBLOX_USER_ID  — id аккаунта-владельца (или ROBLOX_GROUP_ID для группы)
 
@@ -14,13 +14,14 @@
 
 import hashlib
 import json
-import os
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
+
+import roblox_auth
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DIR = ROOT / "Модели" / "Жуки"
@@ -71,15 +72,7 @@ def upload(path, key, creator):
 
 
 def main():
-    key = os.environ.get("ROBLOX_API_KEY")
-    if not key:
-        sys.exit("нет ROBLOX_API_KEY")
-    if os.environ.get("ROBLOX_GROUP_ID"):
-        creator = {"groupId": os.environ["ROBLOX_GROUP_ID"]}
-    elif os.environ.get("ROBLOX_USER_ID"):
-        creator = {"userId": os.environ["ROBLOX_USER_ID"]}
-    else:
-        sys.exit("нет ROBLOX_USER_ID (или ROBLOX_GROUP_ID)")
+    key, creator = roblox_auth.load()  # окружение, tools/roblox_key.txt или вопрос в консоли
 
     files = [Path(a).resolve() for a in sys.argv[1:]] or sorted(
         p for p in DEFAULT_DIR.glob("*.glb") if p.name != "all_beetles.glb"
