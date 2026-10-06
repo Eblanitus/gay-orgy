@@ -303,6 +303,9 @@ end)
 toggle.Activated:Connect(function()
 	panel.Visible = not panel.Visible
 	Theme.Button(toggle, panel.Visible and "active" or "ghost")
+	if panel.Visible then
+		Theme.Open(panel)
+	end
 end)
 
 closeButton.Activated:Connect(function()

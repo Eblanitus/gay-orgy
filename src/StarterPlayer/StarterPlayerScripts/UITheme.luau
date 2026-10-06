@@ -539,10 +539,37 @@ end
 
 -- ============ Движение ============
 
--- Окно не появляется рывком, а вырастает из 96% за одну шестую секунды. Масштаб берётся
--- UIScale, а не правкой Size: высоту окон считают их собственные applyHeight по числу
--- строк, и анимация размера дралась бы с ними за одно и то же свойство.
+-- Окно открывается как экран планшета во FNAF (просьба автора): проявляется снизу вверх
+-- сквозь помехи. Поверх окна лежит тёмная шторка цвета панели; её нижняя кромка —
+-- светлая строка развёртки, и шторка сворачивается к верху окна, открывая его снизу.
+-- По всему окну в это время сыплется шум, гаснущий к концу. Заодно окно чуть дорастает
+-- из 96%: масштаб берётся UIScale (OpenScale), а не правкой Size — высоту окон считают
+-- их собственные applyHeight, и анимация размера дралась бы с ними. По OpenScale < 1
+-- другие модули узнают, что окно ещё раскрывается (MonitorGlass, TableBubbles, MainMenu).
+--
+-- Шторка и шум — не дети окна, а свой ScreenGui поверх всего, следящий за прямоугольником
+-- окна каждый кадр: ребёнок окна попал бы в его UIListLayout и спорил бы с его ZIndex.
+local OPEN = {
+	order = 9999, -- поверх всех слоёв MobileUI.Layer, под общей помехой Theme.Static
+	time = 0.32, -- секунды: шторка уходит вверх
+	noise = 0.45, -- секунды: шум гаснет чуть позже шторки
+	specks = 140,
+	speck = 0.5, -- сила самой яркой точки шума в начале
+}
+
+local openRuns = {} -- окно → его текущее раскрытие (повторный вызов начинает заново)
+
+local function stopOpen(frame)
+	local run = openRuns[frame]
+	if run then
+		openRuns[frame] = nil
+		run.conn:Disconnect()
+		run.gui:Destroy()
+	end
+end
+
 function Theme.Open(frame)
+	stopOpen(frame)
 	if not Settings.Get("uiMotion") then
 		-- Окно открывается сразу в полный размер. Масштаб всё равно возвращается к единице:
 		-- выключив движение посреди анимации, иначе можно оставить окно навсегда чуть меньше нужного.
@@ -560,9 +587,102 @@ function Theme.Open(frame)
 		scale.Parent = frame
 	end
 	scale.Scale = 0.96
-	TweenService:Create(scale, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+	TweenService:Create(scale, TweenInfo.new(OPEN.time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		Scale = 1,
 	}):Play()
+
+	local player = game:GetService("Players").LocalPlayer
+	local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+	local host = frame:FindFirstAncestorOfClass("ScreenGui")
+	if not playerGui or not host then
+		return
+	end
+
+	-- Слой поверх окна в тех же координатах, что и ScreenGui самого окна: иначе
+	-- AbsolutePosition разошлись бы на высоту полосы Roblox.
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "ThemeOpen"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = host.IgnoreGuiInset
+	gui.ScreenInsets = host.ScreenInsets
+	gui.DisplayOrder = OPEN.order
+
+	-- Active у всех кадров остаётся false: слой не съедает нажатия по окну под ним.
+	local box = Instance.new("Frame")
+	box.Name = "Box"
+	box.BackgroundTransparency = 1
+	box.BorderSizePixel = 0
+	box.ClipsDescendants = true
+	box.Parent = gui
+
+	local veil = Instance.new("Frame")
+	veil.Name = "Veil"
+	veil.BorderSizePixel = 0
+	veil.BackgroundColor3 = Theme.color.panel
+	veil.Parent = box
+	Theme.Corner(veil, Theme.radius.panel)
+
+	local scan = Instance.new("Frame")
+	scan.Name = "Scan"
+	scan.BorderSizePixel = 0
+	scan.BackgroundColor3 = Theme.color.accent
+	scan.AnchorPoint = Vector2.new(0, 1)
+	scan.Position = UDim2.new(0, 0, 1, 0)
+	scan.Size = UDim2.new(1, 0, 0, 2)
+	scan.Parent = veil
+
+	local specks = {}
+	for i = 1, OPEN.specks do
+		local speck = Instance.new("Frame")
+		speck.BorderSizePixel = 0
+		speck.BackgroundColor3 = Theme.color.text
+		speck.BackgroundTransparency = 1
+		speck.ZIndex = 2
+		speck.Parent = box
+		specks[i] = speck
+	end
+	gui.Parent = playerGui
+
+	local started = os.clock()
+	local run = { gui = gui }
+	local function step()
+		local t = os.clock() - started
+		if t >= OPEN.noise or not frame.Parent or not frame.Visible or not host.Enabled then
+			stopOpen(frame)
+			return
+		end
+		local pos, size = frame.AbsolutePosition, frame.AbsoluteSize
+		box.Position = UDim2.fromOffset(pos.X, pos.Y)
+		box.Size = UDim2.fromOffset(size.X, size.Y)
+
+		-- Шторка: доля непроявленного окна сверху, по кривой «быстро, потом мягко».
+		local p = math.clamp(t / OPEN.time, 0, 1)
+		local left = (1 - p) * (1 - p)
+		veil.Visible = left > 0
+		veil.Size = UDim2.new(1, 0, left, 0)
+
+		-- Шум гуще у строки развёртки и по всему окну гаснет к концу.
+		local k = 1 - t / OPEN.noise
+		local edge = size.Y * left
+		for _, speck in specks do
+			if math.random() < 0.25 then
+				speck.Size = UDim2.fromOffset(math.random(6, 32), 1)
+			else
+				speck.Size = UDim2.fromOffset(math.random(1, 2), math.random(1, 2))
+			end
+			local y
+			if left > 0 and math.random() < 0.5 then
+				y = edge + (math.random() - 0.5) * 40
+			else
+				y = math.random() * size.Y
+			end
+			speck.Position = UDim2.fromOffset(math.random() * size.X, y)
+			speck.BackgroundTransparency = 1 - OPEN.speck * k * math.random()
+		end
+	end
+	run.conn = RunService.RenderStepped:Connect(step)
+	openRuns[frame] = run
+	step()
 end
 
 -- Короткая вспышка строки, когда её число изменилось: на панели забега три показания,
