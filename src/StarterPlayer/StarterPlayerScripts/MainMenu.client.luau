@@ -28,6 +28,7 @@ local Theme = require(script.Parent:WaitForChild("UITheme"))
 local Settings = require(script.Parent:WaitForChild("Settings"))
 local JournalUI = require(script.Parent:WaitForChild("JournalUI"))
 local SettingsUI = require(script.Parent:WaitForChild("SettingsUI"))
+local MenuSound = require(script.Parent:WaitForChild("MenuSound"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local RequestEnterLevelRemote = Remotes:WaitForChild("RequestEnterLevel")
@@ -499,8 +500,10 @@ Theme.Button(promoApply, "action")
 local function submitPromoCode()
 	local code = promoInput.Text
 	if code == "" then
+		MenuSound.Play("MenuDeny")
 		return
 	end
+	MenuSound.Play("MenuSelect")
 	Remotes.RedeemCode:FireServer(code)
 	promoInput.Text = ""
 end
@@ -713,6 +716,7 @@ local playItem = addItem("Play", "Играть", function()
 	if inRun then
 		-- Забег уже идёт: меню открыли посреди игры, и первый пункт — просто выход
 		-- обратно. Серверу тут сообщать нечего.
+		MenuSound.Play("MenuClose")
 		hideMenu()
 		return
 	end
@@ -720,6 +724,7 @@ local playItem = addItem("Play", "Играть", function()
 	-- Меню закрывается сразу, не дожидаясь ответа, а при отказе вернётся само
 	-- (returnIfNotEntered) — это честнее, чем замершее меню на время круга до сервера.
 	RequestEnterLevelRemote:FireServer()
+	MenuSound.Play("MenuStart")
 	hideMenu()
 	returnIfNotEntered()
 end)
@@ -730,6 +735,7 @@ end)
 local arcadeItem = addItem("Arcade", "Аркада", function()
 	if inRun then
 		-- Забег идёт своей ареной и своим персонажем — прыгать в аркаду поверх него не даём.
+		MenuSound.Play("MenuDeny")
 		return
 	end
 	if inArcade then
@@ -737,15 +743,18 @@ local arcadeItem = addItem("Arcade", "Аркада", function()
 	else
 		RequestEnterArcadeRemote:FireServer()
 	end
+	MenuSound.Play("MenuStart")
 	hideMenu()
 	returnIfNotEntered()
 end)
 
 addItem("Journal", "Журнал", function()
+	MenuSound.Play("MenuPage")
 	showPage("journal")
 end)
 
 addItem("Settings", "Настройки", function()
+	MenuSound.Play("MenuPage")
 	showPage("settings")
 end)
 
@@ -755,11 +764,13 @@ addItem("Inventory", "Инвентарь", function()
 	local inventory = script.Parent:FindFirstChild("InventoryUI")
 	local open = inventory and inventory:FindFirstChild("Open")
 	if open then
+		MenuSound.Play("MenuSelect")
 		open:Fire()
 	end
 end)
 
 addItem("Promo", "Промокод", function()
+	MenuSound.Play("MenuPage")
 	showPage("promo")
 	promoInput:CaptureFocus()
 end)
@@ -772,6 +783,9 @@ for _, item in items do
 	-- Наведение передвигает каретку: иначе мышь и стрелки показывали бы разный выбор
 	-- одновременно, и непонятно, что сработает по Enter.
 	item.button.MouseEnter:Connect(function()
+		if selected ~= item.index then
+			MenuSound.Hover(item.index)
+		end
 		selectItem(item.index)
 	end)
 end
@@ -779,9 +793,11 @@ end
 actionButton.MouseButton1Click:Connect(function()
 	if page == "root" then
 		if canHide() then
+			MenuSound.Play("MenuClose")
 			hideMenu()
 		end
 	else
+		MenuSound.Play("MenuBack")
 		showPage("root")
 	end
 end)
@@ -885,7 +901,10 @@ end
 paintMenuIcon()
 openButton:GetPropertyChangedSignal("TextColor3"):Connect(paintMenuIcon)
 
-openButton.MouseButton1Click:Connect(showMenu)
+openButton.MouseButton1Click:Connect(function()
+	MenuSound.Play("MenuOpen")
+	showMenu()
+end)
 
 -- Кнопка вызова прячется, пока меню открыто: иначе она висела бы поверх
 -- собственного меню... точнее, под ним — и нажатие ничего бы не давало.
@@ -932,6 +951,7 @@ local function runBoot()
 		return
 	end
 	bootDone = true
+	MenuSound.Play("MenuBoot")
 
 	if not Settings.Get("uiMotion") then
 		bootLabel.Text = bootText(BOOT_LINES, false)
@@ -946,6 +966,10 @@ local function runBoot()
 			for i = 1, letters do
 				shown[#shown] = utf8Prefix(text, i)
 				bootLabel.Text = bootText(shown, true)
+				-- Щелчок на каждую вторую букву: на каждую — сливается в треск.
+				if i % 2 == 1 and shown[#shown]:sub(-1) ~= " " then
+					MenuSound.Play("MenuType", 0.9 + (i % 5) * 0.05)
+				end
 				task.wait(0.018)
 			end
 			task.wait(0.12)
@@ -994,9 +1018,11 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.M then
 		if screenGui.Enabled then
 			if canHide() then
+				MenuSound.Play("MenuClose")
 				hideMenu()
 			end
 		else
+			MenuSound.Play("MenuOpen")
 			showMenu()
 		end
 		return
@@ -1008,6 +1034,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
 	if input.KeyCode == Enum.KeyCode.Backspace then
 		if page ~= "root" then
+			MenuSound.Play("MenuBack")
 			showPage("root")
 		end
 		return
@@ -1019,8 +1046,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
 	if input.KeyCode == Enum.KeyCode.Up or input.KeyCode == Enum.KeyCode.W then
 		selectItem(selected - 1)
+		MenuSound.Hover(selected)
 	elseif input.KeyCode == Enum.KeyCode.Down or input.KeyCode == Enum.KeyCode.S then
 		selectItem(selected + 1)
+		MenuSound.Hover(selected)
 	elseif input.KeyCode == Enum.KeyCode.Return or input.KeyCode == Enum.KeyCode.KeypadEnter then
 		local item = items[selected]
 		if item then

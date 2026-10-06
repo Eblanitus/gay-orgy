@@ -24,6 +24,7 @@ local MobileUI = require(script.Parent:WaitForChild("MobileUI"))
 local Theme = require(script.Parent:WaitForChild("UITheme"))
 local Settings = require(script.Parent:WaitForChild("Settings"))
 local UISound = require(script.Parent:WaitForChild("UISound"))
+local MenuSound = require(script.Parent:WaitForChild("MenuSound"))
 local UISettings = require(ReplicatedStorage:WaitForChild("UISettings"))
 
 local SettingsUI = {}
@@ -143,6 +144,9 @@ function SettingsUI.Mount(parent)
 		Theme.Button(button, "ghost")
 		tabButtons[tab.key] = button
 		button.MouseButton1Click:Connect(function()
+			if current ~= tab.key then
+				MenuSound.Play("MenuTab")
+			end
 			select(tab.key)
 		end)
 	end
@@ -481,7 +485,13 @@ function SettingsUI.Mount(parent)
 				if Theme.WasDragged(list) then
 					return -- пролистнули список пальцем, а не нажали на строку
 				end
-				Settings.Set(item.key, UISettings.Next(item.key, Settings.Get(item.key)))
+				local value = UISettings.Next(item.key, Settings.Get(item.key))
+				if item.options then
+					MenuSound.Play("MenuTab")
+				else
+					MenuSound.Play(value == true and "MenuToggleOn" or "MenuToggleOff")
+				end
+				Settings.Set(item.key, value)
 			end)
 		end
 
