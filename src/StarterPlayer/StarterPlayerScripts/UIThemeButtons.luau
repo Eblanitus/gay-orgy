@@ -308,6 +308,27 @@ return function(deps)
 		Drought = { image = "rbxassetid://87435774383699", size = Vector2.new(1024, 1024), offset = Vector2.new(0, 0), minRect = 230, transparency = 0.45 },
 		Tornado = { image = "rbxassetid://124822746299682", size = Vector2.new(1024, 1024), offset = Vector2.new(0, 0), minRect = 230, transparency = 0.45 },
 	}
+
+	-- Узоры жуков (справочник «Жуки»): пятна с панциря модели, разбросанные по фону. Они
+	-- в негативе к элементам — фон светлый, пятна вырезаны тёмным, — а засечка и дымка
+	-- стоят справа: жук читается как «чужое» (решение автора). Маски строит
+	-- tools/beetles/patterns.py, id пишет tools/upload_patterns.py в BeetlePatternIds.
+	-- Ключ — префикс и ключ из Enemies: имя жука может совпасть с именем элемента.
+	-- Узор ещё не загружен — у жука его просто нет.
+	Theme.BEETLE_PATTERN = "Beetle:"
+	local beetleIds = require(game:GetService("ReplicatedStorage"):WaitForChild("BeetlePatternIds"))
+	for key, image in beetleIds do
+		Theme.patterns[Theme.BEETLE_PATTERN .. key] = {
+			image = image,
+			size = Vector2.new(1024, 1024),
+			offset = Vector2.new(0, 0),
+			minRect = 230,
+			-- Светлый фон занимает почти всю текстуру: при прозрачности элементов (0.45)
+			-- ячейка заливалась бы цветом и имя на ней тонуло.
+			transparency = 0.66,
+		}
+	end
+
 	-- Пикселей текстуры на пиксель экрана в больших ячейках: больше — узор мельче.
 	Theme.PATTERN_DENSITY = 2.5
 
@@ -456,7 +477,7 @@ return function(deps)
 		Theme.Stroke(inst, Theme.Shadowed(lit, dim and 0.74 or 0.45), 1, 0)
 		Theme.Wash(inst, color, dim, opts.right)
 		Theme.Swatch(inst, dim and Theme.Shadowed(lit, 0.45) or color, opts.wide, opts.right)
-		-- opts.element — ключ элемента, если ячейка про элемент: у него может быть свой узор.
+		-- opts.element — ключ узора из Theme.patterns: элемента или жука (Theme.BEETLE_PATTERN).
 		Theme.Pattern(inst, opts.element, lit, dim)
 		-- Длинное имя обрезается краем ячейки, а не вылезает за неё.
 		inst.ClipsDescendants = true
