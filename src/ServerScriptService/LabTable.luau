@@ -58,6 +58,7 @@ end
 -- Возвращает стол в целое состояние. Зовётся на каждый новый забег (WaveRunner):
 -- стол — часть арены, а арена разбирается целиком.
 function LabTable.Reset()
+	LabTable.SetGuarded(false)
 	craftTable:SetAttribute("MaxHP", LabTable.MAX_HP)
 	craftTable:SetAttribute("HP", LabTable.MAX_HP)
 
@@ -68,6 +69,14 @@ function LabTable.Reset()
 	end
 end
 
+-- Защита стола (обучение, первые волны): здоровье не опускается ниже 1 — стол тает,
+-- но не ломается, и волна идёт до конца. Ставит WaveRunner на каждую волну.
+local guarded = false
+
+function LabTable.SetGuarded(value)
+	guarded = value == true
+end
+
 -- Грызня стола. Возвращает, сколько урона реально прошло (0, если стол уже разбит).
 function LabTable.Bite(amount)
 	local hp = LabTable.HP()
@@ -75,7 +84,10 @@ function LabTable.Bite(amount)
 		return 0
 	end
 
-	local dealt = math.min(hp, amount)
+	local dealt = math.min(guarded and hp - 1 or hp, amount)
+	if dealt <= 0 then
+		return 0
+	end
 	local left = hp - dealt
 	craftTable:SetAttribute("HP", left)
 	DamageDealtRemote:FireAllClients(LabTable.Position(), dealt, false)

@@ -37,9 +37,9 @@ function Matter.SyncTo(player)
 end
 
 -- Возвращает счётчик к стартовому запасу — это часть начального состояния забега,
--- поэтому нужен рестарту (см. WaveRunner).
-function Matter.Reset()
-	Matter.amount = STARTING_AMOUNT
+-- поэтому нужен рестарту (см. WaveRunner). amount — свой старт уровня (обучение), иначе общий.
+function Matter.Reset(amount)
+	Matter.amount = amount or STARTING_AMOUNT
 	MatterChangedRemote:FireAllClients(Matter.amount)
 	print(("[Материя] сброшена до %d"):format(Matter.amount))
 end
