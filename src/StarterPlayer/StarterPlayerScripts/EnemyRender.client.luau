@@ -103,10 +103,19 @@ local function buildSack(look, base)
 		local at = base * CFrame.new(0, SANDBAG_SIZE.Y * (0.5 + i * 0.8), i * 0.2)
 			* CFrame.Angles(0, i * (math.pi / 2 + (math.random() - 0.5) * 0.5), 0)
 			* CFrame.Angles((math.random() - 0.5) * 0.12, 0, (math.random() - 0.5) * 0.12)
-		local bag = newPart(look, SANDBAG_SIZE, at, color, Enum.Material.Sand)
+		local bag = newPart(look, SANDBAG_SIZE, at, color, Enum.Material.Fabric)
 		local mesh = Instance.new("SpecialMesh")
 		mesh.MeshType = Enum.MeshType.Sphere
 		mesh.Parent = bag
+		-- Завязка на конце, как у мешков кладки (TowerModels.buildWallModel): без неё
+		-- подделка отличалась бы от настоящего мешка с первого взгляда.
+		local tie = newPart(look, Vector3.new(0.42, SANDBAG_SIZE.Y * 0.5, SANDBAG_SIZE.Z * 0.55),
+			at * CFrame.new(SANDBAG_SIZE.X / 2 - 0.08, -SANDBAG_SIZE.Y * 0.06, 0),
+			color:Lerp(Color3.new(0, 0, 0), 0.18), Enum.Material.Fabric)
+		tie.CastShadow = false
+		local tieMesh = Instance.new("SpecialMesh")
+		tieMesh.MeshType = Enum.MeshType.Sphere
+		tieMesh.Parent = tie
 	end
 end
 
