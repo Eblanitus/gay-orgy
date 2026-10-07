@@ -76,17 +76,47 @@ function Tutorial.IsRestricted()
 	return restricted()
 end
 
--- Стартовый элемент, если обучение идёт: его кладут в сумку вместо заливки в стартовую Колбу.
-function Tutorial.StarterElement()
-	return restricted() and Config.starterElement or nil
+-- Идёт ли забег уровня-обучения (независимо от промокода): от этого зависят
+-- стартовая материя, место и пустота стартовой Колбы, защита стола и засчёт уровня.
+function Tutorial.IsActive()
+	return active
+end
+
+-- Материя на старте забега обучения; nil — обычный старт (Matter.STARTING_AMOUNT).
+function Tutorial.StartMatter()
+	return active and Config.startMatter or nil
+end
+
+-- Сдвиг стартовой Колбы от центра стола; nil — обычное место (центр арены).
+function Tutorial.StarterOffset()
+	return active and Config.starterOffset or nil
+end
+
+-- Не ломается ли стол на этой волне.
+function Tutorial.TableGuarded(waveNumber)
+	return active and waveNumber <= Config.guardedWaves
+end
+
+-- Засчитывается ли обучение после этой волны.
+function Tutorial.CompletesAt(waveNumber)
+	return active and waveNumber == Config.completeAfterWave
 end
 
 function Tutorial.TowerAllowed(towerType)
 	return not restricted() or Config.towers[towerType] == true
 end
 
+-- Пока текущий шаг — постройка Колбы, магазин закрыт: деньги на неё (бонус волны 20)
+-- не должны уйти на элементы, иначе шаг не пройти и волну не запустить (#432).
 function Tutorial.ElementAllowed(elementKey)
-	return not restricted() or Config.elements[elementKey] == true
+	if not restricted() then
+		return true
+	end
+	local step = currentStep()
+	if step and step.action == "build" then
+		return false
+	end
+	return Config.elements[elementKey] == true
 end
 
 -- Действие игрока (pour/build/buy/wave) — двигает подсказку.
