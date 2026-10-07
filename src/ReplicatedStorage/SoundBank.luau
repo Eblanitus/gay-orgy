@@ -66,6 +66,9 @@ SoundBank.Sounds = {
 	-- Музыка (вся в группе Music: молчит, пока не включено «Экспериментальное: музыка»)
 	MusicMenu = { group = "Music", volume = 0.4, pitch = { 1, 1 }, looped = true },
 	MusicBattleCalm = { group = "Music", volume = 0.4, pitch = { 1, 1 }, looped = true },
+	-- Safar (трек автора, 5/4): вне боя. Файл — ровно 40 тактов, хвост эха наложен на начало,
+	-- поэтому круг без паузы. Около -17 LUFS — громче Calm, тише меню.
+	MusicSafar = { group = "Music", volume = 0.5, pitch = { 1, 1 }, looped = true },
 	-- Интро и бой — одна запись, разрезанная на две: громкость у них одна, иначе на стыке
 	-- прыгнет. Calm в самом файле тише (около -22 LUFS против -14), поэтому ей не убавлено.
 	MusicBattleIntro = { group = "Music", volume = 0.45, pitch = { 1, 1 } },
@@ -142,12 +145,14 @@ SoundBank.Ambient = "AmbientBunker"
 -- calm — забег, волна ждёт кнопки (WaveReady, и перед первой волной тоже), intro —
 -- волна началась (WaveChanged): интро играет один раз с начала, а когда кончится,
 -- с начала же идёт battle и крутится до конца волны.
--- MusicBunker загружен, но пока не играет нигде.
+-- MusicBunker и MusicBattleCalm загружены, но пока не играют нигде: calm теперь — Safar.
 SoundBank.Music = {
 	menu = "MusicMenu",
-	calm = "MusicBattleCalm",
-	intro = "MusicBattleIntro",
-	battle = "MusicBattle",
+	calm = "MusicSafar",
+	-- Бой (нарезка mpledni) автор пока убрал из игры: в волне музыка молчит.
+	-- Вернуть — раскомментировать.
+	-- intro = "MusicBattleIntro",
+	-- battle = "MusicBattle",
 }
 -- За сколько секунд один трек перетекает в другой.
 SoundBank.MUSIC_FADE = 2
