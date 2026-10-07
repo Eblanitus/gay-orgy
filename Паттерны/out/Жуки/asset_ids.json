@@ -25,19 +25,19 @@
   "sha1": "33ddd0ca18c5eaf3418d3c796c3ca7b01c31786f"
  },
  "Carrier": {
-  "assetId": "92542262308679",
-  "decalId": "125964890241620",
-  "sha1": "a7bd8ecba85c54b947f95fda6a2e16db2e57da49"
+  "assetId": "113422534673823",
+  "decalId": "116343576760625",
+  "sha1": "cc57658665ff289706d8e7e40fce68dfddbe6650"
  },
  "Coordinator": {
-  "assetId": "75136384037279",
-  "decalId": "130084490727223",
-  "sha1": "59476917dfed19635bedb0759ccc5c3872426b10"
+  "assetId": "135846247386057",
+  "decalId": "79068685038197",
+  "sha1": "fb8f89ed31055a4a52ac733d30e82e5f570206c0"
  },
  "Evolver": {
-  "assetId": "102009810992915",
-  "decalId": "117240826312831",
-  "sha1": "edbac6aff4b5218651ca27f4aba9864644bacc24"
+  "assetId": "74761620224790",
+  "decalId": "121049014365225",
+  "sha1": "503eefdb980c5ef9b43c13cc5f92eb14f153b218"
  },
  "Facehugger": {
   "assetId": "91171701124461",
@@ -70,9 +70,9 @@
   "sha1": "2a8ad2e2551c5c091af4f2425d14798597f0ffe7"
  },
  "Mimic": {
-  "assetId": "82709906491536",
-  "decalId": "88635677440710",
-  "sha1": "1509d68750956c6919e18b8915a11a9896e71448"
+  "assetId": "81611354114140",
+  "decalId": "120512261153652",
+  "sha1": "7af6ed8c08b2ab7fa926720abf63ba6417da0663"
  },
  "Mini": {
   "assetId": "133247541106506",
@@ -85,9 +85,9 @@
   "sha1": "3895e9c1d5f26a157765bf48e535dddd7f67cfea"
  },
  "Normal": {
-  "assetId": "90776710659820",
-  "decalId": "127092951914076",
-  "sha1": "f771f14d236046417e0932142504cb61a172c2f2"
+  "assetId": "116955012072897",
+  "decalId": "77404658865067",
+  "sha1": "c0d7f9793e1df8f07219193db9e79b1498ab357a"
  },
  "Pelican": {
   "assetId": "85645539624790",
@@ -105,28 +105,28 @@
   "sha1": "35b3d0464fdc6366185aef870d972cb837e95aeb"
  },
  "Ram": {
-  "assetId": "78296090927788",
-  "decalId": "110598934040318",
-  "sha1": "e510b24d7871d18539eaf28274fa807866b1cdcc"
+  "assetId": "102944296333047",
+  "decalId": "77897610031868",
+  "sha1": "7d42b8faad98bf199912448f574f9cb93b1bf4e4"
  },
  "Shadow": {
-  "assetId": "117358456219757",
-  "decalId": "127999668490732",
-  "sha1": "4897ce0db0b39b4d3b3f1703d4f254a91685d8bb"
+  "assetId": "95367095575886",
+  "decalId": "77799373540924",
+  "sha1": "c57cc50e7708e88818436737b35bfe31cf05b6ff"
  },
  "ShieldBearer": {
-  "assetId": "129982890139666",
-  "decalId": "118536192388038",
-  "sha1": "28718c2b5a1e260fc50f209acc468ed030964de0"
+  "assetId": "111612741359836",
+  "decalId": "100876935189360",
+  "sha1": "3bc9659935485baa63de410317b9061022d7d094"
  },
  "Sprinter": {
-  "assetId": "92905885019662",
-  "decalId": "115291671567008",
-  "sha1": "6d430cf9f8bab8e59aac833034cb745288cb94fe"
+  "assetId": "98326687778416",
+  "decalId": "133183850012013",
+  "sha1": "a0d028d7820dc0952545da60fb024408bd18b7a9"
  },
  "Worker": {
-  "assetId": "117992899915721",
-  "decalId": "135486237449982",
-  "sha1": "9d047e99fcc2a85034b75167099a75c6bc044686"
+  "assetId": "127751065526265",
+  "decalId": "130431026955609",
+  "sha1": "4cd9e0d21eb7b5042ad11e9e8927663e5aeb0272"
  }
 }
