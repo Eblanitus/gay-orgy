@@ -264,6 +264,9 @@ local current -- имя трека, который звучит или разг�
 local switches = 0 -- номер смены: отложенный старт проверяет, что его не перебили
 
 local function track(name)
+	if name == nil then
+		return nil
+	end
 	if tracks[name] == nil then
 		local sound, def = make(name)
 		if sound then

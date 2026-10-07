@@ -149,8 +149,10 @@ SoundBank.Ambient = "AmbientBunker"
 SoundBank.Music = {
 	menu = "MusicMenu",
 	calm = "MusicSafar",
-	intro = "MusicBattleIntro",
-	battle = "MusicBattle",
+	-- Бой (нарезка mpledni) автор пока убрал из игры: в волне музыка молчит.
+	-- Вернуть — раскомментировать.
+	-- intro = "MusicBattleIntro",
+	-- battle = "MusicBattle",
 }
 -- За сколько секунд один трек перетекает в другой.
 SoundBank.MUSIC_FADE = 2
