@@ -341,6 +341,12 @@ local function track(model)
 		updateDisguise(model, entry)
 	end)
 
+	-- Укус грызни: сервер прибавляет Bite в момент, когда снял HP с цели, — по нему
+	-- бросок жвал попадает в цель в такт урону (см. EnemyGait.Bite).
+	model:GetAttributeChangedSignal("Bite"):Connect(function()
+		EnemyGait.Bite(visual)
+	end)
+
 	-- Вздрагивание от попадания: сила — доля макс. HP, направление — HitFrom (его ставит
 	-- Projectile.dealDamage раньше HP).
 	model:GetAttributeChangedSignal("HP"):Connect(function()
@@ -449,7 +455,7 @@ RunService.RenderStepped:Connect(function(dt)
 			if gait then
 				if full or not entry.offset then
 					EnemyGait.Step(entry.visual, stepDt, gait, entry.smooth, model:GetAttribute("Look"),
-						model:GetAttribute("Crawling"))
+						model:GetAttribute("Crawling"), gait == "chew" and model:GetAttribute("ChewAt") or nil)
 					entry.gaitDt = 0
 					-- Где тело стоит относительно якоря после шага (доворот, вздрагивание):
 					-- до следующего шага оно едет за якорем с этим же сдвигом.
