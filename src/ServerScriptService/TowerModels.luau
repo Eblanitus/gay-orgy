@@ -336,12 +336,20 @@ return function(deps)
 				local dx = across and acrossRow or alongRow
 				local dz = across and alongRow or acrossRow
 
+				-- Нижние ряды придавлены верхними: мешок там площе и раздаётся вширь. Верхний ряд
+				-- лежит как есть — по нему считается высота кладки, и та не должна поменяться.
+				local press = (WALL_ROWS - 1 - row) * 0.025
+				local long3 = bagLong * (1 + press * 0.6)
+				local wide3 = bagWide * (1 + press)
+				local tall3 = bagTall * (1 - press * 1.6)
+
 				local bag = Instance.new("Part")
 				bag.Name = ("Bag%d_%d%d"):format(row, long, wide)
-				bag.Size = across and Vector3.new(bagWide, bagTall, bagLong)
-					or Vector3.new(bagLong, bagTall, bagWide)
+				bag.Size = across and Vector3.new(wide3, tall3, long3)
+					or Vector3.new(long3, tall3, wide3)
 				bag.Anchored = true
 				bag.CanCollide = false
+				bag.CanTouch = false
 				-- Оттенок у каждого мешка чуть свой: один цвет на всю кладку снова читается кубом.
 				local shade = (math.random() - 0.5) * 0.09
 				bag.Color = Color3.new(
@@ -349,9 +357,10 @@ return function(deps)
 					math.clamp(SANDBAG_COLOR.G + shade, 0, 1),
 					math.clamp(SANDBAG_COLOR.B + shade * 1.4, 0, 1)
 				)
-				bag.Material = Enum.Material.Sand
+				-- Мешковина, а не голый песок: снаружи у мешка ткань, песок — внутри.
+				bag.Material = Enum.Material.Fabric
 				-- Небольшой разворот и просадка: мешки лежат как легли, а не по линейке.
-				bag.CFrame = CFrame.new(dx, y, dz)
+				bag.CFrame = CFrame.new(dx, y - press * 0.4, dz)
 					* CFrame.Angles(0, (math.random() - 0.5) * 0.22, 0)
 					* CFrame.Angles((math.random() - 0.5) * 0.09, 0, (math.random() - 0.5) * 0.09)
 				bag.Parent = model
@@ -359,6 +368,31 @@ return function(deps)
 				local mesh = Instance.new("SpecialMesh")
 				mesh.MeshType = Enum.MeshType.Sphere
 				mesh.Parent = bag
+
+				-- Завязка: подвёрнутый и стянутый конец мешка — по нему мешок и узнаётся мешком,
+				-- а не яйцом. Смотрит наружу кладки, как кладут на деле. Отдельная деталь рядом
+				-- с мешком, а не внутри него: распад постройки (TowerDebris) снимает с детали
+				-- всех детей, кроме меша. Клиент двигает её вместе с мешком (Sandbags) по имени.
+				local outward = long == 0 and -1 or 1
+				local earAlong = long3 / 2 - 0.08
+				local tie = Instance.new("Part")
+				tie.Name = bag.Name .. "Ear"
+				tie.Size = across and Vector3.new(wide3 * 0.55, tall3 * 0.5, 0.42)
+					or Vector3.new(0.42, tall3 * 0.5, wide3 * 0.55)
+				tie.Anchored = true
+				tie.CanCollide = false
+				tie.CanTouch = false
+				tie.CanQuery = false
+				tie.CastShadow = false
+				tie.Color = bag.Color:Lerp(Color3.new(0, 0, 0), 0.18)
+				tie.Material = Enum.Material.Fabric
+				tie.CFrame = bag.CFrame * CFrame.new(
+					across and 0 or outward * earAlong, -tall3 * 0.06, across and outward * earAlong or 0)
+				tie.Parent = model
+
+				local tieMesh = Instance.new("SpecialMesh")
+				tieMesh.MeshType = Enum.MeshType.Sphere
+				tieMesh.Parent = tie
 			end
 			end
 		end
