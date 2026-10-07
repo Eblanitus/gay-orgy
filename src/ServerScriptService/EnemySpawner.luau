@@ -86,6 +86,17 @@ local NO_BLOOD = { melt = true, dissolve = true, destroy = true }
 -- жука не показывает, а писать его каждый кадр значит слать его всем клиентам каждый кадр.
 local LOOK_RESEND_COS = math.cos(math.rad(3))
 
+-- Атрибут ChewAt (куда грызущий бьёт жвалами, см. EnemyGait «Грызня») переписывается,
+-- когда точка уехала дальше этого, studs: укушенный соперник шевелится, и слать каждый
+-- его сдвиг всем клиентам незачем.
+local CHEW_AT_RESEND = 0.4
+
+-- Укус грызни для клиента: удар жвал отыгрывается в такт урону (EnemyRender → EnemyGait.Bite).
+-- Счётчик, а не флаг: каждое изменение атрибута — ровно один укус.
+local function markBite(enemy)
+	enemy:SetAttribute("Bite", (enemy:GetAttribute("Bite") or 0) + 1)
+end
+
 local FACEHUGGER_ATTACH_RANGE = 2 -- studs: на этом расстоянии до турели Лицехват считается «долетел и присосался»
 
 -- Потолок раскрытых клеток A* до точки заявки (укрытие, место за вожаком, засада): точка
@@ -639,6 +650,8 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			-- Поза, которую отыгрывают ноги в этом кадре (см. EnemyGait), и то, куда жук
 			-- развёрнут телом. На земле «верх» у него мировой, на стене — сама стена.
 			local pose = "walk"
+			-- Точка на поверхности того, что жук грызёт: в неё клиент ведёт удар жвал.
+			local chewAt = nil
 			local facing = heading
 			local facingUp = Vector3.yAxis
 
@@ -814,14 +827,19 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				setVelocity(Vector3.zero)
 				pose = "chew"
 
-				local toRival = flat(rival:GetPivot().Position - position)
+				local rivalPosition = rival:GetPivot().Position
+				local toRival = flat(rivalPosition - position)
 				if toRival.Magnitude > 1e-3 then
 					heading = toRival.Unit
+					-- Бок соперника, а не его середина: жвалы смыкаются на панцире.
+					local radius = math.min(rival:GetAttribute("FootRadius") or 1, toRival.Magnitude)
+					chewAt = rivalPosition - heading * radius
 				end
 
 				local attackSlow = math.clamp(enemy:GetAttribute("AttackSlowPercent") or 0, 0, 0.9)
 				if now - lastChew >= 1 / (chewRate * (1 - attackSlow)) then
 					lastChew = now
+					markBite(enemy)
 					biteRival(enemy, chewDamage, rival)
 				end
 			elseif blocker and ally then
@@ -840,6 +858,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				local toBlocker = flat(points[index] - position)
 				if toBlocker.Magnitude > 1e-3 then
 					heading = toBlocker.Unit
+					-- Ближняя грань клетки преграды на высоте жука: в неё и бьют жвалы.
+					local face = math.max(0, toBlocker.Magnitude - Arena.cellSize * 0.5)
+					chewAt = position + heading * face
 				end
 
 				-- Холод замедляет саму грызню, Кислота ослабляет укус — единственные два эффекта,
@@ -864,6 +885,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 					local bite = boosted(math.max(1,
 						math.floor(chewDamage * (1 - weakened) * (1 - resist) * softens + 0.5)))
 					local left = math.max(0, (blocker:GetAttribute("HP") or 0) - bite)
+					markBite(enemy)
 					blocker:SetAttribute("HP", left)
 					DamageDealtRemote:FireAllClients(blocker:GetPivot().Position, bite, false)
 					print(("[Грызня] %s грызёт %s на %d, осталось %d HP")
@@ -878,6 +900,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				local toTable = flat(LabTable.Position() - position)
 				if toTable.Magnitude > 1e-3 then
 					heading = toTable.Unit
+					-- Край стола: жук остановился в досягаемости (REACH + полтела) от его середины.
+					local edge = math.max(0, toTable.Magnitude - LabTable.REACH)
+					chewAt = position + heading * edge
 				end
 
 				if not EnemyBehavior.BiteTable(enemy, enemyData, state) then
@@ -1006,6 +1031,15 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			if state.gaitPose ~= pose then
 				state.gaitPose = pose
 				enemy:SetAttribute("Gait", pose)
+			end
+			if pose ~= "chew" then
+				chewAt = nil
+			end
+			local sentChewAt = state.sentChewAt
+			if chewAt ~= sentChewAt and not (chewAt and sentChewAt
+				and (chewAt - sentChewAt).Magnitude < CHEW_AT_RESEND) then
+				state.sentChewAt = chewAt
+				enemy:SetAttribute("ChewAt", chewAt)
 			end
 			local want = look and look.Magnitude > 1e-3 and -look or nil
 			if want then
