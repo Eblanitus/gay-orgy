@@ -2,7 +2,8 @@
 
 Пятна с панциря модели (Модели/Жуки/*.glb) вырезаются по одному и разбрасываются по всей
 текстуре: повёрнуты, отражены, разного размера, друг на друга не налезают. У видов без пятен
-вместо них берутся пластины панциря (надкрылья, щит).
+вместо них берутся пластины панциря (надкрылья, щит). Десять видов, у которых так выходило
+безлико (Таран, Тень, Спринтер и др.), рисуются мотивом по роли — role_motifs.py.
 
 Маска — в негативе к элементам (решение автора): у элемента фон тёмный и узор светлый, у жука
 фон светлый, а пятна вырезаны тёмным, так «чужое» видно сразу. Пишется в
@@ -19,6 +20,8 @@ import numpy as np
 import trimesh
 from PIL import Image
 from scipy import ndimage as nd
+
+import role_motifs
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 GLB = ROOT / "Модели" / "Жуки"
@@ -197,7 +200,9 @@ def main(keys):
     OUT.mkdir(parents=True, exist_ok=True)
     table = species()
     for key in keys or sorted(table):
-        a = np.clip((NEG - pattern(table[key])) / NEG, 0, 1)
+        # Где пятна панциря не говорят о жуке — мотив по роли (role_motifs.py).
+        m = role_motifs.build(key) if key in role_motifs.MOTIFS else pattern(table[key])
+        a = np.clip((NEG - m) / NEG, 0, 1)
         img = np.zeros((R, R, 4), np.uint8)
         img[..., :3] = 255
         img[..., 3] = (a * 255).round().astype(np.uint8)
