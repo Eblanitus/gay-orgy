@@ -45,6 +45,13 @@ local function prepare(data)
 			data.enemyKills[key] = 1
 		end
 	end
+	-- Убить можно жука, которого игрок «не застал»: зашёл в забег уже после его появления
+	-- (Seen считает только тех, кто был на сервере в момент спавна). Убитых не меньше встреченных.
+	for key, count in data.enemyKills do
+		if (data.enemySeen[key] or 0) < count then
+			data.enemySeen[key] = count
+		end
+	end
 end
 
 local function send(player, data)
@@ -105,6 +112,28 @@ function ProfileStats.Add(field, amount)
 	end)
 end
 
+-- Клиент просит профиль заново (RequestProfile): события при загрузке уходят в момент, когда
+-- его скрипты ещё не подключены, и без запроса плутоний, открытые рецепты и жуки так и остались бы пустыми.
+local ProfileSyncedRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ProfileSynced")
+local RequestProfileRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("RequestProfile")
+local REQUEST_COOLDOWN = 1 -- сек
+local requestedAt = {}
+
+RequestProfileRemote.OnServerEvent:Connect(function(player)
+	local now = os.clock()
+	if requestedAt[player] and now - requestedAt[player] < REQUEST_COOLDOWN then
+		return
+	end
+	local data = PlayerData.Get(player)
+	if not data then
+		return
+	end
+	requestedAt[player] = now
+	prepare(data)
+	ProfileSyncedRemote:FireClient(player, data.plutonium, data.levels, data.recipes, data.killedTypes, data.settings, data.xp)
+	send(player, data)
+end)
+
 local function onLoaded(player, data)
 	prepare(data)
 	joined[player] = os.clock()
@@ -136,6 +165,7 @@ Players.PlayerRemoving:Connect(function(player)
 	countTime(player)
 	dirty[player] = nil
 	joined[player] = nil
+	requestedAt[player] = nil
 end)
 
 task.spawn(function()

@@ -108,6 +108,12 @@ local profile = {
 	elementCrafted = {},
 }
 
+-- Жук считается убитым и по killedTypes (ProfileSynced), и по счёту убийств (ProfileStats):
+-- первое событие может не дойти до клиента, а числа в журнале при этом уже видны.
+local function isMetType(key)
+	return profile.killedTypes[key] == true or (profile.enemyKills[key] or 0) > 0
+end
+
 local watchers = {}
 
 local function profileChanged()
@@ -152,14 +158,18 @@ local function countKeys(t)
 end
 
 -- Сводка прогресса для тех, кто рисует её вне журнала (главное меню). Те же самые
+-- Первое ProfileSynced уходит в момент загрузки профиля и может прийти раньше, чем клиент
+-- подключил обработчик (плутоний 0, жуки не открыты) — просим профиль ещё раз.
+Remotes:WaitForChild("RequestProfile"):FireServer()
+
 -- числа, что и на вкладке «Статистика», и считаются они здесь же: второй счётчик
 -- в MainMenu однажды разошёлся бы с этим при первой же правке таблиц.
 function Journal.Progress()
 	local known = countKeys(profile.recipes)
 
 	local met = 0
-	for key in profile.killedTypes do
-		if Enemies[key] then
+	for _, key in enemyOrder do
+		if isMetType(key) then
 			met += 1
 		end
 	end
@@ -464,8 +474,8 @@ function Journal.Mount(parent, onStatus)
 			elementVal.Text = ("%d / %d"):format(known + BASE_ELEMENTS, #elementOrder)
 
 			local met = 0
-			for key in profile.killedTypes do
-				if Enemies[key] then
+			for _, key in enemyOrder do
+				if isMetType(key) then
 					met += 1
 				end
 			end

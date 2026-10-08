@@ -294,6 +294,13 @@ return function(deps)
 			return
 		end
 		local changed = false
+		-- Первое убийство жука открывает его в «Жуках», даже если killedTypes не дошёл до клиента.
+		local newlyMet = false
+		for key, count in byEnemy do
+			if count > 0 and (ref.enemyKills[key] or 0) == 0 then
+				newlyMet = true
+			end
+		end
 		for key, count in byElement do
 			if Mastery.Level(Mastery.ELEMENT, count) ~= Mastery.Level(Mastery.ELEMENT, ref.elementKills[key]) then
 				changed = true
@@ -316,8 +323,14 @@ return function(deps)
 		ref.elementKills, ref.enemyKills = byElement, byEnemy
 		if changed then
 			task.defer(refreshKnowledge)
+		elseif newlyMet then
+			task.defer(function()
+				pages.enemies.refresh()
+			end)
 		end
 	end)
+	-- Профиль досылается сервером по запросу: событие при загрузке могло прийти раньше этого окна.
+	Remotes:WaitForChild("RequestProfile"):FireServer()
 	Remotes:WaitForChild("ProfileSynced").OnClientEvent:Connect(function(_plutonium, _levels, recipes, killedTypes)
 		if type(recipes) == "table" then
 			for key in recipes do

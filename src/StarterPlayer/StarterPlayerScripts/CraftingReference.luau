@@ -485,7 +485,7 @@ return function(deps)
 	-- карточек (Mastery) — до выхода из игры.
 	ref.codexRevealed = false
 	local function isMet(key)
-		return ref.codexRevealed or killed[key] == true
+		return ref.codexRevealed or killed[key] == true or (ref.enemyKills[key] or 0) > 0
 	end
 
 	-- Орбиты карты открываются поэтапно (#273, #274): пока видны ярусы до OPEN_DEPTH
