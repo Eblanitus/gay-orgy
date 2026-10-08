@@ -866,41 +866,69 @@ return function(deps)
 		model:SetAttribute("BeltParts", beltParts)
 
 		-- ===== БОКОВЫЕ ЛУЧИ: толкатели =====
-		-- Плита вровень с лентой, на внешнем конце — пневмоцилиндр. Жук подошёл сбоку —
-		-- шток выдвигается и лопатой задвигает его по плите на ленту, под самый диск;
-		-- пока пила режет, лопата отходит назад. Двигает клиент (BuildingVisuals.addSaw)
-		-- по атрибуту Feed постройки ("L"/"R" — с какой стороны подают, ставит сервер):
-		-- атрибут Pusher — сторона детали, PushShare — доля хода (ступени штока выдвигаются
-		-- по очереди, лопата — на весь ход), PushStroke — ход в студах, PushAxis — корпус
-		-- цилиндра (к центру — его +Z).
+		-- Лучи той же длины, что конвейер: вся машина — ровный плюс. На каждом луче —
+		-- телескопический пневмоцилиндр с лопатой. Жук подошёл сбоку — шток выдвигается,
+		-- лопата по направляющим задвигает его к щели, под самый диск; пока пила режет,
+		-- лопата отходит назад. Двигает клиент (BuildingVisuals.addSaw) по атрибуту Feed
+		-- постройки ("L"/"R" — с какой стороны подают, ставит сервер): атрибут Pusher —
+		-- сторона детали, PushShare — доля хода (ступени штока выдвигаются каждая на свою
+		-- долю, лопата — на весь ход), PushStroke — ход в студах, PushAxis — ось хода
+		-- (к центру — её +Z).
 		local sideLength = SIDE_EDGE - ARM
 		local PADDLE_HALF = 1.65 -- полуширина лопаты: проходит между стойками стола
 		local PADDLE_STOP = 0.3 -- лопата доходит до края щели: дальше жука к диску дотягивает вытяжка
+		local STAGES = 4 -- ступеней штока: на длинный луч трёх не хватает
+		local BODY_LENGTH = 1.2 -- корпус длиной в ступень: в покое шток весь в нём
+		local ROD_Y = FLOOR + 0.38 -- высота оси цилиндра
 		local pushers = 0
 		for i, side in { [1] = "L", [3] = "R" } do
 			local around = CFrame.Angles(0, math.rad(90 * i), 0)
 			local function at(distance, y)
 				return around * CFrame.new(0, y, -distance)
 			end
+			local LYING = CFrame.Angles(0, math.rad(90), 0) -- цилиндр вдоль луча
 			floorPart(model, "SidePlate" .. side, Vector3.new(2 * ARM, 0.08, sideLength),
 				at(ARM + sideLength / 2, FLOOR + 0.04), mid, plate)
-			-- Корпус цилиндра — на опорах у конца луча; цилиндр лежит вдоль луча.
-			-- Корпус длиной в ступень штока: в покое шток весь в нём.
-			local bodyLength = 1.0
-			local bodyAt = SIDE_EDGE - 0.1 - bodyLength / 2
-			floorPart(model, "PusherBody" .. side, Vector3.new(bodyLength, 0.34, 0.34),
-				at(bodyAt, FLOOR + 0.35) * CFrame.Angles(0, math.rad(90), 0), dark, metal, cylinder)
-			-- Ось хода — отдельная невидимая деталь без поворота относительно луча:
-			-- её -Z смотрит наружу, +Z — к центру.
-			local axis = floorPart(model, "PushAxis" .. side, Vector3.new(0.05, 0.05, 0.05), at(bodyAt, FLOOR + 0.35), dark, metal)
-			axis.Transparency = 1
+			-- Направляющие лопаты — вровень с плитой, не борта: жук через них проходит.
 			for s = -1, 1, 2 do
-				floorPart(model, "PusherMount" .. side .. (s < 0 and "L" or "R"), Vector3.new(0.4, 0.16, 0.12),
-					at(bodyAt + s * 0.3, FLOOR + 0.12), light, metal)
+				floorPart(model, "PushGuide" .. side .. (s < 0 and "L" or "R"), Vector3.new(0.14, 0.03, sideLength - 0.1),
+					at(ARM + sideLength / 2, FLOOR + 0.095) * CFrame.new(s * (PADDLE_HALF - 0.3), 0, 0), light, metal)
 			end
-			accent(floorPart(model, "PusherLamp" .. side, Vector3.new(0.03, 0.2, 0.2),
-				at(bodyAt + bodyLength / 2 + 0.01, FLOOR + 0.35) * CFrame.Angles(0, math.rad(90), 0), glow, neon, cylinder))
-			local paddleRest = bodyAt - bodyLength / 2 - 0.06 -- лопата в покое — вплотную к торцу цилиндра
+			-- Шевроны на плите, острием к центру: отсюда подают под пилу.
+			for k = 1, 2 do
+				for s = -1, 1, 2 do
+					accent(floorPart(model, "SideArrow" .. side .. k .. (s < 0 and "L" or "R"), Vector3.new(0.12, 0.03, 0.62),
+						at(ARM + sideLength * (0.3 + 0.28 * k), FLOOR + 0.095) * CFrame.new(s * 0.2, 0, 0.02)
+							* CFrame.Angles(0, math.rad(-s * 38), 0), glow, neon))
+				end
+			end
+
+			-- Корпус цилиндра: труба с кольцами на торцах, лежит на двух ложементах.
+			local bodyAt = SIDE_EDGE - 0.12 - BODY_LENGTH / 2
+			floorPart(model, "PusherBody" .. side, Vector3.new(BODY_LENGTH, 0.36, 0.36), at(bodyAt, ROD_Y) * LYING,
+				dark, metal, cylinder)
+			for e = -1, 1, 2 do
+				floorPart(model, "PusherRing" .. side .. (e < 0 and "F" or "B"), Vector3.new(0.08, 0.42, 0.42),
+					at(bodyAt + e * (BODY_LENGTH / 2 - 0.04), ROD_Y) * LYING, light, metal, cylinder)
+				floorPart(model, "PusherCradle" .. side .. (e < 0 and "F" or "B"), Vector3.new(0.44, ROD_Y - FLOOR - 0.12, 0.14),
+					at(bodyAt + e * (BODY_LENGTH / 2 - 0.22), (ROD_Y + FLOOR + 0.08) / 2 - 0.02), mid, metal)
+			end
+			accent(floorPart(model, "PusherLamp" .. side, Vector3.new(0.03, 0.22, 0.22),
+				at(bodyAt + BODY_LENGTH / 2 + 0.01, ROD_Y) * LYING, glow, neon, cylinder))
+			-- Ресивер с воздухом рядом с цилиндром и шланг от него к заднему торцу.
+			local tankAt = at(bodyAt + 0.1, FLOOR + 0.26) * CFrame.new(PADDLE_HALF - 0.55, 0, 0)
+			floorPart(model, "PusherTank" .. side, Vector3.new(0.8, 0.36, 0.36), tankAt * LYING, mid, metal, cylinder)
+			floorPart(model, "PusherTankCap" .. side, Vector3.new(0.05, 0.24, 0.24),
+				tankAt * CFrame.new(0, 0, -0.42) * LYING, light, metal, cylinder)
+			floorPart(model, "PusherHoseA" .. side, Vector3.new(0.08, 0.3, 0.08),
+				tankAt * CFrame.new(0, 0.18, 0.3), black, plastic)
+			floorPart(model, "PusherHoseB" .. side, Vector3.new(PADDLE_HALF - 0.55, 0.08, 0.08),
+				tankAt * CFrame.new(-(PADDLE_HALF - 0.55) / 2, 0.33, 0.3), black, plastic)
+
+			-- Ось хода — невидимая, без поворота относительно луча: -Z наружу, +Z к центру.
+			local axis = floorPart(model, "PushAxis" .. side, Vector3.new(0.05, 0.05, 0.05), at(bodyAt, ROD_Y), dark, metal)
+			axis.Transparency = 1
+			local paddleRest = bodyAt - BODY_LENGTH / 2 - 0.08 -- лопата в покое — у торца цилиндра
 			local stroke = (paddleRest - PADDLE_STOP) * SCALE
 			local function moving(part, share)
 				part:SetAttribute("Pusher", side)
@@ -910,18 +938,27 @@ return function(deps)
 				pushers += 1
 				return part
 			end
-			-- Шток из трёх ступеней, труба в трубе: в покое все в корпусе, на ходу каждая
-			-- выдвигается на свою треть, последняя держит лопату.
-			for k = 1, 3 do
-				local width = 0.26 - k * 0.05
-				moving(floorPart(model, "PusherRod" .. side .. k, Vector3.new(bodyLength - 0.1, width, width),
-					at(bodyAt - 0.05, FLOOR + 0.35) * CFrame.Angles(0, math.rad(90), 0),
-					k == 1 and light or steel, metal, cylinder), k / 3)
+			-- Шток — труба в трубе: в покое все ступени в корпусе, на ходу каждая выдвигается
+			-- на свою долю, последняя держит лопату.
+			for k = 1, STAGES do
+				local width = 0.3 - k * 0.05
+				moving(floorPart(model, "PusherRod" .. side .. k, Vector3.new(BODY_LENGTH - 0.1, width, width),
+					at(bodyAt - 0.05, ROD_Y) * LYING, k % 2 == 1 and light or steel, metal, cylinder), k / STAGES)
 			end
-			moving(floorPart(model, "PusherPaddle" .. side, Vector3.new(2 * PADDLE_HALF, 0.55, 0.12),
-				at(paddleRest, FLOOR + 0.4), dark, metal), 1)
+			-- Лопата: щит с рёбрами сзади, полозья в направляющих, светящаяся кромка.
+			moving(floorPart(model, "PusherPaddle" .. side, Vector3.new(2 * PADDLE_HALF, 0.6, 0.12),
+				at(paddleRest, FLOOR + 0.42), dark, metal), 1)
 			moving(accent(floorPart(model, "PusherEdge" .. side, Vector3.new(2 * PADDLE_HALF, 0.06, 0.13),
-				at(paddleRest, FLOOR + 0.66), glow, neon)), 1)
+				at(paddleRest, FLOOR + 0.69), glow, neon)), 1)
+			moving(floorPart(model, "PusherPlate" .. side, Vector3.new(0.5, 0.5, 0.06),
+				at(paddleRest + 0.09, ROD_Y), light, metal), 1)
+			for s = -1, 1, 2 do
+				local tag = side .. (s < 0 and "L" or "R")
+				moving(floorPart(model, "PusherRib" .. tag, Vector3.new(0.08, 0.5, 0.3),
+					at(paddleRest + 0.2, FLOOR + 0.4) * CFrame.new(s * (PADDLE_HALF - 0.6), 0, 0), mid, metal), 1)
+				moving(floorPart(model, "PusherSkid" .. tag, Vector3.new(0.16, 0.05, 0.5),
+					at(paddleRest + 0.13, FLOOR + 0.135) * CFrame.new(s * (PADDLE_HALF - 0.3), 0, 0), light, metal), 1)
+			end
 		end
 		model:SetAttribute("PusherParts", pushers)
 
@@ -1068,15 +1105,21 @@ return function(deps)
 		end
 		for s = -1, 1, 2 do
 			local tag = s < 0 and "L" or "R"
-			-- Ступеньки целиком внутри дуги: ширина по ВЕРХУ ступеньки и по внутренней грани
-			-- пластин — иначе углы ступенек торчали за кожух.
+			-- Щека — веер полос, по одной под каждую пластину дуги: край щеки идёт ровно
+			-- по дуге, без ступенек и щелей. Полосы начинаются от бобышки у вала — иначе
+			-- у вала их углы вылезали бы под кожух.
 			local innerR = GUARD_R - 0.05
-			for i, row in { { 0, 0.4 }, { 0.4, 0.7 }, { 0.7, 0.9 }, { 0.9, 1.04 }, { 1.04, 1.13 }, { 1.13, 1.19 } } do
-				local rowMid = (row[1] + row[2]) / 2
-				local width = 2 * math.sqrt(innerR * innerR - row[2] * row[2])
-				addPart(arm, "GuardSide" .. i .. tag, Vector3.new(0.04, row[2] - row[1], width),
-					guardAt * CFrame.new(s * 0.23, rowMid, 0), dark, metal)
+			local BOSS_R = 0.36
+			for i = 1, GUARD_PLATES do
+				local angle = fromAngle + step * (i - 0.5)
+				local width = 2 * innerR * math.sin(step / 2) + 0.02
+				local length = innerR - BOSS_R + 0.05
+				addPart(arm, "GuardSide" .. i .. tag, Vector3.new(0.04, length, width),
+					guardAt * CFrame.new(s * 0.23, 0, 0) * CFrame.Angles(-angle, 0, 0)
+						* CFrame.new(0, innerR - length / 2, 0), dark, metal)
 			end
+			addPart(arm, "GuardBoss" .. tag, Vector3.new(0.05, 2 * BOSS_R, 2 * BOSS_R),
+				guardAt * CFrame.new(s * 0.23, 0, 0), dark, metal, cylinder)
 			for i = 1, 3 do
 				addPart(arm, "GuardVent" .. i .. tag, Vector3.new(0.03, 0.06, 0.5),
 					guardAt * CFrame.new(s * 0.255, 0.25 + i * 0.16, 0.35), black, plastic)
