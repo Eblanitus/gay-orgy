@@ -1382,8 +1382,9 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 		spawnPosition = startPosition + offset
 	else
 		local lift = Vector3.new(0, enemy:GetAttribute("RideHeight") or enemyData.rideHeight or ENEMY_Y, 0)
-		if walksCorridor(enemyData) then
-			-- Дальний конец коридора за входом (Arena.spawn): жук проходит коридор целиком и
+		if walksCorridor(enemyData) or (Arena.lane ~= nil and enemyData.flying) then
+			-- Летающие тоже вылетают из дальнего конца коридора (они его не проходят, но
+			-- рождаются там же, где остальные, а не у входа в зал). Дальний конец коридора за входом (Arena.spawn): жук проходит коридор целиком и
 			-- входит в зал через дверь, а не рождается в ней среди турелей.
 			local spawn = Arena.spawn
 			spawnPosition = Vector3.new(spawn.X, Arena.floorY, spawn.Z) + lift + offset
