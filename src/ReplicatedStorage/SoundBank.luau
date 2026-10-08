@@ -73,6 +73,9 @@ SoundBank.Sounds = {
 	-- прыгнет. Calm в самом файле тише (около -22 LUFS против -14), поэтому ей не убавлено.
 	MusicBattleIntro = { group = "Music", volume = 0.45, pitch = { 1, 1 } },
 	MusicBattle = { group = "Music", volume = 0.45, pitch = { 1, 1 }, looped = true },
+	-- Mitivetra (трек автора): бой. Файл с хвостом, наложенным на начало, — круг без паузы.
+	-- Около -14 LUFS, как прежний бой, поэтому 0.45.
+	MusicBattleMitivetra = { group = "Music", volume = 0.45, pitch = { 1, 1 }, looped = true },
 }
 
 -- Звуки меню: какое событие меню каким готовым звуком интерфейса звучит. Сами звуки —
@@ -150,10 +153,9 @@ SoundBank.Ambient = "AmbientBunker"
 SoundBank.Music = {
 	menu = "MusicMenu",
 	calm = "MusicSafar",
-	-- Бой (нарезка mpledni) автор пока убрал из игры: в волне музыка молчит.
-	-- Вернуть — раскомментировать.
-	-- intro = "MusicBattleIntro",
-	-- battle = "MusicBattle",
+	-- Бой — Mitivetra, одним куском без интро (GameAudio без intro сразу ставит battle).
+	-- Нарезка mpledni (MusicBattleIntro + MusicBattle) осталась в банке, но не играет.
+	battle = "MusicBattleMitivetra",
 }
 -- За сколько секунд один трек перетекает в другой.
 SoundBank.MUSIC_FADE = 2

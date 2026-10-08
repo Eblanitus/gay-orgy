@@ -12,6 +12,7 @@ return {
 	HumArea = "rbxassetid://138337541830654",
 	MusicBattle = "rbxassetid://87349932423647",
 	MusicBattleCalm = "rbxassetid://103934382337088",
+	MusicBattleMitivetra = "rbxassetid://71681076925552",
 	MusicBattleIntro = "rbxassetid://128042493108274",
 	MusicBunker = "rbxassetid://71923168169104",
 	MusicMenu = "rbxassetid://130797681556953",
