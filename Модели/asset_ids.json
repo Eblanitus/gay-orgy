@@ -1,0 +1,106 @@
+{
+ "absorber": {
+  "assetId": "71810670229021",
+  "sha1": "36fa9e50c1477a1d9a2135a09e8be32b10ba9763"
+ },
+ "acid_spitter": {
+  "assetId": "130642815908706",
+  "sha1": "6e06469d5075e3b5ecc05660b2ee80d9e81f6e26"
+ },
+ "bomber": {
+  "assetId": "84934932088426",
+  "sha1": "d0223ee0892e185dc8a50bc3b7317e002ed44d89"
+ },
+ "builder_beetle": {
+  "assetId": "90485982401307",
+  "sha1": "4f2113cb6f83adab8e24fc64ef159d0796d91803"
+ },
+ "carrier": {
+  "assetId": "90394381128113",
+  "sha1": "edec04eb1756b97193f4b9d593c6c53b92658556"
+ },
+ "coordinator": {
+  "assetId": "85023906211749",
+  "sha1": "d4ef0d3117eca963ac6913981f423ddaa0a8e2f2"
+ },
+ "evolver": {
+  "assetId": "97638509115265",
+  "sha1": "b616a421e3e2ebd4f5056330194c27384588d179"
+ },
+ "facehugger": {
+  "assetId": "73597353213729",
+  "sha1": "85bceadf294d71fb348e5e7ae0f7274d6d509ca4"
+ },
+ "giant": {
+  "assetId": "93401784415839",
+  "sha1": "a5efe5a608698ab0bdde4d6eb4a2956f245cb473"
+ },
+ "hive_architect": {
+  "assetId": "75855926273201",
+  "sha1": "0747afe4b901f38b8df60b5661a9565f46c70d6f"
+ },
+ "hmuryi_bron": {
+  "assetId": "101128021660552",
+  "sha1": "ca5b0598f71adf90750f02fa64e92444889d3a55"
+ },
+ "knitter": {
+  "assetId": "138107594675268",
+  "sha1": "e09872215921b0fc46e03a4aeb3938b0bb6d18b4"
+ },
+ "larva": {
+  "assetId": "80039421442056",
+  "sha1": "f3eeb2df55eeaee3e728091d8f01fdb8696c88b9"
+ },
+ "medic": {
+  "assetId": "123033234082353",
+  "sha1": "9594f1701b4c6eb877328196ce9746cc043efb56"
+ },
+ "mimic": {
+  "assetId": "119512482270684",
+  "sha1": "f2ce618dab763f080fc35a4109aeda20a5f37ad9"
+ },
+ "mini_beetle": {
+  "assetId": "125522501529913",
+  "sha1": "c0b26e8cae6b255b93bf6bd370210462d43da3bb"
+ },
+ "moth": {
+  "assetId": "106369534222915",
+  "sha1": "fd36909392044c5f504df566f27706cd8fd25be0"
+ },
+ "pelican_beetle": {
+  "assetId": "109154375819111",
+  "sha1": "ab482298447f5dc29924dc769cef6039f11c1ecc"
+ },
+ "puppeteer": {
+  "assetId": "73220121562292",
+  "sha1": "8aa85a29278e056be59c9a19ec97ceec2e71583a"
+ },
+ "queen": {
+  "assetId": "85758994037525",
+  "sha1": "7f7fc4046a9ad188b4da6fc23c879b1ef06e2480"
+ },
+ "ram": {
+  "assetId": "90842421235211",
+  "sha1": "53fcb0da8792e587916ff50e44e4991238af31fb"
+ },
+ "shadow": {
+  "assetId": "87722928726269",
+  "sha1": "085c26d480878d5d26705f9147870c57b2d15314"
+ },
+ "shield_bearer": {
+  "assetId": "88083649061708",
+  "sha1": "bc02e53be936fd784e748c080fa0860d72db1a0a"
+ },
+ "sprinter": {
+  "assetId": "100188468886746",
+  "sha1": "3b97211072aea200a5434f21189e2903e0b9601c"
+ },
+ "standard_beetle": {
+  "assetId": "76769660832673",
+  "sha1": "7d8c37e20f38b38fb38407dfb2c23a8abd728d42"
+ },
+ "worker_beetle": {
+  "assetId": "130555448273815",
+  "sha1": "e8d51ca3f1167c91b8059b5b47f3705d7d18b513"
+ }
+}

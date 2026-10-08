@@ -47,6 +47,7 @@ local Lithosphere = require(ServerScriptService:WaitForChild("Lithosphere"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
 -- Обучение (задача #298): ограничения уровня и запрет волны, пока не пройдены шаги.
 local Tutorial = require(ServerScriptService:WaitForChild("Tutorial"))
+local RunControl = require(ServerScriptService:WaitForChild("RunControl"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local WaveChangedRemote = Remotes:WaitForChild("WaveChanged")
@@ -259,6 +260,8 @@ local function runWaves(myGeneration, levelNumber)
 			:format(wave.number, byPlayer and " (состав задан игроком)" or "", table.concat(parts, ", ")))
 		WaveChangedRemote:FireAllClients(wave.number, #activeLevelWaves)
 		WaveState.SetActive(true)
+		-- Обучение: на первых волнах стол не ломается (TutorialConfig.guardedWaves).
+		LabTable.SetGuarded(Tutorial.TableGuarded(wave.number))
 
 		-- Каждая группа — свой вызов SpawnGroup в отдельном task.spawn: SpawnGroup сам блокируется
 		-- на task.wait(SPAWN_INTERVAL) между юнитами внутри группы — без этого вторая группа ждала бы
@@ -293,6 +296,13 @@ local function runWaves(myGeneration, levelNumber)
 		Matter.Add(Matter.WAVE_CLEAR_BONUS)
 		Plutonium.AwardWaveClear(levelNumber, wave.number)
 		ProfileStats.Add("waves")
+		LabTable.SetGuarded(false)
+
+		-- Обучение засчитывается после своей волны (TutorialConfig.completeAfterWave):
+		-- проигрыш дальше его не отменяет. В конце забега AwardLevelClear уже ничего не даст.
+		if Tutorial.CompletesAt(wave.number) then
+			Plutonium.AwardLevelClear(levelNumber)
+		end
 
 		if i < #activeLevelWaves then
 			print(("[Волна] волна %d зачищена, ждём кнопки"):format(wave.number))
@@ -331,11 +341,12 @@ local function startRun(levelNumber)
 	ProfileStats.Add("runs")
 	activeLevelWaves = Levels[levelNumber].waves
 	WaveState.SetActive(false)
-	Matter.Reset()
 	-- Элементы живут ровно один забег (дизайн-док: «знание сохраняется, имущество — нет»).
 	-- Открытые рецепты лежат в Crafting и здесь намеренно не трогаются.
 	Inventory.Reset()
 	Tutorial.Start(Levels[levelNumber])
+	-- После Tutorial.Start: у обучения свой стартовый запас материи.
+	Matter.Reset(Tutorial.StartMatter())
 	TowerBootstrap.PlaceStartingTower()
 
 	for _, player in Players:GetPlayers() do
@@ -343,6 +354,16 @@ local function startRun(levelNumber)
 	end
 
 	task.spawn(runWaves, myGeneration, levelNumber)
+end
+
+-- Промокод обучения (PromoCode) начинает забег в обход выбора уровня и входа в лобби.
+-- levelPlayable — та же проверка, что у обычного входа: сломанный уровень не запускается.
+RunControl.StartLevel = function(levelNumber)
+	if not levelPlayable(levelNumber) then
+		return false
+	end
+	startRun(levelNumber)
+	return true
 end
 
 RequestStartWaveRemote.OnServerEvent:Connect(function(player)

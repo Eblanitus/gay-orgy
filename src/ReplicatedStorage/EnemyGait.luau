@@ -58,7 +58,7 @@ local MODEL_STRIDE = 3.0 -- шаг под гиганта ×3.0 (цикл 3.0/15 
 local MODEL_STEP_LIFT = 0.45 -- дуга пропорциональна шагу
 local MODEL_STEP_TIME = 0.03 -- перенос короче цикла (3.0/15 = 0.2с): фаза опоры ~85%
 
--- MODEL_STRIDE/MODEL_STEP_LIFT и абсолютные расстояния похода ниже (PROBE_*, CHEW_*,
+-- MODEL_STRIDE/MODEL_STEP_LIFT и абсолютные расстояния похода ниже (PROBE_*,
 -- DEATH_DROP, офсет 0.35 в climb) подобраны стендом под Стандарта — модель на Scale = 3.0
 -- (см. #137). Нога-модель у Мини — тот же шаблон, но его Scale гуляет в scaleRange
 -- 0.55-1.80, а физическая длина лапы (бедро+голень, entry.length) уезжает вместе со Scale,
@@ -154,11 +154,9 @@ local ANTENNA_FREQ = 2.6 -- рад/сек
 local ANTENNA_TURN_LAG = 0.08 -- рад отставания на рад/сек поворота
 local ANTENNA_ACCEL_LAG = 0.02 -- рад на ст/сек² ускорения (в единицах Стандарта)
 local ANTENNA_MAX = 0.35 -- рад, потолок отставания
--- Жвалы: медленно шевелятся на ходу, часто и широко — когда жук грызёт.
+-- Жвалы: медленно шевелятся на ходу. В грызне их ведёт цикл укуса (BITE_GAPE_*).
 local MANDIBLE_OPEN = 0.12 -- рад
 local MANDIBLE_FREQ = 3 -- рад/сек
-local MANDIBLE_CHEW_OPEN = 0.35 -- рад
-local MANDIBLE_CHEW_FREQ = 16 -- рад/сек
 
 -- Луч опоры: откуда и насколько далеко светить вниз по телу, studs. Запас вверх нужен
 -- для ступенек (плита Бура, крошка Горы): её верх выше номинальной ступни, и луч из-под
@@ -181,13 +179,71 @@ local CLIMB_SPREAD = 1.15
 -- отращивает за собой чёрные палки — именно это видно на плейтесте в первую очередь.
 local MAX_STRETCH = 1.25
 
--- Грызня: насколько передние ноги поднимаются на преграду и как быстро они работают.
--- Поза обязана читаться как «занят делом» , а не как
--- «встал и ждёт».
-local CHEW_RAISE = 0.85 -- studs вверх по телу
-local CHEW_REACH = 0.7 -- studs вперёд, к преграде
-local CHEW_RATE = 6 -- качков в секунду
-local CHEW_SWING = 0.16 -- studs амплитуды
+-- ======================= Грызня: удар по цели =======================
+--
+-- Раньше грызущий жук задирал передние лапы и тряс ими синусом, а жвалы трепетали —
+-- до цели не дотягивалось ничего (жалоба автора: «просто трясут лапами и даже не
+-- взаимодействуют жалами с целью»). Теперь грызня — это УДАР: ноги стоят на земле,
+-- а работает корпус с головой.
+--
+-- Цикл одного укуса, по времени от его пика (момента, когда сервер снял HP):
+--   замах   — корпус отходит назад, нос приподнят, жвалы раскрываются во всю ширь;
+--   бросок  — корпус подаётся вперёд, морда с концами жвал доходит до цели;
+--   хватка  — жвалы сомкнуты на цели, голова рвёт в стороны («вгрызся»);
+--   отдача  — корпус отскакивает назад чуть дальше покоя и возвращается.
+-- Между укусами жук стоит, потянувшись к цели, и медленно жуёт.
+--
+-- Пик удара совпадает с уроном: сервер на каждом укусе прибавляет атрибут Bite
+-- (EnemyRender → EnemyGait.Bite), а период клиент меряет сам по промежуткам между ними —
+-- следующий замах начинается заранее, чтобы бросок дошёл до цели ровно к укусу.
+-- Куда бить — атрибут ChewAt (точка на поверхности цели, ставит сервер на смене цели).
+--
+-- Ноги при этом не шагают: шаг решается по маршрутному кадру, а не по кадру удара,
+-- поэтому бросок не срывает ступни с места — бёдра уезжают вперёд вместе с корпусом,
+-- и лапы сгибаются, упираясь в пол.
+-- Длительности фаз, сек. При частом укусе (Холод снят, быстрый вид) все фазы
+-- ужимаются пропорционально, чтобы цикл влезал в период (см. biteTimes).
+local BITE_WINDUP = 0.26
+local BITE_STRIKE = 0.07
+local BITE_HOLD = 0.16
+local BITE_RECOIL = 0.24
+-- Насколько далеко корпус подаётся к цели, доля распорки ноги: потолок броска и минимум,
+-- который виден даже у жука, уже упёршегося мордой в цель.
+-- Потолок — запас задней лапы до полной вытяжки (у меш-лапы он мал, см. MODEL_STEP_REACH):
+-- бросок дальше сорвал бы задние ступни с места.
+local BITE_LUNGE_MAX = 0.35
+local BITE_LUNGE_MIN = 0.1
+-- На сколько концы жвал заходят в цель, доля распорки: «вгрызся», а не «коснулся».
+local BITE_DEPTH = 0.08
+-- Замах назад — доля броска.
+local BITE_WIND_BACK = 0.3
+-- Тянется к цели между укусами: не больше этой доли распорки. Это уже стойка, а не
+-- удар: ноги под неё переступают (один раз, когда жук начал грызть).
+local BITE_LEAN_MAX = 0.3
+-- Отскок после хватки — доля броска за покой назад (× почерк flinch: броню не качнуть).
+local BITE_KICK = 0.3
+-- Наклон корпуса и головы на броске, рад на единицу броска: нос клюёт вниз к цели,
+-- в замахе — приподнят. Безжвальный вид (хоботок, жало) бьёт головой сильнее.
+local BITE_BODY_PITCH = 0.09
+local BITE_HEAD_PITCH = 0.22
+local BITE_STAB_PITCH = 1.8
+-- Рывок головой в хватке: рад и частота, Гц (× почерк chew).
+local BITE_TUG = 0.13
+local BITE_TUG_FREQ = 9
+-- Жвалы: раскрыты в замахе, сомкнуты (кончики чуть заходят друг за друга) в хватке,
+-- приоткрыты и медленно жуют между укусами. Рад, раскрытие × почерк mandible.open.
+local BITE_GAPE_OPEN = 0.55
+local BITE_GAPE_SHUT = -0.06
+local BITE_GAPE_REST = 0.1
+local BITE_GNAW_FREQ = 4 -- рад/сек
+-- Как быстро жук входит в грызню и выходит из неё, 1/сек: без этого первый кадр
+-- грызни дёргал бы корпус в позу удара.
+local BITE_BLEND = 8
+-- Подвод головы к цели, рад: голова доворачивает к точке ChewAt, пока тело ещё
+-- доворачивается, и чуть кивает вниз/вверх к её высоте.
+local BITE_AIM_PITCH = 0.3
+-- Крылатые в замахе приподнимают сложенные крылья для равновесия, доля размаха.
+local BITE_WING_FLARE = 0.35
 
 -- Поза смерти: насколько лапы разъезжаются наружу и насколько ниже бедра остаётся
 -- ступня. Отличаться от любого дебафф-состояния поза обязана по требованию читаемости:
@@ -463,6 +519,22 @@ local function captureHead(model)
 			table.insert(rig.mandibles, group(mandible, "MandibleJoint"))
 		end
 	end
+	-- Кончик морды в кадре тела: самая передняя точка головы и жвал (у безжвальных —
+	-- хоботка и прочего на голове). Им грызня меряет, сколько осталось до цели.
+	local snout = -math.huge
+	for _, list in { { rig.head }, rig.mandibles } do
+		for _, g in list do
+			for _, entry in g.parts do
+				local half = entry.part.Size * 0.5
+				-- Передний край детали по +Z тела: проекция её полуразмеров на ось Z.
+				local reach = math.abs(entry.rest.RightVector.Z) * half.X
+					+ math.abs(entry.rest.UpVector.Z) * half.Y
+					+ math.abs(entry.rest.LookVector.Z) * half.Z
+				snout = math.max(snout, entry.rest.Position.Z + reach)
+			end
+		end
+	end
+	rig.snout = snout > -math.huge and snout or nil
 	return rig
 end
 
@@ -471,7 +543,7 @@ local function around(point, rotation)
 	return CFrame.new(point) * rotation * CFrame.new(-point)
 end
 
-local function poseHead(state, body, dt, mode, turnRate, headLead)
+local function poseHead(state, body, dt, turnRate, headLead)
 	local rig = state.head
 	local t = state.clock + rig.phase
 	local scale = state.gaitScale or 1
@@ -490,9 +562,21 @@ local function poseHead(state, body, dt, mode, turnRate, headLead)
 		sniffPitch = math.sin(wave * 0.5) * sniff.amp * 0.4 * idle
 	end
 
-	local lead = math.clamp(headLead + sniffYaw, -NECK_MAX, NECK_MAX)
+	-- Грызня (см. biteStep): голова наведена на цель, клюёт к ней на броске и рвёт
+	-- в стороны в хватке. Наведение идёт через ту же пружину шеи, рывок — поверх неё:
+	-- он быстрее, чем шея успевает за ним.
+	local bite = state.bite
+	local blend = bite and bite.blend or 0
+	local aimYaw, aimPitch, tugYaw, strikePitch = 0, 0, 0, 0
+	if blend > 0.001 then
+		aimYaw, aimPitch = bite.aimYaw * blend, bite.aimPitch * blend
+		tugYaw, strikePitch = bite.tug * blend, bite.headPitch * blend
+	end
+
+	local lead = math.clamp(headLead + sniffYaw + aimYaw, -NECK_MAX, NECK_MAX)
 	state.neckYaw = (state.neckYaw or 0) + (lead - (state.neckYaw or 0)) * math.clamp(dt * NECK_FOLLOW, 0, 1)
-	local neck = around(rig.neck, CFrame.Angles(sniffPitch, state.neckYaw, 0))
+	local neck = around(rig.neck, CFrame.Angles(sniffPitch + aimPitch + strikePitch,
+		math.clamp(state.neckYaw + tugYaw, -NECK_MAX, NECK_MAX), 0))
 
 	-- Ускорение вдоль носа — из сглаженной скорости хода (state.velocity считает Step).
 	local forward = body:VectorToObjectSpace(state.velocity or Vector3.zero).Z / scale
@@ -530,10 +614,11 @@ local function poseHead(state, body, dt, mode, turnRate, headLead)
 		end
 	end
 
-	local chewing = mode == "chew"
-	local open = (chewing and MANDIBLE_CHEW_OPEN or MANDIBLE_OPEN) * style.mandible.open
-	local freq = (chewing and MANDIBLE_CHEW_FREQ or MANDIBLE_FREQ) * style.mandible.freq
-	local gape = open * (0.5 + 0.5 * math.sin(t * freq))
+	local gape = MANDIBLE_OPEN * style.mandible.open * (0.5 + 0.5 * math.sin(t * MANDIBLE_FREQ * style.mandible.freq))
+	if blend > 0.001 then
+		-- Жвалы грызни ведёт цикл укуса, а не синус: раскрыты в замахе, сомкнуты на цели.
+		gape += (bite.gape - gape) * blend
+	end
 	for _, mandible in rig.mandibles do
 		if mandible.joint then
 			-- +угол вокруг Y уводит кончик (+Z) к +X: жвала справа раскрывается наружу с плюсом.
@@ -600,10 +685,12 @@ local function captureWings(model, style)
 end
 
 -- openOverride/freqMul — обмахивание стоящего жука на земле (см. rig.idle): размах не
--- тот, с которым он летит, и частота своя.
-local function poseWings(rig, body, openOverride, freqMul)
+-- тот, с которым он летит, и частота своя. lift — крылья просто приподняты на эту долю
+-- размаха, без взмаха (замах грызни, см. BITE_WING_FLARE).
+local function poseWings(rig, body, openOverride, freqMul, lift)
 	local open = openOverride or rig.open
 	local amount = open * rig.angle * math.sin(rig.clock * rig.freq * (freqMul or 1) * math.pi * 2 + rig.phase)
+		+ (lift or 0) * rig.angle
 	local parts, frames = {}, {}
 	for _, wing in rig.wings do
 		-- Поворот вокруг оси нос–хвост: крыло слева и справа поднимаются вместе.
@@ -675,6 +762,141 @@ local function flourish(state, body)
 	end
 	-- Смещение В КАДРЕ ТЕЛА, а не по миру: на стене «вверх» — это от поверхности.
 	return body * CFrame.new(0, rise, 0) * CFrame.Angles(pitch, 0, 0)
+end
+
+-- Фазы укуса, ужатые под период: при частом укусе цикл обязан влезать в промежуток
+-- между укусами, иначе следующий замах начинался бы посреди отдачи.
+local function biteTimes(period)
+	local k = math.min(1, period * 0.9 / (BITE_WINDUP + BITE_STRIKE + BITE_HOLD + BITE_RECOIL))
+	return BITE_WINDUP * k, BITE_STRIKE * k, BITE_HOLD * k, BITE_RECOIL * k
+end
+
+local function smooth(x)
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
+end
+
+-- Удар грызни поверх тела (см. «Грызня: удар по цели»). Считает позу укуса в state.bite
+-- (её же читает голова в poseHead) и возвращает два кадра: стойку (жук потянулся к цели —
+-- по ней ставят ноги) и тело в ударе (стойка плюс бросок — его видно). Ничего не
+-- двигает сам — ни одной лишней детали: корпус и так ставится одним PivotTo, голова
+-- и жвалы и так ставятся каждый кадр.
+--
+-- chewAt — точка на поверхности цели (атрибут ChewAt), может не прийти — тогда жук бьёт
+-- перед собой на среднюю длину броска.
+local function biteStep(state, body, dt, chewing, chewAt, now)
+	local bite = state.bite
+	if not bite then
+		if not chewing then
+			return body, body
+		end
+		bite = { blend = 0, period = 1, gape = BITE_GAPE_REST, tug = 0, headPitch = 0,
+			aimYaw = 0, aimPitch = 0, reach = 0, lean = 0, lunge = 0 }
+		state.bite = bite
+	end
+	bite.blend += ((chewing and 1 or 0) - bite.blend) * math.clamp(dt * BITE_BLEND, 0, 1)
+	if not chewing then
+		bite.peak, bite.next = nil, nil
+		if bite.blend < 0.001 then
+			bite.blend = 0
+			return body, body
+		end
+	end
+
+	local style = state.style or EnemyGaitStyles.Default
+	local strut = state.strut or 1
+	local rig = state.head
+
+	-- Сколько осталось от морды до цели вдоль носа и куда она от головы. Нет точки —
+	-- бьёт перед собой: бросок средний, наведения нет.
+	if chewing then
+		local gap = nil
+		local aimYaw, aimPitch = 0, 0
+		if chewAt then
+			local snout = rig and rig.snout or strut
+			local toTarget = body:PointToObjectSpace(chewAt) - Vector3.new(0, 0, snout)
+			gap = toTarget.Z
+			if toTarget.Magnitude > 1e-3 then
+				-- Голова смотрит по +Z тела: рысканье — к +X, тангаж — вниз при цели ниже морды.
+				local flat = math.sqrt(toTarget.X * toTarget.X + toTarget.Z * toTarget.Z)
+				aimYaw = math.clamp(math.atan2(toTarget.X, math.max(toTarget.Z, strut * 0.5)), -NECK_MAX, NECK_MAX)
+				aimPitch = math.clamp(math.atan2(-toTarget.Y, math.max(flat, strut * 0.5)), -BITE_AIM_PITCH, BITE_AIM_PITCH)
+			end
+		end
+		bite.aimYaw, bite.aimPitch = aimYaw, aimPitch
+		local depth = BITE_DEPTH * strut
+		if gap then
+			-- Тянется к цели на всё, что не дотягивает бросок, — но не дальше BITE_LEAN_MAX.
+			bite.lean = math.clamp(gap - BITE_LUNGE_MAX * strut, 0, BITE_LEAN_MAX * strut)
+			bite.lunge = math.clamp(gap - bite.lean + depth, BITE_LUNGE_MIN * strut, BITE_LUNGE_MAX * strut)
+		else
+			bite.lean = 0
+			bite.lunge = (BITE_LUNGE_MIN + BITE_LUNGE_MAX) * 0.5 * strut
+		end
+		bite.lunge *= style.lunge
+	end
+
+	-- Предсказание: пока укусы приходят, следующий пик (bite.next) — через период после
+	-- прошлого укуса, и замах начинается заранее. Укусы перестали приходить (грызть нечем,
+	-- Холод заморозил темп) — жук не бьёт впустую, а стоит, потянувшись к цели, и жуёт.
+	local windup, strike, hold, recoil = biteTimes(bite.period)
+	local biting = chewing and bite.confirmed ~= nil and now - bite.confirmed < bite.period * 2 + 0.5
+	if biting and bite.next and now >= bite.next then
+		bite.peak = bite.next
+		bite.next += bite.period
+		if now >= bite.next then
+			bite.next = now + bite.period -- кадр провалился на целый период — не догонять пачкой
+		end
+	end
+
+	-- reach — где корпус по оси удара: 1 — бросок дошёл до цели, отрицательный — замах.
+	-- Между укусами жвалы приоткрыты и медленно жуют; от этой же позы идёт замах
+	-- и в неё же возвращается отдача — без скачка на стыке фаз.
+	local gnaw = 0.6 + 0.4 * math.sin((state.clock + state.phase) * BITE_GNAW_FREQ * style.mandible.freq)
+	local reach, gape, tug = 0, BITE_GAPE_REST * style.mandible.open * gnaw, 0
+	local since = bite.peak and now - bite.peak or math.huge
+	local untilNext = nil
+	if since < 0 then
+		untilNext = -since -- первый укус: пик назначен на будущее (см. EnemyGait.Bite)
+	elseif biting and bite.next then
+		untilNext = bite.next - now
+	end
+	local openGape = BITE_GAPE_OPEN * style.mandible.open
+	if since >= 0 and since < hold then
+		-- Хватка: жвалы сомкнуты на цели, голова рвёт затухающими рывками.
+		local x = since / hold
+		reach = 1
+		gape = BITE_GAPE_SHUT
+		tug = math.sin(since * BITE_TUG_FREQ * math.pi * 2) * (1 - x) * BITE_TUG * style.chew
+	elseif since >= hold and since < hold + recoil then
+		-- Отдача: корпус отскакивает за покой назад и возвращается.
+		local x = (since - hold) / recoil
+		reach = (1 - x) * (1 - x) - BITE_KICK * style.flinch * math.sin(x * math.pi)
+		gape = BITE_GAPE_SHUT + (gape - BITE_GAPE_SHUT) * smooth(x)
+	elseif untilNext and untilNext < strike then
+		-- Бросок: из замаха к цели, жвалы схлопываются к самому концу.
+		local x = 1 - untilNext / strike
+		reach = -BITE_WIND_BACK + (1 + BITE_WIND_BACK) * x * x
+		gape = openGape + (BITE_GAPE_SHUT - openGape) * x * x
+	elseif untilNext and untilNext < strike + windup then
+		-- Замах: корпус назад, нос вверх, жвалы раскрываются.
+		local x = smooth(1 - (untilNext - strike) / windup)
+		reach = -BITE_WIND_BACK * x
+		gape += (openGape - gape) * x
+	end
+	bite.reach = reach
+	bite.gape = gape
+	bite.tug = tug
+	-- Безжвальный (хоботок, жало) бьёт головой: клюёт сильнее того, у кого есть жвалы.
+	local stab = (rig and #rig.mandibles == 0) and BITE_STAB_PITCH or 1
+	bite.headPitch = reach * BITE_HEAD_PITCH * stab
+
+	local blend = bite.blend
+	local pitch = reach * BITE_BODY_PITCH * blend
+	local stance = body * CFrame.new(0, 0, bite.lean * blend)
+	-- Корпус клюёт вокруг задних бёдер, а не вокруг середины: зад стоит, перёд подаётся.
+	return stance, stance * CFrame.new(0, 0, reach * bite.lunge * blend)
+		* around(Vector3.new(0, 0, -strut * 0.5), CFrame.Angles(pitch, 0, 0))
 end
 
 -- Где опора под номинальной стуйкой. Нет опоры (жук над краем, висит над проломом) —
@@ -934,6 +1156,58 @@ function EnemyGait.Flinch(model, from, strength)
 	state.flinchVelocity = (state.flinchVelocity or Vector3.zero) + away.Unit * speed
 end
 
+-- Укус грызни случился на сервере (атрибут Bite прибавился, см. EnemyRender). Здесь —
+-- только время: пик удара подтягивается к укусу, а период укусов меряется по промежуткам
+-- между ними (темп у вида свой, Холод его режет — отдельный атрибут для этого не нужен).
+function EnemyGait.Bite(model)
+	local state = states[model]
+	if not state then
+		return
+	end
+	local now = os.clock()
+	local bite = state.bite
+	if not bite then
+		bite = { blend = 0, period = 1, gape = BITE_GAPE_REST, tug = 0, headPitch = 0,
+			aimYaw = 0, aimPitch = 0, reach = 0, lean = 0, lunge = 0 }
+		state.bite = bite
+	end
+	if bite.confirmed then
+		local interval = now - bite.confirmed
+		if interval > 0.15 and interval < 4 then
+			bite.period += (interval - bite.period) * 0.5
+		end
+	end
+	bite.confirmed = now
+
+	local windup, strike = biteTimes(bite.period)
+	local next = bite.next
+	if next and math.abs(now - next) < strike + 0.15 then
+		-- Укус рядом с предсказанным пиком: бросок уже идёт. Пришёл раньше — пик подтягивается
+		-- к нему (бросок чуть ускоряется), позже — пик уже был, прогноз сдвигается от укуса.
+		if now < next then
+			bite.next = now
+		else
+			if not bite.peak or bite.peak < next then
+				bite.peak = next -- кадр походки ещё не успел сам перевести прогноз в пик
+			end
+			bite.next = now + bite.period
+		end
+		return
+	end
+	if bite.peak and now < bite.peak then
+		return -- первый бросок ещё летит
+	end
+	bite.next = now + bite.period
+	if not next then
+		-- Первый укус: пика ещё не было. Полный замах и бросок прямо сейчас — на долю
+		-- секунды позже урона, зато без рывка корпуса в позу замаха; дальше укусы уже
+		-- предсказаны и бьют ровно в такт.
+		bite.peak = now + strike + windup
+	end
+	-- Прогноз разошёлся с укусом (сеть, Холод сменил темп): этот удар пропускается,
+	-- следующий пойдёт уже от него.
+end
+
 -- Один кадр походки. mode: "walk" — идёт или стоит, "chew" — грызёт преграду,
 -- "climb" — лезет через неё.
 --
@@ -955,7 +1229,8 @@ end
 -- wantLook — куда смотрел бы жук без ограничения разворота (LookVector маршрутного кадра).
 -- Нужен, когда разворот уже ограничила толкучка: голова по-прежнему идёт раньше тела.
 -- underTower — жук ползёт под постройкой (атрибут Crawling серверной модели): опора только на полу.
-function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
+-- chewAt — точка на поверхности того, что жук грызёт (атрибут ChewAt), только в режиме "chew".
+function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower, chewAt)
 	local turnRate, headLead = 0, 0
 	if pathCF then
 		-- Доворот тела к направлению маршрута вокруг его «верха» (не Slerp целиком:
@@ -1006,12 +1281,15 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 	-- «Стоит или идёт» нужно и голове (озирание), и телу (дыхание) — считается один раз.
 	idleAmount(state, dt)
 	local body = path
+	-- Кадр, по которому решают ноги: без удара грызни. Бросок подаёт корпус к цели,
+	-- но ступни остаются на месте — лапы сгибаются, а не переступают вслед за броском.
+	local stance = path
 	if pathCF then
-		body = flourish(state, react(state, body, dt))
+		stance, body = biteStep(state, flourish(state, react(state, body, dt)), dt, mode == "chew", chewAt, now)
 		model:PivotTo(body)
 	end
 	if state.head then
-		poseHead(state, body, dt, mode, turnRate, headLead)
+		poseHead(state, body, dt, turnRate, headLead)
 	end
 	-- На земле крылья складываются (Пеликан сел, наевшись). А у видов с wingIdle
 	-- сложенные крылья ещё и обмахивают — но только пока жук стоит: на марше это
@@ -1020,13 +1298,21 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 	if wings then
 		local idleFlap = (wings.idle and (state.idle or 0) > 0.5)
 			and wings.idle.amp * ((state.idle or 0) - 0.5) * 2 or 0
+		-- Замах грызни: сложенные крылья приподнимаются для равновесия и опадают на броске.
+		local bite = state.bite
+		local flare = bite and bite.blend > 0.001 and math.max(0, -bite.reach) / BITE_WIND_BACK
+			* BITE_WING_FLARE * bite.blend or 0
 		if wings.open > 0 then
 			wings.open = math.max(0, wings.open - dt * WING_FOLD)
 			wings.clock += dt
 			poseWings(wings, body, math.max(wings.open, idleFlap))
 		elseif idleFlap > 0.001 then
 			wings.clock += dt
-			poseWings(wings, body, idleFlap, wings.idle.freq / math.max(wings.freq, 0.1))
+			poseWings(wings, body, idleFlap, wings.idle.freq / math.max(wings.freq, 0.1), flare)
+		elseif bite and bite.blend > 0.001 then
+			-- Грызёт (крылья сложены, обмахивания нет): позу крыльев держит корпус удара,
+			-- даже когда приподнимать нечего — иначе они остались бы в кадре прошлого броска.
+			poseWings(wings, body, 0, 0, flare)
 		end
 	end
 	local up = body.UpVector
@@ -1078,25 +1364,16 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 		if mode == "climb" then
 			-- На вертикали жук распластывается: стойка шире и немного ближе к поверхности.
 			rest = Vector3.new(rest.X * CLIMB_SPREAD, rest.Y + 0.35 * modelScale, rest.Z * CLIMB_SPREAD)
-		elseif mode == "chew" and leg.front then
-			-- Передние лапы упёрлись в преграду и работают: подняты, вынесены вперёд
-			-- и качаются. Это то, что отличает «вгрызся» от «встал и ждёт».
-			local swing = math.sin(state.clock * CHEW_RATE * style.chew * math.pi * 2 + leg.index)
-				* CHEW_SWING * modelScale
-			rest = rest + Vector3.new(0, CHEW_RAISE * modelScale + swing, CHEW_REACH * modelScale + swing)
 		end
 
+		-- Бедро — на теле как оно есть (с броском грызни), а стойка и порог шага —
+		-- по кадру без броска (stance): в грызне лапы стоят на земле и гнутся, а не
+		-- переступают за каждым ударом и не машут в воздухе.
 		local hipWorld = body * leg.hip
-		local nominal = body * rest
+		local nominal = stance * rest
+		local stanceHip = stance * leg.hip
 
-		if mode == "chew" and leg.front then
-			-- Передняя лапа при грызне не шагает и не ищет опору под собой: она висит
-			-- на преграде перед мордой. Связь со ступнёй-на-земле рвётся, чтобы после
-			-- грызни она встала заново, а не тянулась к точке, где стояла до упора.
-			leg.planted = nil
-			leg.stepUntil = 0
-			placeLeg(leg, hipWorld, nominal, body)
-		elseif now < leg.stepUntil then
+		if now < leg.stepUntil then
 			-- Нога в переносе: дуга от старой точки к новой.
 			local t = math.clamp(1 - (leg.stepUntil - now) / stepTime, 0, 1)
 			local foot = leg.stepFrom:Lerp(leg.stepTo, t) + up * math.sin(t * math.pi) * stepLift
@@ -1108,7 +1385,7 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 			-- этого порога втрое: ступня упиралась в предел и ехала за телом, вместо того
 			-- чтобы стоять («лапы не успевают за торсом»).
 			local needsStep = planted == nil or (nominal - planted).Magnitude > stride
-				or (leg.stepReach ~= nil and (hipWorld - planted).Magnitude > leg.stepReach)
+				or (leg.stepReach ~= nil and (stanceHip - planted).Magnitude > leg.stepReach)
 
 			-- Ход переноса у трипода: либо группа уже в движении (все лапы троицы
 			-- переступают вместе), либо очередь свободна и подошла эта группа — но не
@@ -1121,7 +1398,7 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower)
 				local aim = leg.stepReach
 					-- Вынос не больше половины шага: иначе ступня встаёт сразу за порогом отхода
 					-- тела от ступни и требует следующий перенос в тот же кадр, как только встала.
-					and plantAhead(hipWorld, nominal, velocity, leg.length * MODEL_STEP_PLANT, stride * 0.5)
+					and plantAhead(stanceHip, nominal, velocity, leg.length * MODEL_STEP_PLANT, stride * 0.5)
 					or nominal
 				leg.stepTo = findSupport(aim, up, modelScale, underTower, model)
 				leg.stepUntil = now + stepTime

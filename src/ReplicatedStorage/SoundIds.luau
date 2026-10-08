@@ -15,6 +15,7 @@ return {
 	MusicBattleIntro = "rbxassetid://128042493108274",
 	MusicBunker = "rbxassetid://71923168169104",
 	MusicMenu = "rbxassetid://130797681556953",
+	MusicSafar = "rbxassetid://113126199367918",
 	Quake = "rbxassetid://83677967959541",
 	RunLose = "rbxassetid://88586223853162",
 	RunWin = "rbxassetid://114830227554497",

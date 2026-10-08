@@ -16,6 +16,8 @@ local WaveEditor = require(ServerScriptService:WaitForChild("WaveEditor"))
 local WaveState = require(ServerScriptService:WaitForChild("WaveState"))
 local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
 local Tutorial = require(ServerScriptService:WaitForChild("Tutorial"))
+local RunControl = require(ServerScriptService:WaitForChild("RunControl"))
+local Levels = require(ReplicatedStorage:WaitForChild("Levels"))
 
 -- Регистр не важен: "a500" и "A500" — один и тот же код.
 -- Смените на свой, если этот где-то засветится.
@@ -51,6 +53,13 @@ local enemiesFolder = game:GetService("Workspace"):WaitForChild("Enemies")
 local TEST_CODE = "TEST"
 local TEST_REWARD = 4242
 
+-- Запускает обучение с нуля для проверки (задача #435): забег уровня-обучения начинается
+-- сразу, а ограничения, снятые кодом TEST, возвращаются — игрок видит обучение как новичок.
+-- Работает в любой момент, в том числе посреди другого забега и после прохождения обучения:
+-- чтобы пройти заново, достаточно ввести код ещё раз. Награды за уровень выдаются только
+-- в первый раз (Plutonium.AwardLevelClear), так что повтор прогресс профиля не трогает.
+local TUTORIAL_CODE = "TUTOR"
+
 RedeemCode.OnServerEvent:Connect(function(player, code)
 	if typeof(code) ~= "string" then
 		return
@@ -69,6 +78,28 @@ RedeemCode.OnServerEvent:Connect(function(player, code)
 		else
 			Notify:FireClient(player, ("Промокод принят: справочник открыт целиком, рецептов — %d"):format(#revealed))
 		end
+		return
+	end
+
+	if upperCode == TUTORIAL_CODE then
+		local levelNumber
+		for number, level in Levels do
+			if level.tutorial == true then
+				levelNumber = number
+				break
+			end
+		end
+		if levelNumber == nil or RunControl.StartLevel == nil then
+			Notify:FireClient(player, "Промокод принят, но обучение сейчас запустить нельзя")
+			return
+		end
+		-- Rearm до запуска: Tutorial.Start в startRun публикует состояние уже без снятых ограничений.
+		Tutorial.Rearm()
+		if not RunControl.StartLevel(levelNumber) then
+			Notify:FireClient(player, "Промокод принят, но обучение сейчас запустить нельзя")
+			return
+		end
+		Notify:FireClient(player, "Промокод принят: обучение запущено. Пройди его до конца, а потом введи код снова, чтобы начать заново")
 		return
 	end
 

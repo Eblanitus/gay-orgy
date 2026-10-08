@@ -8,6 +8,7 @@
 --     (EnemyGait ловит лучом папку TowerDebris). Клеток сетки не занимают, маршрут не меняют.
 --   * крошки — мелочь (винтики, трубки). Разлетаются вместе со всеми и через пару секунд тают:
 --     у Колбы под семь десятков деталей, и оставлять их все на поле незачем.
+--   * корпуса — детали крупнее куска (PIECE_THICK, PIECE_LONG). Тают, как крошки.
 --
 -- Часть кусков несёт материал (атрибут Material): это то, что жуки СОБИРАЮТ. Работяга
 -- поднимает деталь и несёт её на спине к Строителю (Pick/Carry/Drop), Строитель её съедает
@@ -36,6 +37,13 @@ local MAX_PIECES = 48
 
 -- Деталь, которую жук может унести: самая длинная сторона не больше этого.
 local CARRY_MAX = 3.5
+
+-- Кусок, который остаётся лежать, не больше этого: толщина плашмя и самая длинная сторона.
+-- Крупнее — корпус, а не обломок: у Станции дронов и Инжектора это короба по 6–7 студов
+-- в высоту и плиты в 25, и лёжа на поле они читались глухими чёрными блоками посреди
+-- арены (найдено по скринам игрока). Такая деталь падает со всеми и тает, как крошка.
+local PIECE_THICK = 3
+local PIECE_LONG = 12
 
 -- Падение. Не взрыв, а развал: детали в основном валятся вниз и чуть в стороны.
 -- Тяжёлая деталь (объём от HEAVY_VOLUME) почти не отлетает и не подпрыгивает — оседает
@@ -402,8 +410,12 @@ function TowerDebris.Leave(tower, footprint, material)
 	local kept, crumbs = 0, 0
 	for _, part in parts do
 		local role
+		local size = part.Size
+		local _, thick = layFlat(size)
 		if carriers[part] then
 			role = "material"
+		elseif thick > PIECE_THICK or math.max(size.X, size.Y, size.Z) > PIECE_LONG then
+			role = "hull" -- корпус: тает, как крошка, но не занимает их места
 		elseif kept < KEEP then
 			kept += 1
 			role = "piece"
@@ -425,7 +437,6 @@ function TowerDebris.Leave(tower, footprint, material)
 			local angle = outward.Magnitude > 0.2 and math.atan2(outward.Z, outward.X) or math.random() * math.pi * 2
 			angle += (math.random() - 0.5) * 0.8
 			local lift = math.clamp(offset.Y / 4, 0, 1)
-			local size = part.Size
 			local light = 1 - math.clamp(size.X * size.Y * size.Z / HEAVY_VOLUME, 0, 1)
 			local distance = outward.Magnitude + width * between(SCATTER) * lift * (0.3 + 0.7 * light)
 			-- Ложится почти как стояла, лишь немного довернувшись, — а не в случайную сторону:
@@ -451,7 +462,8 @@ function TowerDebris.Leave(tower, footprint, material)
 			end
 			-- Крошки ложатся последними (детали отсортированы от крупных), поэтому на них
 			-- никто не ляжет: им тоже можно занимать место, и они не проваливаются друг в друга.
-			local reserved = plan(flat, up, a, b, floorY)
+			-- Корпус места не бронирует: он растает, и легшее на него повисло бы в воздухе.
+			local reserved = role ~= "hull" and plan(flat, up, a, b, floorY) or nil
 
 			local drop = math.max(from.Position.Y - to.Position.Y, 0)
 			local duration = math.clamp(math.sqrt(drop) * FALL_TIME_PER_ROOT, FALL_TIME[1], FALL_TIME[2])
@@ -461,7 +473,7 @@ function TowerDebris.Leave(tower, footprint, material)
 			launch(part, to, between(ARC_HEIGHT) * lift * light, between(TUMBLE) * light,
 				duration, delay, function()
 				unplan(reserved)
-				if role == "crumb" then
+				if role == "crumb" or role == "hull" then
 					crumbFade(part)
 				else
 					rest(part, flat, up, a, b, floorY, unit)

@@ -233,6 +233,8 @@ function EnemyBehavior.BiteTable(enemy, enemyData, state)
 
 	local weakened = math.clamp(enemy:GetAttribute("Weakened") or 0, 0, 0.9)
 	local bite = math.max(1, math.floor(chewDamage * (1 - weakened) + 0.5))
+	-- Клиенту: удар жвал в такт урону (см. markBite в EnemySpawner).
+	enemy:SetAttribute("Bite", (enemy:GetAttribute("Bite") or 0) + 1)
 	LabTable.Bite(bite)
 	return true
 end
