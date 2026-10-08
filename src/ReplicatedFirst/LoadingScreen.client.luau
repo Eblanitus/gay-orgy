@@ -4,11 +4,12 @@
 --
 -- Все показания настоящие, ничего не крутится для вида (правило «без декоративного
 -- интерфейса» и «без анимации в интерфейсе»): три этапа и полоса, которая растёт
--- ровно на столько, сколько реально загружено.
+-- ровно на столько, сколько реально загружено. Этап, который не удался, честно
+-- помечается «СБОЙ», а не «ОК».
 --   СОЕДИНЕНИЕ — ждём game.Loaded: мир и скрипты доехали до клиента.
 --   РЕСУРСЫ    — ContentProvider:PreloadAsync по мешам, текстурам и звукам игры;
---                счётчик n / N — число загруженных адресов.
---   ТЕРМИНАЛ   — ждём, пока главное меню (MainMenu) соберёт себя; снимаемся, когда оно
+--                полоса растёт по числу загруженных адресов.
+--   МЕНЮ       — ждём, пока главное меню (MainMenu) соберёт себя; снимаемся, когда оно
 --                уже под нами, чтобы между экранами не мелькнул остров лобби.
 --
 -- Внизу экрана — подсказки из LoadingTips (просьба автора): советы по игре, факты
@@ -33,6 +34,7 @@ local C = {
 	text = Color3.fromRGB(228, 236, 244),
 	textDim = Color3.fromRGB(168, 186, 207),
 	textMute = Color3.fromRGB(125, 144, 166),
+	danger = Color3.fromRGB(232, 104, 116),
 }
 local MONO = "rbxasset://fonts/families/RobotoMono.json"
 local BOLD = Font.new(MONO, Enum.FontWeight.Bold)
@@ -114,7 +116,7 @@ end
 local STAGES = {
 	{ key = "connect", name = "СОЕДИНЕНИЕ" },
 	{ key = "assets", name = "РЕСУРСЫ" },
-	{ key = "terminal", name = "ТЕРМИНАЛ" },
+	{ key = "menu", name = "МЕНЮ" },
 }
 local rows = {}
 for _, stage in STAGES do
@@ -129,27 +131,25 @@ for _, stage in STAGES do
 	rows[stage.key] = { name = name, state = state }
 end
 
-local function setStage(key, status, detail)
+-- status: wait / active / done / fail. Состояние — просто слово справа, без скобок.
+local function setStage(key, status)
 	local row = rows[key]
-	local base
-	for _, stage in STAGES do
-		if stage.key == key then
-			base = stage.name
-		end
-	end
-	row.name.Text = detail and (base .. "   " .. detail) or base
 	if status == "done" then
 		row.name.TextColor3 = C.textDim
 		row.state.TextColor3 = C.accent
-		row.state.Text = "[ ОК ]"
+		row.state.Text = "ОК"
+	elseif status == "fail" then
+		row.name.TextColor3 = C.textDim
+		row.state.TextColor3 = C.danger
+		row.state.Text = "СБОЙ"
 	elseif status == "active" then
 		row.name.TextColor3 = C.text
 		row.state.TextColor3 = C.text
-		row.state.Text = "[ ИДЁТ ]"
+		row.state.Text = "ИДЁТ"
 	else
 		row.name.TextColor3 = C.textMute
 		row.state.TextColor3 = C.textMute
-		row.state.Text = "[ -- ]"
+		row.state.Text = "ЖДЁТ"
 	end
 end
 for _, stage in STAGES do
@@ -197,7 +197,7 @@ for i = 1, SEGMENTS do
 	segs[i] = seg
 end
 
--- Доля всей загрузки: соединение — первые 10%, ресурсы — до 90%, терминал — остаток.
+-- Доля всей загрузки: соединение — первые 10%, ресурсы — до 90%, меню — остаток.
 local function setProgress(fraction)
 	fraction = math.clamp(fraction, 0, 1)
 	local lit = math.floor(fraction * SEGMENTS + 0.5)
@@ -283,16 +283,23 @@ if okTips and type(tipLists) == "table" then
 	head.TextXAlignment = Enum.TextXAlignment.Left
 	head.Parent = tipBox
 
-	-- Справа — что будет по нажатию: подсказка и правда листается.
+	-- Справа — что будет по нажатию: подсказка листается. Нажимается вся подсказка, а рамка
+	-- на «ДАЛЕЕ» говорит, что это кнопка (рамки — только у кликабельного).
 	local nextHint = Instance.new("TextLabel")
-	nextHint.Size = UDim2.fromScale(1, 1)
+	nextHint.AnchorPoint = Vector2.new(1, 0)
+	nextHint.Position = UDim2.fromScale(1, 0)
+	nextHint.Size = UDim2.new(0, 76, 1, 0)
 	nextHint.BackgroundTransparency = 1
 	nextHint.FontFace = BODY
 	nextHint.TextSize = MIN_TEXT
-	nextHint.TextColor3 = C.textMute
-	nextHint.TextXAlignment = Enum.TextXAlignment.Right
-	nextHint.Text = "[ ДАЛЕЕ ]"
+	nextHint.TextColor3 = C.accent
+	nextHint.Text = "ДАЛЕЕ"
 	nextHint.Parent = head
+	local nextStroke = Instance.new("UIStroke")
+	nextStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border -- рамка, а не контур букв
+	nextStroke.Color = C.frame
+	nextStroke.Thickness = 1
+	nextStroke.Parent = nextHint
 
 	local body = Instance.new("TextLabel")
 	body.LayoutOrder = 3
@@ -384,21 +391,22 @@ end
 
 local total = #ids
 local done = 0
-setStage("assets", "active", "0 / " .. total)
+setStage("assets", "active")
+local assetsOk = true
 if total > 0 then
-	pcall(ContentProvider.PreloadAsync, ContentProvider, ids, function()
+	assetsOk = pcall(ContentProvider.PreloadAsync, ContentProvider, ids, function()
 		done += 1
-		setStage("assets", "active", done .. " / " .. total)
 		setProgress(0.1 + 0.8 * done / total)
 	end)
 end
-setStage("assets", "done", total .. " / " .. total)
+setStage("assets", assetsOk and "done" or "fail")
 setProgress(0.9)
 
--- ---- 3. Терминал ----
+-- ---- 3. Меню ----
 -- Меню собирает себя в StarterPlayerScripts; ждём его не дольше полуминуты, чтобы
--- ошибка в меню не заперла игрока за экраном загрузки навсегда.
-setStage("terminal", "active")
+-- ошибка в меню не заперла игрока за экраном загрузки навсегда. Не собралось —
+-- этап честно помечается сбоем, а экран всё равно снимается.
+setStage("menu", "active")
 local menu = playerGui:WaitForChild("MainMenu", 30)
 if menu and not menu.Enabled then
 	local deadline = os.clock() + 10
@@ -406,7 +414,11 @@ if menu and not menu.Enabled then
 		task.wait(0.1)
 	end
 end
-setStage("terminal", "done")
+local menuOk = menu ~= nil and menu.Enabled
+setStage("menu", menuOk and "done" or "fail")
 setProgress(1)
+if not (assetsOk and menuOk) then
+	task.wait(2) -- чтобы «СБОЙ» успели увидеть, а не только мигнули перед снятием экрана
+end
 
 gui:Destroy()
