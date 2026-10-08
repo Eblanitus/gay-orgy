@@ -236,6 +236,11 @@ local function runWaves(myGeneration, levelNumber)
 		pendingWave = wave.number
 		WaveState.SetActive(false)
 		WaveReadyRemote:FireAllClients(wave.number, #activeLevelWaves)
+		-- Подсказка уровня (поле hint в Waves): в журнал, пока волна ждёт кнопки, чтобы
+		-- игрок прочитал её до старта, а не посреди боя.
+		if wave.hint then
+			Remotes.Notify:FireAllClients(wave.hint)
+		end
 		while not startRequested do
 			if runEnded or cancelled() then
 				pendingWave = nil

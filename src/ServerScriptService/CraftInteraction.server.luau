@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
+local Recipes = require(ReplicatedStorage:WaitForChild("Recipes"))
 local Inventory = require(ServerScriptService:WaitForChild("Inventory"))
 local Crafting = require(ServerScriptService:WaitForChild("Crafting"))
 -- Прочность стола: «Если стол уничтожен — комбинирование
@@ -166,7 +167,7 @@ RequestBuyElement.OnServerEvent:Connect(function(player, elementKey)
 	end
 
 	if not Tutorial.ElementAllowed(elementKey) then
-		Notify:FireClient(player, TUTORIAL_CLOSED)
+		Notify:FireClient(player, Tutorial.IsRestricted() and TUTORIAL_CLOSED or Tutorial.RulesText())
 		return
 	end
 
@@ -196,6 +197,10 @@ RequestRouletteSpin.OnServerEvent:Connect(function(player, spins)
 	end
 	if Tutorial.IsRestricted() then
 		Notify:FireClient(player, TUTORIAL_CLOSED)
+		return
+	end
+	if not Tutorial.StationAllowed("roulette") then
+		Notify:FireClient(player, Tutorial.RulesText())
 		return
 	end
 	if not LabStations.IsAlive("ElementProducer") then
@@ -267,6 +272,10 @@ RequestUpgrade.OnServerEvent:Connect(function(player, fromKey, toKey)
 		Notify:FireClient(player, TUTORIAL_CLOSED)
 		return
 	end
+	if not Tutorial.StationAllowed("upgrader") then
+		Notify:FireClient(player, Tutorial.RulesText())
+		return
+	end
 	if not LabStations.IsAlive("ElementProducer") then
 		Notify:FireClient(player, "производитель разбит — апгрейдить негде")
 		return
@@ -318,6 +327,12 @@ RequestCraft.OnServerEvent:Connect(function(player, a, b)
 		return
 	end
 	if not Elements[a] or not Elements[b] then
+		return
+	end
+	-- Правила уровня (Бункер — до тира 1): результат проверяется до крафта, ингредиенты целы.
+	local planned = Recipes.Find(a, b)
+	if planned and not Tutorial.TierAllowed(planned) then
+		Notify:FireClient(player, Tutorial.RulesText())
 		return
 	end
 	if not nearTable(player) then

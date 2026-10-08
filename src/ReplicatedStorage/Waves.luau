@@ -1,148 +1,97 @@
--- Уровень 2 «Бункер» (до задачи #298 это был уровень 1): волны 1-3 знакомят с видами тира 0 по одному-два за раз (#41), считая
--- сложность растущей толпой HP (#42). Задача #43: каждая волна теперь может нести несколько
--- групп разных видов одновременно — WaveRunner.runWaves спавнит все group этой записи через
--- отдельные task.spawn, ждёт полного опустения enemiesFolder по всем группам сразу, и только
--- потом переходит к следующей волне. hp у каждой группы переопределяет базовое HP типа из
--- Enemies — здесь везде равно базовому значению самого типа, явно указано для читаемости.
+-- Уровень 2 «Бункер»: только каста разведчиков (Normal, Mini, Armored, Moth), только Колбы
+-- и элементы до тира 1 (правила уровня — поле rules в Levels, проверки — в Tutorial).
+-- Уровень учит двум вещам: летунам (Моль готовит к Лицехвату) и крафту тира 1.
 --
--- Числа — существовавший состав (#42) плюс то, что попросили добавить сверху (#43), число Лицехватов
--- в волнах 4-5 снижено до 10 каждой (#45); hp у Armored всюду 42 (#48, было 30) — следом
--- за базовым значением типа в Enemies, как и везде здесь:
---   волна 1: Normal x5 (было) + Mini x5
---   волна 2: Normal x9 (было) + Mini x5 + Armored x2
---   волна 3: Armored x7 (было) + Facehugger x1 + Mini x2 + Normal x2
---   волна 4: Mini x30 (было) + Facehugger x10 (было 15) + Normal x5
---   волна 5: Facehugger x10 (было 14) + Armored x15 + Mini x30 + Normal x20
+-- Волны тематические, нагрузка нарочно скачет: всплески (5, 8, 11, 13, 15) чередуются
+-- с передышками (6, 9, 10). Стол грызёт только Обычный (у Мини chewDamage = 0, Броня
+-- ходит по периметру), поэтому в толпу Мини и в броню подмешано немного Обычных — иначе
+-- такую волну нельзя проиграть.
 --
--- С задачи #45 турели бронируются под каждого летящего Лицехвата до вылета (Claimed) —
--- два Жука больше не садятся на одну и ту же турель (баг, найденный живым прогоном после #43 —
--- см. CHANGELOG #45), так что с двумя+ турелями на арене залипание больше не грозит. С ровно
--- одной турелью на арене остальные Лицехваты просто ждут (findFreeTurret возвращает nil), а не летят
--- к занятой — каждый по-очереди через освобождающиеся погибших Жуков.
--- ПОРЯДОК ВОЛН — ЭТО ПОРЯДОК КАСТ.
+-- hint — строка в журнал, когда волна ждёт кнопки (WaveRunner): игрок читает её до старта.
+-- Подсказки про крафт стоят перед волнами, где элемент тира 1 заметно выгоднее базового
+-- (офлайн-симулятор: на волне 4 Луже хватает одной Колбы, Земле нужно четыре).
 --
--- Каста — не уровень силы, а роль в колонии, но документ выкладывает их как лестницу
--- обучения: разведчики учат стрелять, работяги — держать периметр, солдаты — останавливать
--- прорыв к лаборатории, особые — ломают по одной привычке каждый. Поэтому виды
--- вводятся каста за кастой, по одному-два новых за волну, а не все сразу.
---
--- hp везде равно базовому значению типа из Enemies — выписано явно для читаемости,
--- как и было до этой задачи.
---
--- Личинки здесь нет нарочно: её кладёт Матка, а не волна.
+-- hp везде равно базовому значению типа из Enemies — выписано явно для читаемости.
 local Waves = {
-	-- ===== Каста 0 — Разведчики =====
-
-	-- «Турель работает. Стрелять — жук уничтожен. Но одного выстрела мало.»
+	-- 1. Знакомство: обычные и мелкие.
 	{ number = 1, groups = {
-		{ enemyType = "Normal", count = 5, hp = 30 },
-		{ enemyType = "Mini",   count = 3, hp = 14 },
-	} },
-	-- Хмурый брон: «периметр тоже нужен. Броня существует.»
-	{ number = 2, groups = {
-		{ enemyType = "Normal",  count = 7, hp = 30 },
-		{ enemyType = "Mini",    count = 5, hp = 14 },
-		{ enemyType = "Armored", count = 2, hp = 42 },
-	} },
-	-- Моль: «не только пол. Юниты умеют летать.»
-	{ number = 3, groups = {
-		{ enemyType = "Armored", count = 5, hp = 42 },
-		{ enemyType = "Moth",    count = 3, hp = 10 },
-		{ enemyType = "Mini",    count = 4, hp = 14 },
 		{ enemyType = "Normal",  count = 4, hp = 30 },
+		{ enemyType = "Mini",    count = 3, hp = 14 },
 	} },
-	-- Лицехват (каста 3, но был в игре до каст и остался на своём месте).
+	-- 2. Броня: бронированные идут по периметру и ломают всё на пути.
+	{ number = 2, groups = {
+		{ enemyType = "Armored", count = 4, hp = 42 },
+		{ enemyType = "Normal",  count = 3, hp = 30 },
+	} },
+	-- 3. Только Моль: первые летуны.
+	{ number = 3, groups = {
+		{ enemyType = "Moth",    count = 8, hp = 10 },
+	}, hint = "ПОДСКАЗКА: летучие жуки! Колба бьёт и по воздуху. Моль летит на свет турелей с элементом" },
+	-- 4. Толпа мелких, в ней прячутся обычные: Колба бьёт ближайшего.
 	{ number = 4, groups = {
-		{ enemyType = "Mini",       count = 25, hp = 14 },
-		{ enemyType = "Facehugger", count = 4,  hp = 12 },
-		{ enemyType = "Normal",     count = 5,  hp = 30 },
-	} },
+		{ enemyType = "Mini",    count = 25, hp = 14 },
+		{ enemyType = "Normal",  count = 5, hp = 30 },
+	}, hint = "ПОДСКАЗКА: скрести два базовых элемента на крафт-столе, выйдет элемент сильнее. Вода + Вода = Лужа: бьёт чаще и замедляет толпу" },
+	-- 5. Смесь всех четырёх, первый всплеск.
 	{ number = 5, groups = {
-		{ enemyType = "Facehugger", count = 7,  hp = 12 },
-		{ enemyType = "Armored",    count = 10, hp = 42 },
-		{ enemyType = "Mini",       count = 30, hp = 14 },
-		{ enemyType = "Normal",     count = 10, hp = 30 },
-		{ enemyType = "Moth",       count = 4,  hp = 10 },
+		{ enemyType = "Normal",  count = 10, hp = 30 },
+		{ enemyType = "Mini",    count = 10, hp = 14 },
+		{ enemyType = "Armored", count = 3, hp = 42 },
+		{ enemyType = "Moth",    count = 4, hp = 10 },
 	} },
-
-	-- ===== Каста 1 — Работяги =====
-
-	-- «Сам по себе — не опаснее разведчика. Группой — проблема.» Сразу восемь:
-	-- меньше пяти они просто не соберутся в группу, и механика не покажется вовсе.
+	-- 6. Передышка.
 	{ number = 6, groups = {
-		{ enemyType = "Worker", count = 8, hp = 45 },
-		{ enemyType = "Normal", count = 6, hp = 30 },
+		{ enemyType = "Normal",  count = 6, hp = 30 },
+		{ enemyType = "Moth",    count = 6, hp = 10 },
 	} },
-	-- Кислотник: один бесполезен, вместе с работягами — стена разрушается быстро.
+	-- 7. Стена брони.
 	{ number = 7, groups = {
-		{ enemyType = "Worker",      count = 10, hp = 45 },
-		{ enemyType = "AcidSpitter", count = 3,  hp = 35 },
-	} },
-	-- Строитель и Медик: связка «работяга несёт обломки — строитель строит и роет
-	-- ямку» замыкается только здесь, когда на поле есть оба сразу.
+		{ enemyType = "Armored", count = 12, hp = 42 },
+		{ enemyType = "Normal",  count = 4, hp = 30 },
+	}, hint = "ПОДСКАЗКА: Земля + Земля = Грунт. Бьёт вдвое сильнее Земли, броня его почти не держит" },
+	-- 8. Большая толпа, всплеск.
 	{ number = 8, groups = {
-		{ enemyType = "Worker",  count = 8, hp = 45 },
-		{ enemyType = "Builder", count = 3, hp = 70 },
-		{ enemyType = "Medic",   count = 2, hp = 40 },
+		{ enemyType = "Mini",    count = 40, hp = 14 },
+		{ enemyType = "Normal",  count = 10, hp = 30 },
 	} },
-	-- Пеликан и Матка. К этой волне на поле уже лежат трупы — есть что есть.
+	-- 9. Рой Моли.
 	{ number = 9, groups = {
-		{ enemyType = "Worker",  count = 6, hp = 45 },
-		{ enemyType = "Pelican", count = 3, hp = 55 },
-		{ enemyType = "Queen",   count = 1, hp = 90 },
-		{ enemyType = "Builder", count = 2, hp = 70 },
+		{ enemyType = "Moth",    count = 20, hp = 10 },
 	} },
-
-	-- ===== Каста 2 — Солдаты =====
-
-	-- «Десять солдат идут десятью разными путями.» Спринтер и Подрывник —
-	-- два самых простых урока: скорость и взрыв.
+	-- 10. Передышка.
 	{ number = 10, groups = {
-		{ enemyType = "Sprinter", count = 8, hp = 18 },
-		{ enemyType = "Bomber",   count = 3, hp = 40 },
-		{ enemyType = "Normal",   count = 6, hp = 30 },
-	} },
-	-- Щитоносец, Координатор, Таран: все трое про геометрию обороны —
-	-- перекрёстный огонь, единый фокус и смещённые стены.
-	{ number = 11, groups = {
-		{ enemyType = "ShieldBearer", count = 4, hp = 60 },
-		{ enemyType = "Coordinator",  count = 1, hp = 45 },
-		{ enemyType = "Worker",       count = 8, hp = 45 },
-		{ enemyType = "Ram",          count = 2, hp = 80 },
-	} },
-	-- Гигант и Заживалка: оба про то, что постоянного слабого огня может не хватить.
-	{ number = 12, groups = {
-		{ enemyType = "Giant",    count = 2,  hp = 320 },
-		{ enemyType = "Knitter",  count = 4,  hp = 60 },
-		{ enemyType = "Sprinter", count = 10, hp = 18 },
-		{ enemyType = "Bomber",   count = 4,  hp = 40 },
-	} },
-
-	-- ===== Каста 3 — Особые =====
-
-	-- Мимик, Тень и Разносчик: три разных способа сломать привычку «турель видит цель
-	-- и бьёт её».
-	{ number = 13, groups = {
-		{ enemyType = "Mimic",    count = 3, hp = 50 },
-		{ enemyType = "Shadow",   count = 6, hp = 25 },
-		{ enemyType = "Absorber", count = 3, hp = 50 },
-	} },
-	-- Эволюционер и Носитель: один заставляет менять элемент, другой — добивать
-	-- его до лаборатории, а не у самого стола.
-	{ number = 14, groups = {
-		{ enemyType = "Evolver", count = 3, hp = 70 },
-		{ enemyType = "Carrier", count = 3, hp = 90 },
 		{ enemyType = "Normal",  count = 8, hp = 30 },
+		{ enemyType = "Armored", count = 6, hp = 42 },
 	} },
-	-- Финал: Кукольник и Архитектор работают по тому, что на поле уже есть —
-	-- раненые и пол, — поэтому идут вместе с большой толпой.
+	-- 11. Большой всплеск: все сразу.
+	{ number = 11, groups = {
+		{ enemyType = "Normal",  count = 20, hp = 30 },
+		{ enemyType = "Mini",    count = 30, hp = 14 },
+		{ enemyType = "Armored", count = 10, hp = 42 },
+		{ enemyType = "Moth",    count = 10, hp = 10 },
+	} },
+	-- 12. Броня с летунами.
+	{ number = 12, groups = {
+		{ enemyType = "Armored", count = 20, hp = 42 },
+		{ enemyType = "Moth",    count = 10, hp = 10 },
+		{ enemyType = "Normal",  count = 6, hp = 30 },
+	} },
+	-- 13. Лавина мелких.
+	{ number = 13, groups = {
+		{ enemyType = "Mini",    count = 60, hp = 14 },
+		{ enemyType = "Normal",  count = 12, hp = 30 },
+	} },
+	-- 14. Рой Моли с прикрытием.
+	{ number = 14, groups = {
+		{ enemyType = "Moth",    count = 30, hp = 10 },
+		{ enemyType = "Normal",  count = 10, hp = 30 },
+	} },
+	-- 15. Финал.
 	{ number = 15, groups = {
-		{ enemyType = "Puppeteer",     count = 2,  hp = 55 },
-		{ enemyType = "HiveArchitect", count = 2,  hp = 80 },
-		{ enemyType = "Facehugger",    count = 6,  hp = 12 },
-		{ enemyType = "Giant",         count = 2,  hp = 320 },
-		{ enemyType = "Worker",        count = 10, hp = 45 },
-		{ enemyType = "Sprinter",      count = 8,  hp = 18 },
+		{ enemyType = "Normal",  count = 30, hp = 30 },
+		{ enemyType = "Mini",    count = 40, hp = 14 },
+		{ enemyType = "Armored", count = 20, hp = 42 },
+		{ enemyType = "Moth",    count = 20, hp = 10 },
 	} },
 }
 
