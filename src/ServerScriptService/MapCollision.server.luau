@@ -39,7 +39,8 @@ local RULES = {
 -- Мелочь (колбы, пробирки, ручки) отсекает грань, плоскую разметку пола — высота верха.
 local BODY_BOTTOM = 0.7 -- верх детали выше этого над полом — в неё можно войти телом
 local MIN_FACE = 2 -- studs²: самая большая грань меньше — мелочь на столах, её не трогаем
-local SKIP = { Ceiling = true, Markers = true } -- потолок прячет камера, маркеры — разметка
+-- потолок прячет камера, маркеры — разметка, GateSoft — световые линии и плоский декор двери (EntranceGate)
+local SKIP = { Ceiling = true, Markers = true, GateSoft = true }
 
 local function noticeable(part, floorY)
 	local size = part.Size
