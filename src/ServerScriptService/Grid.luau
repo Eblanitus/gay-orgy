@@ -830,35 +830,167 @@ function Grid.GetRoute(fromX, fromZ, profile)
 	return Grid.GetRouteTo(fromX, fromZ, profile, exitX, exitZ)
 end
 
--- Схлопывает подряд идущие клетки одного направления в одну точку излома. Маршрут по мелкой
--- сетке — это три сотни клеток, из которых почти все лежат на прямой; жуку нужны только
--- точки поворота, а лишние — это Vector3 на каждую клетку каждого жука на каждый пересчёт.
+-- Видна ли клетка b из клетки a по прямой для тела жука: каждая клетка, которую задевает
+-- отрезок между их центрами, свободна. Карта проходимости уже раздута на полуширину тела
+-- (blockerMap), поэтому «центр прошёл по свободным клеткам» и значит «жук пролез».
+-- Отрезок через угол двух клеток требует свободными обе — тот же запрет щели между углами,
+-- что у диагонального шага в поиске пути.
+local function clearLine(blocked, ax, az, bx, bz)
+	local dx, dz = bx - ax, bz - az
+	local nx, nz = math.abs(dx), math.abs(dz)
+	local sx, sz = dx > 0 and 1 or -1, dz > 0 and 1 or -1
+	local x, z = ax, az
+	local ix, iz = 0, 0
+	while ix < nx or iz < nz do
+		-- Какую грань клетки отрезок пересекает раньше: вертикальную (шаг по x) или
+		-- горизонтальную (по z). Сравнение в целых числах — без накопления ошибки.
+		local decision = (1 + 2 * ix) * nz - (1 + 2 * iz) * nx
+		if decision == 0 then
+			if blocked[key(x + sx, z)] or blocked[key(x, z + sz)] then
+				return false
+			end
+			x += sx
+			z += sz
+			ix += 1
+			iz += 1
+		elseif decision < 0 then
+			x += sx
+			ix += 1
+		else
+			z += sz
+			iz += 1
+		end
+		if blocked[key(x, z)] then
+			return false
+		end
+	end
+	return true
+end
+
+-- Насколько далеко клетка c отходит от отрезка a–b, в клетках.
+local function offLine(a, b, c)
+	local abx, abz = b.x - a.x, b.z - a.z
+	local acx, acz = c.x - a.x, c.z - a.z
+	local length2 = abx * abx + abz * abz
+	local t = length2 > 0 and math.clamp((acx * abx + acz * abz) / length2, 0, 1) or 0
+	local px, pz = acx - abx * t, acz - abz * t
+	return math.sqrt(px * px + pz * pz)
+end
+
+-- Насколько блуждающий маршрут можно спрямлять (см. Simplify), в клетках. Мелкая дрожь
+-- (шаг вбок на клетку) срезается, а сам рисунок блуждания — петли разведчика на десяток
+-- клеток, свой бок у солдата — остаётся.
+local WANDER_TOLERANCE = 2
+
+-- Превращает маршрут по клеткам в точки, между которыми жук идёт по прямой.
+--
+-- Маршрут по сетке ходит только в восемь сторон: по прямой и под 45°. Цель под другим углом
+-- он берёт ступенькой — сначала прямо, потом наискосок, — а блуждание солдата дробило его
+-- на изломы через каждую клетку-две. Схлопывать только подряд идущие клетки одного
+-- направления (как было раньше) — значит оставить каждый такой излом точкой, и жук шёл
+-- зигзагом от точки к точке. Поэтому на свободном полу точки ставятся по прямой видимости:
+-- из точки — сразу в самую дальнюю клетку маршрута, до которой по прямой ничего не мешает.
+-- Отрезок не длиннее того куска маршрута, который он заменяет, — путь только короче.
 --
 -- Клетка, на которой меняется помеха, остаётся точкой всегда: по ней жук останавливается
 -- и начинает грызть (см. EnemySpawner). Схлопни её в прямой отрезок — и он бы ехал сквозь
--- постройку вместо того, чтобы её грызть.
-function Grid.Simplify(path)
+-- постройку вместо того, чтобы её грызть. Внутри постройки (лезет, ползёт) — как раньше,
+-- точка на каждом повороте.
+--
+-- keepShape — маршрут блуждающий (GetRouteTo с wander): спрямляется только там, где
+-- клетки маршрута отходят от прямой не дальше WANDER_TOLERANCE, иначе прямая видимость
+-- стёрла бы само блуждание.
+function Grid.Simplify(path, keepShape)
 	if not path or #path < 3 then
 		return path
 	end
 
 	local blocked = blockerMap()
-	local simplified = { path[1] }
+	local count = #path
 
-	for i = 2, #path - 1 do
+	local function blockerAt(i)
+		local cell = path[i]
+		return blocked[key(cell.x, cell.z)]
+	end
+
+	-- Обязательные точки: концы, смена помехи и повороты по постройке.
+	local hard = { [1] = true, [count] = true }
+	for i = 2, count - 1 do
 		local previous, cell, following = path[i - 1], path[i], path[i + 1]
+		local here = blockerAt(i)
+		local edge = here ~= blockerAt(i - 1) or here ~= blockerAt(i + 1)
 		local turn = (cell.x - previous.x) ~= (following.x - cell.x)
 			or (cell.z - previous.z) ~= (following.z - cell.z)
-		local here = blocked[key(cell.x, cell.z)]
-		local edge = here ~= blocked[key(previous.x, previous.z)]
-			or here ~= blocked[key(following.x, following.z)]
-
-		if turn or edge then
-			table.insert(simplified, cell)
+		if edge or (here and turn) then
+			hard[i] = true
 		end
 	end
 
-	table.insert(simplified, path[#path])
+	-- Можно ли идти из a прямо в b, минуя клетки маршрута между ними.
+	local function straight(a, b)
+		local from, to = path[a], path[b]
+		if not clearLine(blocked, from.x, from.z, to.x, to.z) then
+			return false
+		end
+		if keepShape then
+			for i = a + 1, b - 1 do
+				if offLine(from, to, path[i]) > WANDER_TOLERANCE then
+					return false
+				end
+			end
+		end
+		return true
+	end
+
+	local simplified = { path[1] }
+	local anchor = 1
+	while anchor < count do
+		local stop = anchor + 1
+		while not hard[stop] do
+			stop += 1
+		end
+
+		if blockerAt(anchor + 1) ~= nil then
+			-- Внутри постройки: следующая обязательная точка, без спрямления.
+			table.insert(simplified, path[stop])
+			anchor = stop
+		else
+			-- Свободный пол до stop. Самая дальняя видимая клетка ищется удвоением шага,
+			-- потом делением пополам: проверка прямой стоит её длину, и перебор каждой
+			-- клетки подряд дал бы квадрат от длины маршрута на каждого жука.
+			local good, bad = anchor + 1, nil
+			local probe = 2
+			while true do
+				local j = anchor + probe
+				if j >= stop then
+					if straight(anchor, stop) then
+						good = stop
+					else
+						bad = stop
+					end
+					break
+				end
+				if straight(anchor, j) then
+					good = j
+					probe *= 2
+				else
+					bad = j
+					break
+				end
+			end
+			while bad and bad - good > 1 do
+				local middle = math.floor((good + bad) / 2)
+				if straight(anchor, middle) then
+					good = middle
+				else
+					bad = middle
+				end
+			end
+			table.insert(simplified, path[good])
+			anchor = good
+		end
+	end
+
 	return simplified
 end
 
