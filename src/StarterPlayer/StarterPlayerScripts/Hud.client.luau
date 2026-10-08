@@ -226,7 +226,7 @@ local matterLabel = makeStat("материя", center - SIDE_GAP - SIDE_W, SIDE_
 matterLabel.Text = "0"
 matterLabel.TextColor3 = Theme.color.energy
 
-local waveLabel = makeStat("волна", center - WAVE_W / 2, WAVE_W, Enum.TextXAlignment.Center, valueSize)
+local waveLabel, waveCaption = makeStat("волна", center - WAVE_W / 2, WAVE_W, Enum.TextXAlignment.Center, valueSize)
 waveLabel.Text = "- / -"
 
 local hpLabel, hpCaption = makeStat("прочность", center + SIDE_GAP, SIDE_W, Enum.TextXAlignment.Left, valueSize)
@@ -295,11 +295,54 @@ end
 MobileUI.OnViewportChanged(layoutHeader)
 titlePill:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutHeader)
 
+-- Уровень-поток (Бункер, атрибут RunStream): волна одна, и вместо «1 / 1» в шапке —
+-- сколько жуков ещё осталось (StreamLeft из WaveRunner), а под числом одна полоска,
+-- которая тает по мере того, как поток выбивают.
+local streamBar = Instance.new("Frame")
+streamBar.Name = "StreamLeft"
+streamBar.Size = UDim2.fromScale(1, 1)
+streamBar.BorderSizePixel = 0
+streamBar.BackgroundColor3 = Theme.color.accent
+streamBar.Visible = false
+streamBar.Parent = waveTrack
+
+local function streamMode()
+	return ReplicatedStorage:GetAttribute("RunStream") == true
+end
+
+local function showStream()
+	local total = ReplicatedStorage:GetAttribute("StreamTotal")
+	local left = ReplicatedStorage:GetAttribute("StreamLeft")
+	waveCaption.Text = Theme.Caps("осталось")
+	paintWaveTicks(0, 0)
+	streamBar.Visible = true
+	if typeof(total) == "number" and typeof(left) == "number" and total > 0 then
+		waveLabel.Text = tostring(left)
+		streamBar.Size = UDim2.fromScale(math.clamp(left / total, 0, 1), 1)
+	else
+		-- Дверь ещё закрыта: поток целиком впереди.
+		waveLabel.Text = "-"
+		streamBar.Size = UDim2.fromScale(1, 1)
+	end
+end
+
 local function showWave(waveNumber, totalWaves)
+	if streamMode() then
+		showStream()
+		return
+	end
+	waveCaption.Text = Theme.Caps("волна")
+	streamBar.Visible = false
 	waveLabel.Text = ("%d / %d"):format(waveNumber, totalWaves)
 	paintWaveTicks(waveNumber, math.max(0, math.floor(totalWaves)))
 	Theme.Blink(waveLabel)
 end
+
+ReplicatedStorage:GetAttributeChangedSignal("StreamLeft"):Connect(function()
+	if streamMode() then
+		showStream()
+	end
+end)
 
 -- Цвет Прочности считается от ДОЛИ оставшегося, а не от числа: максимум у стола
 -- свой (LabTable.MAX_HP). Пока стол цел — белым, как прочие показания; тревога
@@ -627,13 +670,27 @@ end
 -- Таймер между волнами (Levels[n].betweenWaves): вместо кнопки — отсчёт до волны на её месте.
 -- Сервер шлёт секунды в WaveReady, клиент досчитывает сам; нажимать нечего.
 local START_TEXT = startWaveButton.Text
+-- На уровне-потоке кнопка одна на весь забег: она открывает дверь, за которой жуки.
+local function startText()
+	return streamMode() and "ОТКРЫТЬ ДВЕРЬ" or START_TEXT
+end
 local countdownUntil = nil
 
 local function stopCountdown()
 	countdownUntil = nil
-	startWaveButton.Text = START_TEXT
+	startWaveButton.Text = startText()
 	startWaveButton.AutoButtonColor = true
 end
+
+-- Атрибут RunStream ставит сервер при входе в уровень; WaveReady может обогнать его.
+ReplicatedStorage:GetAttributeChangedSignal("RunStream"):Connect(function()
+	if not countdownUntil then
+		startWaveButton.Text = startText()
+	end
+	if streamMode() then
+		showStream()
+	end
+end)
 
 local function startCountdown(seconds)
 	countdownUntil = os.clock() + seconds

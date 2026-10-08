@@ -121,6 +121,103 @@ local function waveEnemiesLeft()
 	return false
 end
 
+-- Поток (Waves[i].stream, уровень «Бункер»): одна волна, жуки идут по расписанию от открытия
+-- двери. Расписание: фон участков (segments — по rate жуков в секунду, вид случайный по весам
+-- mix) и всплески (bursts — пачка разом на секунде at). Каждое событие — один SpawnGroup
+-- в своём task.spawn: всплеск сам растягивается на SPAWN_INTERVAL между жуками и не держит фон.
+-- onHint(text) — подсказки hints на своих секундах. Возвращает функцию «досланы ли все жуки».
+-- Ход потока — атрибуты ReplicatedStorage: StreamTotal (всего жуков) и StreamLeft (ещё не убиты:
+-- не вышли из двери + живые), по ним Hud рисует полоску «сколько осталось».
+local function runStream(stream, isCancelled, onHint)
+	local events = {}
+	local t0 = 0
+	for _, segment in stream.segments do
+		local count = math.floor(segment.duration * segment.rate + 0.5)
+		local weights = 0
+		for _, weight in segment.mix do
+			weights += weight
+		end
+		for i = 1, count do
+			local roll = math.random() * weights
+			local pick
+			for enemyType, weight in segment.mix do
+				pick = enemyType
+				roll -= weight
+				if roll <= 0 then
+					break
+				end
+			end
+			table.insert(events, { at = t0 + segment.duration * (i - 0.5) / count, enemyType = pick, count = 1 })
+		end
+		t0 += segment.duration
+	end
+	for _, burst in stream.bursts do
+		for enemyType, count in burst.units do
+			table.insert(events, { at = burst.at, enemyType = enemyType, count = count })
+		end
+	end
+	for _, hint in stream.hints or {} do
+		table.insert(events, { at = hint.at, hint = hint.text })
+	end
+	table.sort(events, function(a, b)
+		return a.at < b.at
+	end)
+
+	local total, spawned = 0, 0
+	for _, event in events do
+		total += event.count or 0
+	end
+	local function onSpawned()
+		spawned += 1
+	end
+	ReplicatedStorage:SetAttribute("StreamTotal", total)
+	ReplicatedStorage:SetAttribute("StreamLeft", total)
+
+	local dispatched, groupsLeft = false, 0
+	task.spawn(function()
+		local started = os.clock()
+		for _, event in events do
+			while os.clock() - started < event.at do
+				if isCancelled() then
+					dispatched = true
+					return
+				end
+				task.wait(0.1)
+			end
+			if event.hint then
+				onHint(event.hint)
+			else
+				local unit = stream.units[event.enemyType] or {}
+				groupsLeft += 1
+				task.spawn(function()
+					EnemySpawner.SpawnGroup(event.enemyType, event.count, unit.hp, isCancelled, unit.armor, onSpawned)
+					groupsLeft -= 1
+				end)
+			end
+		end
+		dispatched = true
+	end)
+	-- Счётчик «осталось», пока идёт поток; живые считаются без Моли (Ambient).
+	task.spawn(function()
+		while not isCancelled() do
+			local alive = 0
+			for _, enemy in enemiesFolder:GetChildren() do
+				if not enemy:GetAttribute("Ambient") then
+					alive += 1
+				end
+			end
+			ReplicatedStorage:SetAttribute("StreamLeft", math.max(0, total - spawned + alive))
+			if dispatched and groupsLeft == 0 and alive == 0 then
+				return
+			end
+			task.wait(0.25)
+		end
+	end)
+	return function()
+		return dispatched and groupsLeft == 0
+	end
+end
+
 -- Сколько секунд до автостарта волны (для WaveReady); nil — волна ждёт кнопки.
 local function countdownLeft()
 	return waveDeadline and math.max(0, math.ceil(waveDeadline - os.clock())) or nil
@@ -249,6 +346,8 @@ local function runWaves(myGeneration, levelNumber)
 	-- Моль вне состава волн (Levels[n].moths): по одной, через случайные паузы, и между
 	-- волнами, и во время них. Начинает с момента, когда волна fromWave ждёт старта.
 	local reachedWave = 0
+	-- os.clock открытия двери на уровне-потоке (moths.after считается от него).
+	local streamStarted = nil
 	local moths = levelInfo.moths
 	if moths then
 		task.spawn(function()
@@ -257,7 +356,8 @@ local function runWaves(myGeneration, levelNumber)
 				if runEnded or cancelled() then
 					return
 				end
-				if reachedWave >= moths.fromWave then
+				local late = not moths.after or (streamStarted ~= nil and os.clock() - streamStarted >= moths.after)
+				if reachedWave >= moths.fromWave and late then
 					EnemySpawner.SpawnAmbient("Moth", moths.life)
 				end
 			end
@@ -330,8 +430,19 @@ local function runWaves(myGeneration, levelNumber)
 				groupsLeft -= 1
 			end)
 		end
+		-- Поток: волна та же, просто её жуки досылаются по расписанию (runStream). Состав,
+		-- заданный игроком в конструкторе волн, идёт обычной волной.
+		local streamDone = function()
+			return true
+		end
+		if wave.stream and not byPlayer then
+			streamStarted = os.clock()
+			streamDone = runStream(wave.stream, spawnCancelled, function(text)
+				Remotes.Notify:FireAllClients(text)
+			end)
+		end
 
-		while groupsLeft > 0 or EnemySpawner.Spawning() > 0 or waveEnemiesLeft() do
+		while groupsLeft > 0 or not streamDone() or EnemySpawner.Spawning() > 0 or waveEnemiesLeft() do
 			if runEnded or cancelled() then
 				return
 			end
@@ -387,6 +498,12 @@ local function startRun(levelNumber)
 	runEnded = false
 	-- Номер уровня — для шапки рамки забега на клиенте (Hud): «УРОВЕНЬ 1  //  ОБУЧЕНИЕ».
 	ReplicatedStorage:SetAttribute("RunLevel", levelNumber)
+	-- Уровень-поток (Бункер): Hud подписывает кнопку «Открыть дверь» и показывает,
+	-- сколько жуков осталось, вместо номера волны.
+	local firstWave = Levels[levelNumber].waves[1]
+	ReplicatedStorage:SetAttribute("RunStream", (firstWave and firstWave.stream ~= nil) or nil)
+	ReplicatedStorage:SetAttribute("StreamTotal", nil)
+	ReplicatedStorage:SetAttribute("StreamLeft", nil)
 	ProfileStats.Add("runs")
 	activeLevelWaves = Levels[levelNumber].waves
 	WaveState.SetActive(false)

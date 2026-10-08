@@ -1775,11 +1775,17 @@ end
 -- Большая группа спавнится несколько секунд, и за это время забег может кончиться и начаться
 -- заново. isCancelled — проверка между спавнами: без неё остаток старой волны досыпался бы
 -- уже в новый забег (см. WaveRunner).
-function EnemySpawner.SpawnGroup(enemyType, count, hpOverride, isCancelled, armorOverride)
+function EnemySpawner.SpawnGroup(enemyType, count, hpOverride, isCancelled, armorOverride, onSpawned)
 	-- Броня — атрибут Armor на самом жуке (его читает Effects.ApplyArmor): ставится поверх
-	-- брони вида сразу после появления, до первого шага.
-	local setup = armorOverride and function(enemy)
-		enemy:SetAttribute("Armor", armorOverride)
+	-- брони вида сразу после появления, до первого шага. onSpawned(enemy) — на каждого
+	-- появившегося (поток Бункера считает по нему, сколько жуков ещё впереди).
+	local setup = (armorOverride or onSpawned) and function(enemy)
+		if armorOverride then
+			enemy:SetAttribute("Armor", armorOverride)
+		end
+		if onSpawned then
+			onSpawned(enemy)
+		end
 	end or nil
 	for i = 1, count do
 		if isCancelled and isCancelled() then

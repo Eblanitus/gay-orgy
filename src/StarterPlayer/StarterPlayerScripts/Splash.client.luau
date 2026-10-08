@@ -195,7 +195,10 @@ Remotes:WaitForChild("WaveReady").OnClientEvent:Connect(function(_waveNumber, to
 	if level and level.name then
 		table.insert(parts, ("«%s»"):format(level.name))
 	end
-	if typeof(totalWaves) == "number" then
+	-- Уровень-поток (Бункер): волна одна, «1 волна» читалась бы странно.
+	if ReplicatedStorage:GetAttribute("RunStream") == true then
+		table.insert(parts, "поток жуков")
+	elseif typeof(totalWaves) == "number" then
 		table.insert(parts, ("%d %s"):format(totalWaves, wavesWord(totalWaves)))
 	end
 	show("НАЧАЛО УРОВНЯ", titleText, #parts > 0 and table.concat(parts, " · ") or nil, Theme.color.accent)
@@ -203,6 +206,10 @@ end)
 
 Remotes:WaitForChild("WaveChanged").OnClientEvent:Connect(function(waveNumber, totalWaves)
 	inRun = true
+	if ReplicatedStorage:GetAttribute("RunStream") == true then
+		show("ДВЕРЬ ОТКРЫТА", "ЖУКИ ИДУТ", "строить можно всё время", Theme.color.accent)
+		return
+	end
 	local titleText = typeof(totalWaves) == "number" and ("ВОЛНА %d/%d"):format(waveNumber, totalWaves)
 		or ("ВОЛНА %d"):format(waveNumber)
 	local last = typeof(totalWaves) == "number" and waveNumber == totalWaves
