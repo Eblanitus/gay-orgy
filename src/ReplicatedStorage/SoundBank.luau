@@ -106,6 +106,7 @@ SoundBank.Hum = {
 	Vaporizer = { sound = "HumArea", pitch = 1.35 },
 	Drill = { sound = "HumArea", pitch = 0.8 },
 	Centrifuge = { sound = "HumArea", pitch = 1.1 },
+	Saw = { sound = "HumArea", pitch = 1.7 }, -- Пила: не площадная, но мотор гудит так же
 }
 
 -- Взрыв — по виду (поле blast у Explosion). drone — подрыв дрона, default — всё прочее

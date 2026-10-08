@@ -255,6 +255,110 @@ local function addAntenna(building)
 	return true
 end
 
+-- Пила (задача #436): поворотный стол с диском, рычаг и вращение диска и вальцов.
+-- Сервер ставит только атрибуты (TowerBuilder.fireSaw): AimAngle — куда развернуть стол
+-- (тот же мировой угол, что у антенны), Sawing — пила режет жука. Остальное здесь, тем же
+-- доводом, что у створки и антенны: гонять CFrame с сервера — репликация ради картинки.
+--
+-- Что крутится, задаёт модель (TowerBuilder.buildSawModel): папка SawHead — стол, SawArm —
+-- рычаг на шарнире ArmHinge, атрибут Whirl — вращение детали вокруг своей оси (WhirlAxis —
+-- вокруг оси другой детали: вырезы диска ходят вокруг ступицы).
+local SAW_CHOP = math.rad(15) -- на сколько опускается рычаг, когда пила режет
+local SAW_CHOP_TIME = 0.18 -- сек на ход рычага вниз или вверх
+local SAW_SHAKE = math.rad(2.5) -- дрожь рычага, пока диск в жуке
+local SAW_RUSH = 3 -- во сколько раз быстрее крутится диск, когда режет
+local saws = {}
+local sawConnection = nil
+
+local function sawStep(dt)
+	local now = os.clock()
+	for index = #saws, 1, -1 do
+		local entry = saws[index]
+		if entry.model.Parent then
+			local published = entry.model:GetAttribute("AimAngle")
+			local wanted = published and ((published - entry.restYaw) % TAU) or entry.angle
+			entry.angle, entry.velocity = Aiming.Step(entry.angle, entry.velocity, wanted, dt,
+				entry.turnSpeed, entry.turnAccel)
+
+			local sawing = entry.model:GetAttribute("Sawing") == true
+			local step = dt / SAW_CHOP_TIME
+			entry.chop = sawing and math.min(entry.chop + step, 1) or math.max(entry.chop - step, 0)
+			local whirl = dt * (sawing and SAW_RUSH or 1)
+
+			local turn = CFrame.new(entry.axis) * CFrame.Angles(0, entry.angle, 0) * CFrame.new(-entry.axis)
+			local lowered = -(SAW_CHOP * entry.chop + (sawing and SAW_SHAKE * math.sin(now * 40) or 0))
+			local arm = entry.hinge * CFrame.Angles(lowered, 0, 0) * entry.hinge:Inverse()
+			for _, leaf in entry.parts do
+				local frame = leaf.rest
+				if leaf.whirl then
+					leaf.phase = (leaf.phase + leaf.whirl * whirl) % TAU
+					frame = leaf.axis * CFrame.Angles(leaf.phase, 0, 0) * leaf.axis:Inverse() * frame
+				end
+				if leaf.inArm then
+					frame = arm * frame
+				end
+				leaf.part.CFrame = turn * frame
+			end
+		else
+			table.remove(saws, index) -- пилу снесли
+		end
+	end
+
+	if #saws == 0 and sawConnection then
+		sawConnection:Disconnect()
+		sawConnection = nil
+	end
+end
+
+local function addSaw(building)
+	local towerType = building:GetAttribute("Type")
+	if towerType and towerType ~= "Saw" then
+		return true -- не пила: ждать нечего
+	end
+	local head = building:FindFirstChild("SawHead")
+	local arm = head and head:FindFirstChild("SawArm")
+	local hinge = arm and arm:FindFirstChild("ArmHinge")
+	if not (building.PrimaryPart and hinge and towerType) then
+		return false -- модель ещё не доехала целиком — повторит watchFor
+	end
+
+	local parts = {}
+	for _, part in head:GetDescendants() do
+		if part:IsA("BasePart") then
+			local speed = part:GetAttribute("Whirl")
+			local axisPart = speed and head:FindFirstChild(part:GetAttribute("WhirlAxis") or part.Name, true)
+			table.insert(parts, {
+				part = part,
+				rest = part.CFrame,
+				inArm = part:IsDescendantOf(arm),
+				whirl = speed and math.rad(speed),
+				axis = axisPart and axisPart.CFrame,
+				phase = 0,
+			})
+		end
+	end
+
+	local towerData = Towers[towerType]
+	local look = building:GetPivot().LookVector
+	table.insert(saws, {
+		model = building,
+		axis = building.PrimaryPart.Position,
+		restYaw = math.atan2(-look.X, -look.Z),
+		angle = 0,
+		velocity = 0,
+		turnSpeed = towerData.turnSpeed,
+		turnAccel = towerData.turnAccel,
+		hinge = hinge.CFrame,
+		chop = 0,
+		parts = parts,
+	})
+
+	if not sawConnection then
+		sawConnection = RunService.RenderStepped:Connect(sawStep)
+	end
+	return true
+end
+
 -- Наведение башни турелей (Колба): плавно поворачивает башню туда, куда велел сервер.
 -- Сервер ставит на модель атрибут AimAngle — угол на ту точку, в которую он собрался
 -- стрелять (см. TowerBuilder.publishAim), а сам поворот в кадре рисует клиент. До задачи #70
@@ -986,6 +1090,7 @@ local function attachVisuals(building)
 	watchFor(building, addTracker)
 	watchFor(building, addHatch)
 	watchFor(building, addAntenna)
+	watchFor(building, addSaw)
 	watchFor(building, addRigTracker)
 
 	local anchor = waitForAnchor(building)
