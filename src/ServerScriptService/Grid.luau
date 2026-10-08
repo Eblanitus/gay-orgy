@@ -83,6 +83,10 @@ end
 -- его и будет грызть. Иначе выбор был бы «какая постройка записалась последней».
 local blockers = nil
 
+-- Следы построек прямоугольниками в мировых координатах (Grid.Footprints). Тоже ленивый кэш,
+-- сбрасывается вместе с картой проходимости.
+local footprints = nil
+
 -- Поля волн по паре «профиль преодоления + цель» (см. buildField и fieldFor).
 local fields = {}
 
@@ -173,6 +177,7 @@ end
 
 local function invalidate()
 	blockers = nil
+	footprints = nil
 
 	-- Поля остаются на месте устаревшими — по ним жуки идут, пока фон не досчитает новые.
 	for cacheKey, field in fields do
@@ -204,6 +209,33 @@ end
 -- GetOccupant отвечает на другой вопрос — «что тут реально стоит», и нужен стройке.
 function Grid.GetBlocker(cx, cz)
 	return blockerMap()[key(cx, cz)]
+end
+
+-- Настоящие следы построек — по прямоугольнику на постройку, в мировых осях: minX/maxX/minZ/maxZ
+-- (край крайней клетки следа, без запаса на тело) и сама постройка. Нужны толкучке (Crowd):
+-- телу жука надо не пускать в след капсулу целиком, а карта проходимости (GetBlocker) и
+-- GetOccupant отвечают только про центр: широкий жук, прижатый соседями, въезжал бы в
+-- постройку боком и носом, пока его центр не коснётся следа.
+-- Таблицу не менять: она общая и живёт до следующей смены занятости.
+function Grid.Footprints()
+	if footprints then
+		return footprints
+	end
+
+	footprints = {}
+	local half = Arena.cellSize / 2
+	for building, at in buildings do
+		local centre = Arena.ToWorld(at.x, at.z)
+		local span = at.reach * Arena.cellSize + half
+		table.insert(footprints, {
+			minX = centre.X - span,
+			maxX = centre.X + span,
+			minZ = centre.Z - span,
+			maxZ = centre.Z + span,
+			building = building,
+		})
+	end
+	return footprints
 end
 
 -- Свободно ли место под постройку с центром в этой клетке: весь след должен помещаться

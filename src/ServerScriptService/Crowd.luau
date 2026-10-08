@@ -295,42 +295,95 @@ end
 -- (LabTable.REACH больше полудлины стола), чем край стола плюс его морда.
 local TABLE_SAMPLES = 5 -- точек вдоль оси капсулы: от брюшка до головы
 
+-- Насколько капсула тела (ось от брюшка до головы, радиус radius) вдавлена в прямоугольник
+-- и куда её выталкивать: глубина и единичная нормаль в XZ. Глубина 0 — не касается.
+-- Общая для стола и следов построек: у обоих тело твёрдое, а габарит — прямоугольник в мировых осях.
+local function rectPush(me, x, z, fx, fz, radius, minX, maxX, minZ, maxZ)
+	local depth, nx, nz = 0, 0, 0
+	for i = 0, TABLE_SAMPLES - 1 do
+		local along = me.back + (me.front - me.back) * i / (TABLE_SAMPLES - 1)
+		local px, pz = x + fx * along, z + fz * along
+		local qx, qz = math.clamp(px, minX, maxX), math.clamp(pz, minZ, maxZ)
+		local dx, dz = px - qx, pz - qz
+		local distance = math.sqrt(dx * dx + dz * dz)
+		if distance > 1e-3 then
+			if radius - distance > depth then
+				depth, nx, nz = radius - distance, dx / distance, dz / distance
+			end
+		else
+			-- Точка внутри прямоугольника: наружу через ближайший край.
+			local exits = {
+				{ px - minX, -1, 0 }, { maxX - px, 1, 0 },
+				{ pz - minZ, 0, -1 }, { maxZ - pz, 0, 1 },
+			}
+			local best = exits[1]
+			for _, exit in exits do
+				if exit[1] < best[1] then
+					best = exit
+				end
+			end
+			if best[1] + radius > depth then
+				depth, nx, nz = best[1] + radius, best[2], best[3]
+			end
+		end
+	end
+	return depth, nx, nz
+end
+
 local function outOfTable(me, x, z, fx, fz)
 	local half = Arena.tableHalf
 	if not half or (half.X <= 0 and half.Z <= 0) then
 		return x, z
 	end
 	local cx, cz = Arena.table.X, Arena.table.Z
-	local minX, maxX = cx - half.X, cx + half.X
-	local minZ, maxZ = cz - half.Z, cz + half.Z
-	local radius = me.radius
+
+	for _ = 1, HARD_ITERATIONS do
+		local depth, nx, nz = rectPush(me, x, z, fx, fz, me.radius,
+			cx - half.X, cx + half.X, cz - half.Z, cz + half.Z)
+		if depth <= 0 then
+			break
+		end
+		x += nx * (depth + 1e-3)
+		z += nz * (depth + 1e-3)
+	end
+	return x, z
+end
+
+-- Тело в постройку не входит. Карта проходимости (occupied) держит от постройки только ЦЕНТР
+-- жука — и запас в ней рассчитан на жука стандартной ширины: широкий Хмурый брон стоял центром
+-- у края следа, а боком и носом сидел в постройке. С bare (жук упёрся грызть и подходит
+-- вплотную, см. occupied) запаса нет совсем: толкучка соседей вдавливала грызущих в Пилу,
+-- пока центр не касался следа, и тела наползали на неё.
+--
+-- Поэтому капсула выталкивается из настоящего следа (Grid.Footprints), как из стола. Радиус —
+-- без BODY_CLEARANCE: грызущий останавливается носом в CHEW_CONTACT от грани (EnemySpawner),
+-- а запас в зазор не считается. Под постройкой, под которой жук пролезает, он не мешает.
+-- За кадр сдвигает не дальше BUILDING_PUSH_SPEED: перелёт в след, оставшийся с ходьбы
+-- по запасу, снимается за пару кадров, а не рывком.
+local BUILDING_SLACK = 0.25 -- studs: допустимое вдавливание, чтобы касание грызущего не дрожало
+local BUILDING_PUSH_SPEED = 40 -- studs/сек: больше расталкивания (PUSH_SPEED), чтобы толпа не вдавила
+
+local function outOfBuildings(me, x, z, fx, fz, dt)
+	local footprints = Grid.Footprints()
+	if #footprints == 0 then
+		return x, z
+	end
+
+	local radius = me.radius - BODY_CLEARANCE - BUILDING_SLACK
+	-- Дальше этого от центра ни одна точка тела не достаёт: быстрый отсев далёких построек.
+	local reach = radius + math.max(math.abs(me.front), math.abs(me.back))
+	local startX, startZ = x, z
+	local limit = BUILDING_PUSH_SPEED * dt
 
 	for _ = 1, HARD_ITERATIONS do
 		local depth, nx, nz = 0, 0, 0
-		for i = 0, TABLE_SAMPLES - 1 do
-			local along = me.back + (me.front - me.back) * i / (TABLE_SAMPLES - 1)
-			local px, pz = x + fx * along, z + fz * along
-			local qx, qz = math.clamp(px, minX, maxX), math.clamp(pz, minZ, maxZ)
-			local dx, dz = px - qx, pz - qz
-			local distance = math.sqrt(dx * dx + dz * dz)
-			if distance > 1e-3 then
-				if radius - distance > depth then
-					depth, nx, nz = radius - distance, dx / distance, dz / distance
-				end
-			else
-				-- Точка внутри стола: наружу через ближайший край.
-				local exits = {
-					{ px - minX, -1, 0 }, { maxX - px, 1, 0 },
-					{ pz - minZ, 0, -1 }, { maxZ - pz, 0, 1 },
-				}
-				local best = exits[1]
-				for _, exit in exits do
-					if exit[1] < best[1] then
-						best = exit
-					end
-				end
-				if best[1] + radius > depth then
-					depth, nx, nz = best[1] + radius, best[2], best[3]
+		for _, rect in footprints do
+			if x + reach > rect.minX and x - reach < rect.maxX
+				and z + reach > rect.minZ and z - reach < rect.maxZ
+				and not Grid.FitsUnder(rect.building, me.bodyHeight) then
+				local d, dx, dz = rectPush(me, x, z, fx, fz, radius, rect.minX, rect.maxX, rect.minZ, rect.maxZ)
+				if d > depth then
+					depth, nx, nz = d, dx, dz
 				end
 			end
 		end
@@ -339,6 +392,13 @@ local function outOfTable(me, x, z, fx, fz)
 		end
 		x += nx * (depth + 1e-3)
 		z += nz * (depth + 1e-3)
+	end
+
+	local moved = math.sqrt((x - startX) ^ 2 + (z - startZ) ^ 2)
+	if moved > limit and moved > 0 then
+		local share = limit / moved
+		x = startX + (x - startX) * share
+		z = startZ + (z - startZ) * share
 	end
 	return x, z
 end
@@ -896,6 +956,11 @@ function Crowd.Resolve(model, desired, dt, facing, bare)
 
 	if not caged and occupied(x, z, me, bare) then
 		z = homeZ
+	end
+
+	-- Телом в постройку тоже нет (см. outOfBuildings): центр проверен выше, а капсула — здесь.
+	if not caged then
+		x, z = outOfBuildings(me, x, z, fx, fz, dt)
 	end
 
 	-- Внутрь стола — тоже нет (см. outOfTable).
