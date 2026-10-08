@@ -118,6 +118,48 @@ local function faceAhead(position, heading, reach)
 	return nil
 end
 
+-- Куда испуганный может шагнуть. Паника ведёт его строго прочь от того, что стреляет, и
+-- ни сетки, ни стен не знает: центр жука упирался только в край пола (Crowd.clampXZ, без
+-- отступа на тело), и он вбегал в стену задом, а в постройку — насквозь. Поэтому шаг режется
+-- по осям: центр не подходит к краю пола ближе длины тела (margin), и жук не входит в след
+-- постройки. Стоящему уже в запасе постройки (подполз грызть) выходить из него можно, а вглубь
+-- — нет. Вдоль преграды он скользит. Поза в коридоре за краем пола не страдает: границу,
+-- за которой он уже стоит, не двигаем, а только не пускаем его дальше за неё.
+local function fleeConfine(position, target, margin, bodyHeight)
+	local half = Arena.cellSize / 2
+	local southWest = Arena.ToWorld(1, 1)
+	local northEast = Arena.ToWorld(Arena.cols, Arena.rows)
+	local minX, maxX = southWest.X - half + margin, northEast.X + half - margin
+	local minZ, maxZ = southWest.Z - half + margin, northEast.Z + half - margin
+
+	local x = math.clamp(target.X, math.min(position.X, minX), math.max(position.X, maxX))
+	local z = math.clamp(target.Z, math.min(position.Z, minZ), math.max(position.Z, maxZ))
+
+	local homeX, homeZ = Arena.ToCell(position)
+	local inReserve = Grid.GetBlocker(homeX, homeZ) ~= nil
+
+	local function blockedAt(px, pz)
+		local cx, cz = Arena.ToCell(Vector3.new(px, 0, pz))
+		local occupant = Grid.GetOccupant(cx, cz)
+		if occupant and not Grid.FitsUnder(occupant, bodyHeight) then
+			return true
+		end
+		if inReserve then
+			return false
+		end
+		local blocker = Grid.GetBlocker(cx, cz)
+		return blocker ~= nil and not Grid.FitsUnder(blocker, bodyHeight)
+	end
+
+	if blockedAt(x, position.Z) then
+		x = position.X
+	end
+	if blockedAt(x, z) then
+		z = position.Z
+	end
+	return Vector3.new(x, target.Y, z)
+end
+
 local FACEHUGGER_ATTACH_RANGE = 2 -- studs: на этом расстоянии до турели Лицехват считается «долетел и присосался»
 
 -- Потолок раскрытых клеток A* до точки заявки (укрытие, место за вожаком, засада): точка
@@ -796,7 +838,8 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				if move.Magnitude > 1e-3 then
 					heading = move.Unit
 				end
-				desired = position + move
+				local nose = (enemy:GetAttribute("FootFront") or 0) + (enemy:GetAttribute("FootRadius") or 1)
+				desired = fleeConfine(position, position + move, nose, profile.bodyHeight)
 				setVelocity(heading * fleeSpeed)
 				-- Отбежав, он сошёл с маршрута: путь надо будет считать заново.
 				dirty = true
