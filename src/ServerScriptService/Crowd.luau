@@ -958,8 +958,25 @@ function Crowd.Resolve(model, desired, dt, facing, bare)
 		z = homeZ
 	end
 
+	-- Шаг, который сам по себе ведёт В постройку (отдача, взрыв, притяжение: desired = позиция плюс
+	-- толчок, а толчок построек не знает), проверки выше не останавливают: они откатывают ось
+	-- к homeX/homeZ, то есть к тому же desired, и caged при этом считается по нему же — жуки,
+	-- особенно лёгкий Мини, пролетали сквозь платформы. Здесь откат — к прошлой позиции, а «внутри»
+	-- считается по ней же: кто уже стоит в следе (возведён вокруг, подлаз, крыша) — не трогаем.
+	-- Только настоящий след (Grid.GetOccupant), без запаса на тело: запас жук держит выше и мог
+	-- уже стоять в нём, а на шаг в запасе откат вставал бы насмерть.
+	local inside = insideBuilding(me.x, me.z)
+	if not inside then
+		if occupied(x, me.z, me, true) then
+			x = me.x
+		end
+		if occupied(x, z, me, true) then
+			z = me.z
+		end
+	end
+
 	-- Телом в постройку тоже нет (см. outOfBuildings): центр проверен выше, а капсула — здесь.
-	if not caged then
+	if not inside then
 		x, z = outOfBuildings(me, x, z, fx, fz, dt)
 	end
 
