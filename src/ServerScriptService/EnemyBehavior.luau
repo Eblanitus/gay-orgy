@@ -57,8 +57,12 @@ end
 -- общая грызня в EnemySpawner останавливает его перед любой постройкой на пути.
 local PERIMETER_INSET = 8 -- studs от края поля
 
-local function perimeterCells()
-	local inset = math.max(2, math.floor(PERIMETER_INSET / Grid.CellSize))
+-- Свой отступ у каждого жука (extra клеток поверх общего): все углы у броней разные,
+-- и волна не сходится в одну точку, а идёт полосой.
+local PERIMETER_LANES = 3
+
+local function perimeterCells(extra)
+	local inset = math.max(2, math.floor(PERIMETER_INSET / Grid.CellSize)) + (extra or 0)
 	local minX, maxX = inset, Grid.Cols - inset
 	local minZ, maxZ = inset, Grid.Rows - inset
 	return {
@@ -147,7 +151,7 @@ function EnemyBehavior.Goal(enemy, enemyData, state)
 	if goal == "perimeter" then
 		local ring = state.ring
 		if not ring then
-			ring = perimeterCells()
+			ring = perimeterCells((state.wanderSeed or 0) % PERIMETER_LANES)
 			state.ring = ring
 			-- Начинает с ближайшего угла, а не всегда с первого: иначе все броны
 			-- идут одной колонной в один и тот же угол. И обходит круг в свою сторону:

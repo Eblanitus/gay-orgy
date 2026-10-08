@@ -63,6 +63,9 @@ local spawning = 0
 -- её занимает сосед, и вся волна сходилась к одному месту и стояла.
 local WAYPOINT_REACH_SHARE = 1
 local WAYPOINT_PASS_BODIES = 4
+-- Угол периметра засчитан, когда центр жука не дальше этой доли «пивот → нос» от точки:
+-- чуть больше единицы, чтобы упёршийся в соседей носом всё равно считался дошедшим.
+local PERIMETER_REACH = 1.6
 local ENEMY_Y = 1.5 -- studs над полом: на этой высоте пивота ноги жука касаются земли
 local REPATH_INTERVAL = 0.25 -- сек; чаще пересчитывать маршрут незачем даже при активной стройке
 -- Очищенный идёт к движущейся цели, поэтому маршрут у него стареет и без стройки.
@@ -1015,6 +1018,12 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				if not reached then
 					local body = enemy:GetAttribute("FootRadius") or 1
 					if distance <= body * WAYPOINT_REACH_SHARE then
+						reached = true
+					elseif index >= #points and goalMode == "perimeter"
+						and distance <= (body + (enemy:GetAttribute("FootFront") or 0)) * PERIMETER_REACH then
+						-- Угол периметра — не цель, а путевая точка: ему достаточно дотянуться
+						-- до неё носом. Центром в точку не встать (там сосед), и волна Хмурых
+						-- бронов сходилась звездой к одному углу, носами в него, и стояла.
 						reached = true
 					elseif index < #points and distance <= body * WAYPOINT_PASS_BODIES then
 						local ahead = flat(points[index + 1] - points[index])
