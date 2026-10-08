@@ -764,9 +764,12 @@ return function(deps)
 		local FLOOR = -1.6
 		-- Платформа — крест (у каждой турели своя фигура платформы): центр — ванна, лучи — пандусы.
 		-- Стол над ней — тот же крест, поэтому фигура читается и сверху, с камеры игрока.
-		local EDGE = 2.0 -- конец луча: ровно край следа постройки (5 клеток по 0.8, Arena.ReachFor)
-		local ARM = 0.9 -- полуширина луча; она же полуширина центральной ванны
-		local DECK_EDGE = 1.8 -- конец луча стола: губа пандуса выглядывает из-под него
+		-- Платформа (поддон, стол, камера) шире самой пилы в PLATFORM раз: камера должна
+		-- впускать Стандарта, а не только мелочь, а пилу растить незачем.
+		local PLATFORM = (towerData.platformScale or towerData.modelScale or 1) / (towerData.modelScale or 1)
+		local EDGE = 2.0 * PLATFORM -- конец луча: ровно край следа постройки (Arena.ReachFor по footprint)
+		local ARM = 0.9 * PLATFORM -- полуширина луча; она же полуширина центральной ванны
+		local DECK_EDGE = 1.8 * PLATFORM -- конец луча стола: губа пандуса выглядывает из-под него
 		-- Модель строится в мелких единицах и в конце растягивается в SCALE раз (под размер
 		-- Колбы). Камера — нет: её высота в игре ровно подлаз (crawlGap), поэтому здесь она
 		-- задана делённой на SCALE — после растяжки выйдет ровно crawlGap.
@@ -851,7 +854,7 @@ return function(deps)
 
 		-- ===== ВЫТЯЖКА: тянет воздух из камеры, с ним и мелочь =====
 		-- На левом луче стола.
-		local fanAt = Vector3.new(-1.22, DECK_TOP + 0.25, 0)
+		local fanAt = Vector3.new(-math.max(1.22, (ARM + DECK_EDGE) / 2), DECK_TOP + 0.25, 0)
 		addPart(model, "FanHousing", Vector3.new(0.5, 1.15, 1.15), CFrame.new(fanAt) * STAND_UP, mid, metal, cylinder)
 		-- Снизу под вытяжкой — решётка в днище стола: через неё воздух уходит из камеры.
 		addPart(model, "FanIntake", Vector3.new(0.03, 1.0, 1.0), CFrame.new(fanAt.X, DECK_BOTTOM - 0.015, fanAt.Z) * STAND_UP,
@@ -1020,8 +1023,8 @@ return function(deps)
 		end
 
 		-- Пульт на правом луче стола: коробка и лампа «готова».
-		addPart(model, "Panel", Vector3.new(0.6, 0.35, 0.8), CFrame.new(1.35, DECK_TOP + 0.175, -0.3), dark, metal)
-		accent(addPart(model, "PanelLamp", Vector3.new(0.12, 0.05, 0.5), CFrame.new(1.35, DECK_TOP + 0.37, -0.3),
+		addPart(model, "Panel", Vector3.new(0.6, 0.35, 0.8), CFrame.new((ARM + DECK_EDGE) / 2, DECK_TOP + 0.175, -0.3), dark, metal)
+		accent(addPart(model, "PanelLamp", Vector3.new(0.12, 0.05, 0.5), CFrame.new((ARM + DECK_EDGE) / 2, DECK_TOP + 0.37, -0.3),
 			glow, neon))
 
 		-- Растяжка вокруг точки на полу под осью: пол остаётся полом, ось — осью.
