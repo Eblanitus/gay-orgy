@@ -50,7 +50,8 @@ RequestBuildTower.OnServerEvent:Connect(function(player, cx, cz, buildingType, t
 		return
 	end
 	if not Tutorial.TowerAllowed(buildingType) then
-		Notify:FireClient(player, ("%s на обучении закрыт — пока только Колба"):format(Towers[buildingType].name))
+		Notify:FireClient(player, ("%s на %s закрыт — пока только Колба"):format(
+			Towers[buildingType].name, Tutorial.IsRestricted() and "обучении" or "этом уровне"))
 		return
 	end
 
