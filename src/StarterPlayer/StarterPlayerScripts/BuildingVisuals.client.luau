@@ -290,6 +290,12 @@ local function sawStep(dt)
 					leaf.phase = (leaf.phase + leaf.whirl * dt * rush) % TAU
 					frame = leaf.axis * CFrame.Angles(leaf.phase, 0, 0) * leaf.axis:Inverse() * frame
 				end
+				if leaf.belt then
+					-- Конвейер: деталь едет к центру и через шаг ленты встаёт назад, на место
+					-- соседки, — глазу лента бесконечная.
+					leaf.phase = (leaf.phase + leaf.belt * dt) % leaf.wrap
+					frame = leaf.rest + leaf.toward * leaf.phase
+				end
 				if leaf.inArm then
 					frame = arm * frame
 				end
@@ -317,20 +323,35 @@ local function addSaw(building)
 	if not (hinge and towerType and arm:FindFirstChild("BladeSlot4") and building:FindFirstChild("FanBlade4")) then
 		return false -- модель ещё не доехала целиком — повторит watchFor
 	end
+	-- И ленты конвейеров: сколько на них деталей, модель пишет сама (BeltParts).
+	local beltCount = 0
+	for _, part in building:GetDescendants() do
+		if part:IsA("BasePart") and part:GetAttribute("Belt") then
+			beltCount += 1
+		end
+	end
+	if beltCount < (building:GetAttribute("BeltParts") or 0) then
+		return false
+	end
 
 	local parts = {}
 	for _, part in building:GetDescendants() do
 		if part:IsA("BasePart") then
 			local inArm = part:IsDescendantOf(arm)
 			local speed = part:GetAttribute("Whirl")
-			if inArm or speed then
+			local belt = part:GetAttribute("Belt")
+			if inArm or speed or belt then
 				local axisPart = speed and building:FindFirstChild(part:GetAttribute("WhirlAxis") or part.Name, true)
+				local drum = belt and building:FindFirstChild(part:GetAttribute("BeltAxis") or "", true)
 				table.insert(parts, {
 					part = part,
 					rest = part.CFrame,
 					inArm = inArm,
 					whirl = speed and math.rad(speed),
 					axis = axisPart and axisPart.CFrame,
+					belt = drum and belt,
+					wrap = part:GetAttribute("BeltWrap") or 1,
+					toward = drum and -drum.CFrame.LookVector,
 					phase = 0,
 				})
 			end
