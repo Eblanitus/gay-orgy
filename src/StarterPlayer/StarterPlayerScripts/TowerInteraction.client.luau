@@ -585,7 +585,8 @@ buildHintPad.Parent = buildHint
 -- Бур (Drill) в списке намеренно отсутствует: по решению автора (задача #53) он скрыт
 -- из стройки. Сама турель цела и рабочая (Towers.Drill, модель и режим стрельбы на месте) —
 -- вернуть её игроку значит дописать "Drill" в эту строку, больше ничего не нужно.
-local ALL_TOWERS_ORDER = { "Ballista", "Wall", "Mortar", "Injector", "Vaporizer", "Centrifuge" }
+-- Пила (Saw, задача #436) — седьмая, на последней цифровой клавише.
+local ALL_TOWERS_ORDER = { "Ballista", "Wall", "Mortar", "Injector", "Vaporizer", "Centrifuge", "Saw" }
 local NUMBER_KEYS = {
 	Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four,
 	Enum.KeyCode.Five, Enum.KeyCode.Six, Enum.KeyCode.Seven,

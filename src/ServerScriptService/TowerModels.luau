@@ -712,6 +712,213 @@ return function(deps)
 		return model
 	end
 
+	-- Торцовочная пила (Пила, задача #436): переделка Бура. Внизу — плита и ловушка-воронка
+	-- вокруг неё, сверху на поворотном столе — сама пила: стойка с шарниром, рычаг
+	-- с мотором, кожух и диск, перед диском — приёмный лоток с вальцами.
+	--
+	-- Что двигается, ведёт клиент (BuildingVisuals.addSaw), сервер только ставит атрибуты:
+	--   папка SawHead — всё, что стоит на поворотном столе: доворачивается на AimAngle;
+	--   папка SawArm внутри неё — рычаг с диском: опускается на шарнире ArmHinge, пока
+	--     висит атрибут Sawing (пила режет жука);
+	--   атрибут Whirl на детали — вращение вокруг СВОЕЙ оси (локальная X цилиндра),
+	--     градусов в секунду; WhirlAxis — имя детали, чья ось берётся вместо своей
+	--     (вырезы диска крутятся вокруг ступицы, а не на месте).
+	-- Свой поворот, а не Spin: Spin крутит деталь вокруг вертикали модели, а диск и вальцы
+	-- вращаются вокруг горизонтальной оси.
+	--
+	-- Ловушка шире клетки нарочно — это и есть видимая зона, из которой пила тянет мелочь.
+	-- CanQuery у неё выключен: по воронке жуки ходят, как по полу, и лучи сквозь неё проходят.
+	local function buildSawModel(towerData)
+		local model = Instance.new("Model")
+		model.Name = towerData.name
+		addRoot(model)
+
+		local dark = Color3.fromRGB(46, 49, 55) -- корпус
+		local mid = Color3.fromRGB(70, 75, 83) -- стойки и ободки
+		local light = Color3.fromRGB(112, 118, 128) -- рёбра и кромки
+		local black = Color3.fromRGB(24, 25, 28) -- щели, вальцы, рукоять
+		local panel = Color3.fromRGB(214, 222, 230) -- светлые панели кожуха
+		local blade = Color3.fromRGB(176, 182, 190)
+		local glow = ACCENT_NEUTRAL_COLOR
+		local metal, plastic, neon = Enum.Material.Metal, Enum.Material.SmoothPlastic, Enum.Material.Neon
+		local cylinder = Enum.PartType.Cylinder
+		local side = Grid.BuildSize - 0.4
+		local accents = {}
+
+		local function accent(part)
+			table.insert(accents, part)
+			return part
+		end
+
+		-- ===== ПЛИТА =====
+		addPart(model, "Plate", Vector3.new(side, 0.35, side), CFrame.new(0, -1.425, 0),
+			dark, Enum.Material.DiamondPlate).CanCollide = true
+		for i, at in { { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 } } do
+			local along = at[1] == 0
+			addPart(model, "PlateEdge" .. i,
+				along and Vector3.new(side, 0.12, 0.14) or Vector3.new(0.14, 0.12, side),
+				CFrame.new(at[1] * (side / 2 - 0.07), -1.2, at[2] * (side / 2 - 0.07)), light, metal)
+		end
+
+		-- ===== ЛОВУШКА: воронка вокруг плиты =====
+		-- Кольцо скошенных пластин, наклонённых к центру, — с камеры читается как воронка.
+		-- На каждой четвёртой — неоновая стрелка внутрь: туда пила тянет.
+		local TRAP_SEGMENTS = 16
+		local trapInner, trapOuter = side / 2 + 0.25, side / 2 + 2.3
+		local trapWidth = (trapOuter - trapInner)
+		local trapMid = (trapInner + trapOuter) / 2
+		local chord = 2 * math.pi * trapOuter / TRAP_SEGMENTS + 0.05
+		for i = 1, TRAP_SEGMENTS do
+			local angle = 2 * math.pi * (i - 1) / TRAP_SEGMENTS
+			local frame = CFrame.Angles(0, angle, 0) * CFrame.new(0, -1.5, -trapMid) * CFrame.Angles(math.rad(-6), 0, 0)
+			local leaf = addPart(model, "Trap" .. i, Vector3.new(chord, 0.08, trapWidth), frame,
+				i % 2 == 0 and dark or mid, Enum.Material.DiamondPlate)
+			leaf.CanQuery = false
+			leaf.CanTouch = false
+			if i % 4 == 1 then
+				-- Шеврон «>» острием к центру: две планки под углом.
+				for s = -1, 1, 2 do
+					local arrow = accent(addPart(model, "TrapArrow" .. i .. (s < 0 and "L" or "R"),
+						Vector3.new(0.12, 0.04, 0.8),
+						frame * CFrame.new(s * 0.22, 0.06, 0.1) * CFrame.Angles(0, math.rad(s * -35), 0),
+						glow, neon))
+					arrow.CanQuery = false
+					arrow.CanTouch = false
+				end
+			end
+		end
+		-- Кромка воронки: тонкий светлый обод по внешнему краю.
+		for i = 1, TRAP_SEGMENTS do
+			local angle = 2 * math.pi * (i - 0.5) / TRAP_SEGMENTS
+			local rim = addPart(model, "TrapRim" .. i, Vector3.new(chord - 0.05, 0.1, 0.12),
+				CFrame.Angles(0, angle + math.pi / TRAP_SEGMENTS, 0) * CFrame.new(0, -1.42, -trapOuter),
+				light, metal)
+			rim.CanQuery = false
+			rim.CanTouch = false
+		end
+
+		-- ===== ПОВОРОТНЫЙ СТОЛ И ВСЁ, ЧТО НА НЁМ =====
+		local head = Instance.new("Folder")
+		head.Name = "SawHead"
+		head.Parent = model
+		local arm = Instance.new("Folder")
+		arm.Name = "SawArm"
+		arm.Parent = head
+
+		addPart(head, "Turntable", Vector3.new(0.25, 3.1, 3.1), CFrame.new(0, -1.13, 0) * STAND_UP,
+			mid, metal, cylinder)
+		accent(addPart(head, "TurntableRing", Vector3.new(0.08, 3.2, 3.2), CFrame.new(0, -1.13, 0) * STAND_UP,
+			glow, neon, cylinder))
+		-- Прорезь под диском: в неё он уходит, когда рычаг опущен.
+		addPart(head, "Kerf", Vector3.new(0.22, 0.04, 2.2), CFrame.new(0, -0.995, -0.35), black, plastic)
+
+		-- Направляющая (упор) по обе стороны прорези — та самая «лапа» торцовки.
+		for s = -1, 1, 2 do
+			addPart(head, "Fence" .. (s < 0 and "L" or "R"), Vector3.new(1.05, 0.55, 0.18),
+				CFrame.new(s * 0.72, -0.72, 0.35), light, metal)
+			addPart(head, "FenceRib" .. (s < 0 and "L" or "R"), Vector3.new(0.12, 0.4, 0.4),
+				CFrame.new(s * 1.12, -0.8, 0.55), mid, metal)
+		end
+
+		-- Приёмный лоток: щёки воронкой к прорези и два вальца, которые затягивают жука под диск.
+		for s = -1, 1, 2 do
+			addPart(head, "MouthCheek" .. (s < 0 and "L" or "R"), Vector3.new(0.14, 0.38, 1.3),
+				CFrame.new(s * 0.78, -0.82, -1.15) * CFrame.Angles(0, math.rad(s * -32), 0), dark, metal)
+			addPart(head, "MouthCheekTop" .. (s < 0 and "L" or "R"), Vector3.new(0.18, 0.06, 1.3),
+				CFrame.new(s * 0.78, -0.6, -1.15) * CFrame.Angles(0, math.rad(s * -32), 0), light, metal)
+		end
+		for i, z in { -1.3, -0.95 } do
+			local roller = addPart(head, "Roller" .. i, Vector3.new(1.0 - i * 0.15, 0.2, 0.2), CFrame.new(0, -0.9, z),
+				black, plastic, cylinder)
+			roller:SetAttribute("Whirl", -360)
+		end
+
+		-- Стойка с шарниром рычага позади диска.
+		addPart(head, "Column", Vector3.new(0.9, 1.4, 0.7), CFrame.new(0, -0.3, 1.25), dark, metal)
+		for i = 1, 3 do
+			addPart(head, "ColumnVent" .. i, Vector3.new(0.6, 0.08, 0.04),
+				CFrame.new(0, -0.65 + i * 0.22, 1.61), black, plastic)
+		end
+		accent(addPart(head, "ColumnLamp", Vector3.new(0.5, 0.08, 0.04), CFrame.new(0, -0.82, 1.61), glow, neon))
+		-- Цилиндр по X без поворота: по его локальной X клиент и опускает рычаг.
+		addPart(arm, "ArmHinge", Vector3.new(1.1, 0.42, 0.42), CFrame.new(0, 0.45, 1.25),
+			light, metal, cylinder)
+
+		-- ===== РЫЧАГ: мотор, кожух, диск =====
+		addPart(arm, "ArmBeam", Vector3.new(0.34, 0.3, 1.2), CFrame.new(0, 0.62, 0.62), mid, metal)
+		local motorAt = Vector3.new(0.62, 0.6, 0.3)
+		addPart(arm, "Motor", Vector3.new(0.85, 0.8, 0.8), CFrame.new(motorAt), dark, metal, cylinder)
+		for i = 1, 3 do
+			addPart(arm, "MotorRib" .. i, Vector3.new(0.06, 0.88, 0.88),
+				CFrame.new(motorAt + Vector3.new(-0.3 + i * 0.17, 0, 0)), light, metal, cylinder)
+		end
+		addPart(arm, "MotorCap", Vector3.new(0.1, 0.6, 0.6), CFrame.new(motorAt + Vector3.new(0.47, 0, 0)),
+			black, plastic, cylinder)
+		accent(addPart(arm, "MotorLamp", Vector3.new(0.04, 0.24, 0.24), CFrame.new(motorAt + Vector3.new(0.53, 0, 0)),
+			glow, neon, cylinder))
+
+		-- Кожух — полукруг над диском: снаружи дуга из скошенных пластин, с боков — щёки
+		-- ступеньками (своего полукруга среди примитивов нет, как и конуса у Бура). Низ и перед
+		-- диска открыты: этим краем он и режет.
+		local bladeAt = Vector3.new(0, 0.2, -0.25)
+		local GUARD_R = 1.25
+		local GUARD_PLATES = 9
+		local fromAngle, toAngle = math.rad(-110), math.rad(70) -- от «назад-вниз» через верх к переду
+		local step = (toAngle - fromAngle) / GUARD_PLATES
+		for i = 1, GUARD_PLATES do
+			local angle = fromAngle + step * (i - 0.5)
+			addPart(arm, "GuardArc" .. i, Vector3.new(0.56, 0.1, 2 * GUARD_R * math.sin(step / 2) + 0.04),
+				CFrame.new(bladeAt + Vector3.new(0, GUARD_R * math.cos(angle), -GUARD_R * math.sin(angle)))
+					* CFrame.Angles(-angle, 0, 0),
+				panel, plastic)
+		end
+		for s = -1, 1, 2 do
+			local tag = s < 0 and "L" or "R"
+			for i, row in { { 0, 0.45 }, { 0.45, 0.8 }, { 0.8, 1.05 }, { 1.05, 1.22 } } do
+				local mid = (row[1] + row[2]) / 2
+				local width = 2 * math.sqrt(GUARD_R * GUARD_R - mid * mid) - 0.08
+				addPart(arm, "GuardSide" .. i .. tag, Vector3.new(0.04, row[2] - row[1], width),
+					CFrame.new(bladeAt + Vector3.new(s * 0.26, mid, 0)), panel, plastic)
+			end
+			for i = 1, 3 do
+				addPart(arm, "GuardVent" .. i .. tag, Vector3.new(0.04, 0.07, 0.5),
+					CFrame.new(bladeAt + Vector3.new(s * 0.29, 0.25 + i * 0.16, 0.35)), black, plastic)
+			end
+		end
+		accent(addPart(arm, "GuardStripe", Vector3.new(0.3, 0.06, 0.7),
+			CFrame.new(bladeAt + Vector3.new(0, GUARD_R + 0.07, 0.05)), glow, neon))
+
+		-- Рукоять сверху спереди: две стойки и перекладина.
+		for s = -1, 1, 2 do
+			addPart(arm, "HandlePost" .. (s < 0 and "L" or "R"), Vector3.new(0.14, 0.45, 0.14),
+				CFrame.new(s * 0.2, 1.5, -0.85), black, plastic)
+		end
+		addPart(arm, "HandleGrip", Vector3.new(0.6, 0.2, 0.2), CFrame.new(0, 1.75, -0.85), black, plastic, cylinder)
+
+		-- Диск: полотно, зубчатый венец (акцент — горит цветом элемента), ступица и вырезы,
+		-- по которым видно, что он вращается.
+		local hub = addPart(arm, "BladeHub", Vector3.new(0.24, 0.5, 0.5), CFrame.new(bladeAt), black, metal, cylinder)
+		hub:SetAttribute("Whirl", 900)
+		local disc = addPart(arm, "Blade", Vector3.new(0.08, 2.2, 2.2), CFrame.new(bladeAt), blade, metal, cylinder)
+		disc:SetAttribute("Whirl", 900)
+		local teeth = accent(addPart(arm, "BladeTeeth", Vector3.new(0.05, 2.32, 2.32), CFrame.new(bladeAt),
+			glow, neon, cylinder))
+		teeth:SetAttribute("Whirl", 900)
+		for i = 1, 4 do
+			local angle = math.rad(90 * i + 20)
+			local slot = addPart(arm, "BladeSlot" .. i, Vector3.new(0.1, 0.12, 0.42),
+				CFrame.new(bladeAt + Vector3.new(0, math.cos(angle) * 0.62, math.sin(angle) * 0.62))
+					* CFrame.Angles(-angle, 0, 0),
+				black, plastic)
+			slot:SetAttribute("Whirl", 900)
+			slot:SetAttribute("WhirlAxis", "BladeHub")
+		end
+
+		bindElementTint(model, accents, 0, 0, ACCENT_NEUTRAL_COLOR)
+
+		return model
+	end
+
 	-- Центробежный распылитель (Центрифуга): стеклянный резервуар с элементом и горизонтально
 	-- вращающаяся головка с форсунками на нём.
 	local function buildCentrifugeModel(towerData)
@@ -766,6 +973,7 @@ return function(deps)
 		Injector = buildInjectorMeshModel, -- авторский меш; откат — buildInjectorModel
 		Vaporizer = buildVaporizerModel,
 		Drill = buildDrillModel,
+		Saw = buildSawModel,
 		Centrifuge = buildCentrifugeModel,
 	}
 

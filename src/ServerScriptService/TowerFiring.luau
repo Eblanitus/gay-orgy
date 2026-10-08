@@ -19,6 +19,8 @@ return function(deps)
 	local DamageDealtRemote = deps.DamageDealtRemote
 	local Towers = deps.Towers
 	local Elements = deps.Elements
+	-- Высота спины жука: по ней Пила решает, мелкий ли он (см. fireSaw).
+	local EnemyBody = require(game:GetService("ReplicatedStorage"):WaitForChild("EnemyBody"))
 
 	local function meshMuzzle(tower, gun, aimAngle, aimPitch)
 		local nose = tower:FindFirstChild("MiniBarrelC", true)
@@ -563,10 +565,109 @@ return function(deps)
 		return true
 	end
 
+	-- Пила (задача #436). Не площадь и не снаряд: раз в тик ловушка тянет к турели всех
+	-- МЕЛКИХ наземных жуков в радиусе, а того, кто дотянулся до лотка, пила хватает и пилит,
+	-- пока не убьёт. Жертва одна: пока диск занят, остальных только тянет. Крупных
+	-- (спина выше saw.swallowHeight) не трогает вовсе — засосать их пила не может.
+	--
+	-- Тянет тем же атрибутом Push, что и притяжение элементов (его тратит EnemySpawner,
+	-- через ту же толкучку — в постройку жука не затащит). Держит станом (StunnedUntil):
+	-- пока его пилят, жук не идёт и не грызёт, а отпустили — через saw.hold пошёл дальше.
+	-- Куда смотреть столу с диском и пилит ли он — атрибуты AimAngle и Sawing,
+	-- картинку по ним рисует клиент (BuildingVisuals.addSaw).
+	local sawVictims = setmetatable({}, { __mode = "k" })
+	local AIM_PUBLISH = math.rad(3) -- мельче не шлём угол: лишняя репликация ради дрожи стола
+
+	local function flatTo(from, to)
+		local delta = to - from
+		return Vector3.new(delta.X, 0, delta.Z)
+	end
+
+	local function sawFace(tower, center, enemy)
+		local angle = Aiming.AngleTo(center, enemy:GetPivot().Position)
+		local previous = tower:GetAttribute("AimAngle")
+		if angle and (not previous or math.abs(Aiming.Delta(previous, angle)) > AIM_PUBLISH) then
+			tower:SetAttribute("AimAngle", angle)
+		end
+	end
+
+	local function setSawing(tower, sawing)
+		if tower:GetAttribute("Sawing") ~= sawing then
+			tower:SetAttribute("Sawing", sawing)
+		end
+	end
+
+	local function fireSaw(tower, towerData, elementData)
+		local plan = towerData.saw
+		local center = tower:GetPivot().Position
+		local now = os.clock()
+
+		-- Схваченный жук: жив, на земле и всё ещё у лотка — пилим дальше.
+		local victim = sawVictims[tower]
+		if victim and not (victim.Parent and (victim:GetAttribute("HP") or 0) > 0
+			and not victim:GetAttribute("Flying")
+			and flatTo(center, victim:GetPivot().Position).Magnitude <= plan.grab + 1) then
+			victim = nil
+			sawVictims[tower] = nil
+		end
+
+		-- Свободна — тянем мелочь и хватаем ближайшего, кто дотянулся.
+		local nearest, nearestGap = nil, math.huge
+		local pulled = false
+		for _, enemy in Targeting.EnemiesInRange(center, towerData.range, enemiesFolder, aimFilter(towerData, tower)) do
+			if enemy ~= victim and EnemyBody.TopHeight(enemy) <= plan.swallowHeight then
+				local toSaw = flatTo(enemy:GetPivot().Position, center)
+				local gap = toSaw.Magnitude
+				if gap > 1e-3 then
+					-- У воронки тянет в полную силу, у края радиуса — вдвое слабее.
+					local strength = plan.pull * (1 - 0.5 * math.clamp(gap / towerData.range, 0, 1))
+					local offset = toSaw.Unit * math.min(strength, math.max(0, gap - 4))
+					if offset.Magnitude > 1e-3 then
+						enemy:SetAttribute("Push", (enemy:GetAttribute("Push") or Vector3.zero) + offset)
+						pulled = true
+					end
+				end
+				if not victim and gap <= plan.grab and gap < nearestGap then
+					nearest, nearestGap = enemy, gap
+				end
+			end
+		end
+
+		if not victim and nearest then
+			victim = nearest
+			sawVictims[tower] = victim
+			print(("[%s] затянула %s"):format(tower.Name, victim.Name))
+		end
+
+		if not victim then
+			setSawing(tower, false)
+			return pulled
+		end
+
+		sawFace(tower, center, victim)
+		setSawing(tower, true)
+		victim:SetAttribute("StunnedUntil", now + plan.hold)
+		victim:SetAttribute("Stunned", true)
+
+		-- Урон диска — той же моделью, что у площадных: броня, элемент, эффекты.
+		victim:SetAttribute("HitFrom", center)
+		local dealt = Effects.HitDamage(victim, elementData, Effects.ShotDamage(towerData.damage, elementData))
+		if dealt > 0 then
+			local hp = math.max(0, (victim:GetAttribute("HP") or 0) - dealt)
+			victim:SetAttribute("HP", hp)
+			DamageDealtRemote:FireAllClients(victim:GetPivot().Position, dealt, true)
+		end
+		if elementData then
+			Effects.Apply(victim, elementData, dealt, center, tower)
+		end
+		return true
+	end
+
 	local FIRE_MODES = {
 		projectile = fireProjectile,
 		drone = fireDrone, -- до задачи #75 ключ звался mortar, а функция — fireMortar
 		area = fireArea,
+		saw = fireSaw,
 	}
 
 	-- Запускает боевой цикл башни. Работает для любой построенной башни независимо —
