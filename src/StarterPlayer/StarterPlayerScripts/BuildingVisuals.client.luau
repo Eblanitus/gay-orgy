@@ -266,6 +266,7 @@ end
 -- оси другой детали: вырезы диска ходят вокруг ступицы, лопасти — вокруг ступицы вытяжки).
 local SAW_DROP_TIME = 0.3 -- сек на ход рычага вниз или вверх
 local SAW_SHAKE = math.rad(1.5) -- дрожь рычага, пока диск в жуке
+local SAW_PUSH_TIME = 0.5 -- сек на ход толкателя: выдвинуться или отойти
 local SAW_RUSH = 3 -- во сколько раз быстрее крутится диск, когда режет
 local saws = {}
 local sawConnection = nil
@@ -282,6 +283,11 @@ local function sawStep(dt)
 			local eased = entry.drop * entry.drop * (3 - 2 * entry.drop)
 			local lowered = -(entry.swing * eased + (sawing and entry.drop >= 1 and SAW_SHAKE * math.sin(now * 40) or 0))
 			local arm = entry.hinge * CFrame.Angles(lowered, 0, 0) * entry.hinge:Inverse()
+			local feed = entry.model:GetAttribute("Feed")
+			for side, push in entry.push do
+				local out = feed == side and not sawing
+				entry.push[side] = out and math.min(push + dt / SAW_PUSH_TIME, 1) or math.max(push - dt / SAW_PUSH_TIME, 0)
+			end
 
 			for _, leaf in entry.parts do
 				local frame = leaf.rest
@@ -295,6 +301,12 @@ local function sawStep(dt)
 					-- соседки, — глазу лента бесконечная.
 					leaf.phase = (leaf.phase + leaf.belt * dt) % leaf.wrap
 					frame = leaf.rest + leaf.toward * leaf.phase
+				end
+				if leaf.pusher then
+					-- Толкатель: выдвигается, пока сервер подаёт жука с его стороны и диск
+					-- поднят; режет — отходит, чтобы не попасть под диск.
+					local push = entry.push[leaf.pusher]
+					frame = leaf.rest + leaf.toward * (leaf.stroke * leaf.share * push * push * (3 - 2 * push))
 				end
 				if leaf.inArm then
 					frame = arm * frame
@@ -330,7 +342,13 @@ local function addSaw(building)
 			beltCount += 1
 		end
 	end
-	if beltCount < (building:GetAttribute("BeltParts") or 0) then
+	local pushCount = 0
+	for _, part in building:GetDescendants() do
+		if part:IsA("BasePart") and part:GetAttribute("Pusher") then
+			pushCount += 1
+		end
+	end
+	if beltCount < (building:GetAttribute("BeltParts") or 0) or pushCount < (building:GetAttribute("PusherParts") or 0) then
 		return false
 	end
 
@@ -340,9 +358,11 @@ local function addSaw(building)
 			local inArm = part:IsDescendantOf(arm)
 			local speed = part:GetAttribute("Whirl")
 			local belt = part:GetAttribute("Belt")
-			if inArm or speed or belt then
+			local pusher = part:GetAttribute("Pusher")
+			if inArm or speed or belt or pusher then
 				local axisPart = speed and building:FindFirstChild(part:GetAttribute("WhirlAxis") or part.Name, true)
 				local drum = belt and building:FindFirstChild(part:GetAttribute("BeltAxis") or "", true)
+				local pushAxis = pusher and building:FindFirstChild(part:GetAttribute("PushAxis") or "", true)
 				table.insert(parts, {
 					part = part,
 					rest = part.CFrame,
@@ -351,7 +371,10 @@ local function addSaw(building)
 					axis = axisPart and axisPart.CFrame,
 					belt = drum and belt,
 					wrap = part:GetAttribute("BeltWrap") or 1,
-					toward = drum and -drum.CFrame.LookVector,
+					toward = (drum and -drum.CFrame.LookVector) or (pushAxis and -pushAxis.CFrame.LookVector),
+					pusher = pushAxis and pusher,
+					share = part:GetAttribute("PushShare") or 1,
+					stroke = part:GetAttribute("PushStroke") or 0,
 					phase = 0,
 				})
 			end
@@ -363,6 +386,7 @@ local function addSaw(building)
 		hinge = hinge.CFrame,
 		swing = math.rad(hinge:GetAttribute("Swing") or 0),
 		drop = 0,
+		push = { L = 0, R = 0 },
 		parts = parts,
 	})
 
