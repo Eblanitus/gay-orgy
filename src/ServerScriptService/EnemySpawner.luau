@@ -97,6 +97,27 @@ local function markBite(enemy)
 	enemy:SetAttribute("Bite", (enemy:GetAttribute("Bite") or 0) + 1)
 end
 
+-- Подход к постройке на грызне. Запас в карте проходимости (Grid.GetBlocker) рассчитан на жука
+-- стандартной ширины, и мелкий, остановившись у его края, стоял в метре-двух от постройки:
+-- жвалы её не доставали. Поэтому грызущий доползает носом до самого следа постройки
+-- (Grid.GetOccupant) — и подползает, пока зазор больше этого допуска, studs.
+local CHEW_CONTACT = 0.15
+local CHEW_STEP = 0.2 -- шаг луча до грани, studs: меньше клетки (0.8), чтобы не перешагнуть тонкий выступ
+
+-- Расстояние от центра жука до ближайшей грани постройки вдоль его взгляда, studs. nil — вдоль
+-- взгляда на дальности reach постройки нет (упёрся в угол запаса наискосок): подползать некуда.
+local function faceAhead(position, heading, reach)
+	local t = CHEW_STEP
+	while t <= reach do
+		local cx, cz = Arena.ToCell(position + heading * t)
+		if Grid.GetOccupant(cx, cz) then
+			return t
+		end
+		t += CHEW_STEP
+	end
+	return nil
+end
+
 local FACEHUGGER_ATTACH_RANGE = 2 -- studs: на этом расстоянии до турели Лицехват считается «долетел и присосался»
 
 -- Потолок раскрытых клеток A* до точки заявки (укрытие, место за вожаком, засада): точка
@@ -653,6 +674,8 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			local pose = "walk"
 			-- Точка на поверхности того, что жук грызёт: в неё клиент ведёт удар жвал.
 			local chewAt = nil
+			-- Грызёт и подходит вплотную к следу постройки (см. CHEW_CONTACT, Crowd.Resolve).
+			local bare = false
 			local facing = heading
 			local facingUp = Vector3.yAxis
 
@@ -855,12 +878,29 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				setVelocity(Vector3.zero)
 
 				pose = "chew" -- передние лапы упираются в преграду и работают (см. EnemyGait)
+				bare = true
 
 				local toBlocker = flat(points[index] - position)
 				if toBlocker.Magnitude > 1e-3 then
 					heading = toBlocker.Unit
 					-- Ближняя грань клетки преграды на высоте жука: в неё и бьют жвалы.
 					local face = math.max(0, toBlocker.Magnitude - Arena.cellSize * 0.5)
+					-- Настоящая грань постройки может быть дальше: запас в карте проходимости
+					-- рассчитан на жука стандартной ширины. Нос (жвалы) до неё не достаёт —
+					-- жук подползает, пока не упрётся.
+					local nose = (enemy:GetAttribute("FootFront") or 0) + (enemy:GetAttribute("FootRadius") or 1)
+					local real = faceAhead(position, heading,
+						nose + (Grid.Clearance + 2) * Arena.cellSize + toBlocker.Magnitude)
+					if real then
+						face = real
+						local gap = real - nose
+						if gap > CHEW_CONTACT then
+							local slowPercent = enemy:GetAttribute("SlowPercent") or 0
+							local creep = math.min(gap, speed * (1 - slowPercent) * groundScale * dt)
+							desired = position + heading * creep
+							setVelocity(heading * creep / math.max(dt, 1e-3))
+						end
+					end
 					chewAt = position + heading * face
 				end
 
@@ -995,7 +1035,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			else
 				-- Тела непроницаемы (см. Crowd): толкучка решает не только место, но и разворот —
 				-- длинный жук, довернувшись в тесноте, въехал бы головой или брюшком в соседа.
-				resolved, facing = Crowd.Resolve(enemy, desired, dt, look)
+				resolved, facing = Crowd.Resolve(enemy, desired, dt, look, bare)
 			end
 
 			-- Жук смотрит туда, куда идёт. Голова у модели по +Z, а LookVector в Roblox — это -Z,

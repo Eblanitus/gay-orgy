@@ -257,12 +257,21 @@ end
 --
 -- Постройка, под которой этот жук пролезает (подлаз, Grid.FitsUnder), ему не стена:
 -- иначе толкучка выпихивала бы мелкого из-под Колбы обратно, куда маршрут его не ведёт.
-local function occupied(x, z, me)
+--
+-- bare — жук грызёт постройку и подходит к ней вплотную: запас на ширину тела (его рассчитали
+-- под жука стандартной ширины) он не обязан держать — мелкий иначе жуёт воздух в метре от неё.
+-- Тогда стеной служит только сам след постройки (Grid.GetOccupant).
+local function occupied(x, z, me, bare)
 	if offFloor(x, z) then
 		return false
 	end
 	local cx, cz = Arena.ToCell(Vector3.new(x, 0, z))
-	local blocker = Grid.GetBlocker(cx, cz)
+	local blocker
+	if bare then
+		blocker = Grid.GetOccupant(cx, cz)
+	else
+		blocker = Grid.GetBlocker(cx, cz)
+	end
 	return blocker ~= nil and not (me and Grid.FitsUnder(blocker, me.bodyHeight))
 end
 
@@ -739,8 +748,10 @@ end
 -- спине соседа), — и направление, которое телу разрешено: если разворот в тесноте вогнал бы
 -- его в соседа, жук остаётся как стоял.
 --
+-- bare — см. occupied: жук упёрся грызть постройку и может встать вплотную к её следу.
+--
 -- Незарегистрированный жук проходит насквозь, как и раньше: модуль ни на кого не обязателен.
-function Crowd.Resolve(model, desired, dt, facing)
+function Crowd.Resolve(model, desired, dt, facing, bare)
 	local me = byModel[model]
 	if not me then
 		return desired, facing
@@ -879,11 +890,11 @@ function Crowd.Resolve(model, desired, dt, facing)
 	local caged = insideBuilding(homeX, homeZ)
 
 	x, z = clampXZ(x, z)
-	if not caged and occupied(x, homeZ, me) then
+	if not caged and occupied(x, homeZ, me, bare) then
 		x = homeX
 	end
 
-	if not caged and occupied(x, z, me) then
+	if not caged and occupied(x, z, me, bare) then
 		z = homeZ
 	end
 
