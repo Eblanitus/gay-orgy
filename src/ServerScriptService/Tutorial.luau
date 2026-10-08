@@ -11,6 +11,7 @@
 --
 -- Промокод test снимает ограничения на весь сервер до перезапуска (как и прочие коды):
 -- это инструмент проверки, перевводить его каждый забег было бы мучением.
+-- Промокод tutorial возвращает их и запускает обучение заново (Rearm).
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("TutorialConfig"))
@@ -139,6 +140,17 @@ function Tutorial.UnlockAll()
 		return false
 	end
 	unlocked = true
+	publish()
+	return true
+end
+
+-- Промокод tutorial: вернуть ограничения, снятые test, чтобы обучение можно было
+-- пройти заново так, как его видит новый игрок. Вызывается до Tutorial.Start нового забега.
+function Tutorial.Rearm()
+	if not unlocked then
+		return false
+	end
+	unlocked = false
 	publish()
 	return true
 end
