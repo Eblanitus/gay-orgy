@@ -483,6 +483,36 @@ local function rebuildSquareSlice(model, size, thickness)
 	slab.Parent = model
 end
 
+-- Крест (Пила, Towers.footprintShape.kind = "cross"): поперечная плита во всю ширину
+-- и два луча вдоль Z до концов. Три куска без нахлёста: полупрозрачный неон в нахлёсте
+-- светился бы ярче, и центр креста выглядел бы отдельным пятном.
+local function rebuildCrossSlices(model, shape, thickness)
+	clearSlices(model)
+
+	local rootCFrame = model.PrimaryPart.CFrame
+	local span, arm = shape.span, shape.arm
+	local reach = (span - arm) / 2 -- длина луча от края центра до конца
+
+	local pieces = {
+		{ Vector3.new(span, thickness, arm), Vector3.zero },
+		{ Vector3.new(arm, thickness, reach), Vector3.new(0, 0, (arm + reach) / 2) },
+		{ Vector3.new(arm, thickness, reach), Vector3.new(0, 0, -(arm + reach) / 2) },
+	}
+	for _, piece in pieces do
+		local slab = Instance.new("Part")
+		slab.Name = "Slice"
+		slab.Size = piece[1]
+		slab.CFrame = rootCFrame * CFrame.new(piece[2])
+		slab.Anchored = true
+		slab.CanCollide = false
+		slab.CanQuery = false
+		slab.Material = Enum.Material.Neon
+		slab.Color = Theme.color.build
+		slab.Transparency = 1
+		slab.Parent = model
+	end
+end
+
 local function setHighlightAppearance(model, color, transparency)
 	for _, part in model:GetChildren() do
 		if part.Name == "Slice" then
@@ -685,7 +715,7 @@ local function refreshBuildChoice()
 	-- то крупнее (Колба — её OctoBase шире 10 студов, задача #63), и рамка не совпадала
 	-- с тем, что реально встанет на поле.
 	-- Форма зоны — по фактической платформе именно этой постройки: у большинства это
-	-- шестигранник по footprint, у Станции FPV-дронов — трапеция её платформы
+	-- шестигранник по footprint, у Станции FPV-дронов — трапеция её платформы, у Пилы — крест
 	-- (Towers[ключ].footprintShape). Занятость клеток от формы не зависит вовсе — след всегда
 	-- квадратный, по footprint (buildReach выше и Grid на сервере).
 	local footprint = data.footprint or Arena.buildSize
@@ -693,6 +723,8 @@ local function refreshBuildChoice()
 	local key
 	if shape == "square" then
 		key = ("square:%.2f"):format(footprint)
+	elseif shape and shape.kind == "cross" then
+		key = ("cross:%.2f:%.2f"):format(shape.span, shape.arm)
 	elseif shape then
 		key = ("trapezoid:%.2f:%.2f:%.2f:%.2f"):format(shape.near, shape.far, shape.depth, shape.offset or 0)
 	else
@@ -701,6 +733,8 @@ local function refreshBuildChoice()
 	if key ~= currentHighlightKey then
 		if shape == "square" then
 			rebuildSquareSlice(cellHighlight, footprint, HEX_THICKNESS)
+		elseif shape and shape.kind == "cross" then
+			rebuildCrossSlices(cellHighlight, shape, HEX_THICKNESS)
 		elseif shape then
 			rebuildTrapezoidSlices(cellHighlight, shape, HEX_THICKNESS)
 		else
