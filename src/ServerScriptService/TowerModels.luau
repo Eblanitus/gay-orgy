@@ -878,8 +878,16 @@ return function(deps)
 		local PADDLE_HALF = 1.65 -- полуширина лопаты: проходит между стойками стола
 		local PADDLE_STOP = 0.3 -- лопата доходит до края щели: дальше жука к диску дотягивает вытяжка
 		local STAGES = 4 -- ступеней штока: на длинный луч трёх не хватает
-		local BODY_LENGTH = 1.2 -- корпус длиной в ступень: в покое шток весь в нём
-		local ROD_Y = FLOOR + 0.38 -- высота оси цилиндра
+		local BODY_LENGTH = 1.4 -- корпус с крышками
+		local ROD_Y = FLOOR + 0.62 -- высота оси цилиндра
+		local BARREL = 0.56 -- толщина трубы цилиндра
+		local CAP, CAP_SIDE = 0.16, 0.72 -- крышки: толщина и сторона квадрата
+		local TIE = 0.29 -- стяжки — по углам крышек
+		local SPRING_REST = 0.55 -- длина сжатой пружины возврата
+		local SPRING_COILS = 7 -- витков
+		local SPRING_R = 0.3 -- радиус витка
+		local SPRING_WIRE = 0.07 -- толщина прутка
+		local PADDLE_HEIGHT, PADDLE_THICK = 0.9, 0.18
 		local pushers = 0
 		for i, side in { [1] = "L", [3] = "R" } do
 			local around = CFrame.Angles(0, math.rad(90 * i), 0)
@@ -903,32 +911,75 @@ return function(deps)
 				end
 			end
 
-			-- Корпус цилиндра: труба с кольцами на торцах, лежит на двух ложементах.
+			-- Цилиндр — силовой, со стяжками: две квадратные крышки, между ними толстая труба
+			-- и четыре стяжки по углам. Стоит на двух массивных ложементах с косынками,
+			-- ложементы прикручены к плите.
 			local bodyAt = SIDE_EDGE - 0.12 - BODY_LENGTH / 2
-			floorPart(model, "PusherBody" .. side, Vector3.new(BODY_LENGTH, 0.36, 0.36), at(bodyAt, ROD_Y) * LYING,
+			local frontCap = bodyAt - BODY_LENGTH / 2 + CAP / 2
+			local backCap = bodyAt + BODY_LENGTH / 2 - CAP / 2
+			floorPart(model, "PusherBody" .. side, Vector3.new(BODY_LENGTH - 2 * CAP, BARREL, BARREL), at(bodyAt, ROD_Y) * LYING,
 				dark, metal, cylinder)
-			for e = -1, 1, 2 do
-				floorPart(model, "PusherRing" .. side .. (e < 0 and "F" or "B"), Vector3.new(0.08, 0.42, 0.42),
-					at(bodyAt + e * (BODY_LENGTH / 2 - 0.04), ROD_Y) * LYING, light, metal, cylinder)
-				floorPart(model, "PusherCradle" .. side .. (e < 0 and "F" or "B"), Vector3.new(0.44, ROD_Y - FLOOR - 0.12, 0.14),
-					at(bodyAt + e * (BODY_LENGTH / 2 - 0.22), (ROD_Y + FLOOR + 0.08) / 2 - 0.02), mid, metal)
+			for e, capAt in { F = frontCap, B = backCap } do
+				floorPart(model, "PusherCap" .. side .. e, Vector3.new(CAP_SIDE, CAP_SIDE, CAP), at(capAt, ROD_Y), mid, metal)
+				for cx = -1, 1, 2 do
+					for cy = -1, 1, 2 do
+						floorPart(model, "PusherNut" .. side .. e .. (cx < 0 and "L" or "R") .. (cy < 0 and "D" or "U"),
+							Vector3.new(0.08, 0.11, 0.11),
+							at(capAt + (e == "F" and -1 or 1) * (CAP / 2 + 0.03), ROD_Y + cy * TIE) * CFrame.new(cx * TIE, 0, 0) * LYING,
+							light, metal, cylinder)
+					end
+				end
 			end
-			accent(floorPart(model, "PusherLamp" .. side, Vector3.new(0.03, 0.22, 0.22),
-				at(bodyAt + BODY_LENGTH / 2 + 0.01, ROD_Y) * LYING, glow, neon, cylinder))
-			-- Ресивер с воздухом рядом с цилиндром и шланг от него к заднему торцу.
-			local tankAt = at(bodyAt + 0.1, FLOOR + 0.26) * CFrame.new(PADDLE_HALF - 0.55, 0, 0)
-			floorPart(model, "PusherTank" .. side, Vector3.new(0.8, 0.36, 0.36), tankAt * LYING, mid, metal, cylinder)
-			floorPart(model, "PusherTankCap" .. side, Vector3.new(0.05, 0.24, 0.24),
-				tankAt * CFrame.new(0, 0, -0.42) * LYING, light, metal, cylinder)
-			floorPart(model, "PusherHoseA" .. side, Vector3.new(0.08, 0.3, 0.08),
-				tankAt * CFrame.new(0, 0.18, 0.3), black, plastic)
-			floorPart(model, "PusherHoseB" .. side, Vector3.new(PADDLE_HALF - 0.55, 0.08, 0.08),
-				tankAt * CFrame.new(-(PADDLE_HALF - 0.55) / 2, 0.33, 0.3), black, plastic)
+			for cx = -1, 1, 2 do
+				for cy = -1, 1, 2 do
+					floorPart(model, "PusherTie" .. side .. (cx < 0 and "L" or "R") .. (cy < 0 and "D" or "U"),
+						Vector3.new(BODY_LENGTH, 0.06, 0.06),
+						at(bodyAt, ROD_Y + cy * TIE) * CFrame.new(cx * TIE, 0, 0) * LYING, light, metal, cylinder)
+				end
+			end
+			-- Сальник: толстый воротник на передней крышке, из него выходит шток.
+			floorPart(model, "PusherGland" .. side, Vector3.new(0.16, 0.5, 0.5),
+				at(frontCap - CAP / 2 - 0.08, ROD_Y) * LYING, light, metal, cylinder)
+			accent(floorPart(model, "PusherLamp" .. side, Vector3.new(0.03, 0.26, 0.26),
+				at(backCap + CAP / 2 + 0.015, ROD_Y) * LYING, glow, neon, cylinder))
+			local capBottom = ROD_Y - CAP_SIDE / 2
+			for e, capAt in { F = frontCap, B = backCap } do
+				local cradleHeight = capBottom - (FLOOR + 0.08)
+				floorPart(model, "PusherCradle" .. side .. e, Vector3.new(CAP_SIDE + 0.1, cradleHeight, CAP + 0.06),
+					at(capAt, FLOOR + 0.08 + cradleHeight / 2), mid, metal)
+				floorPart(model, "PusherFoot" .. side .. e, Vector3.new(CAP_SIDE + 0.5, 0.06, CAP + 0.26),
+					at(capAt, FLOOR + 0.11), dark, metal)
+				for s = -1, 1, 2 do
+					floorPart(model, "PusherGusset" .. side .. e .. (s < 0 and "L" or "R"), Vector3.new(0.06, cradleHeight + 0.14, CAP + 0.06),
+						at(capAt, FLOOR + 0.14 + (cradleHeight + 0.14) / 2 - 0.06) * CFrame.new(s * (CAP_SIDE / 2 + 0.13), 0, 0)
+							* CFrame.Angles(0, 0, math.rad(s * 18)), dark, metal)
+					for b = -1, 1, 2 do
+						floorPart(model, "PusherBolt" .. side .. e .. (s < 0 and "L" or "R") .. (b < 0 and "a" or "b"),
+							Vector3.new(0.05, 0.09, 0.09),
+							at(capAt + b * (CAP / 2 + 0.07), FLOOR + 0.165) * CFrame.new(s * (CAP_SIDE / 2 + 0.17), 0, 0) * STAND_UP,
+							light, metal, cylinder)
+					end
+				end
+			end
+			-- Ресивер с воздухом рядом с цилиндром и шланг от него к задней крышке.
+			local tankAt = at(bodyAt + 0.15, FLOOR + 0.32) * CFrame.new(PADDLE_HALF - 0.45, 0, 0)
+			floorPart(model, "PusherTank" .. side, Vector3.new(1.0, 0.48, 0.48), tankAt * LYING, mid, metal, cylinder)
+			for e = -1, 1, 2 do
+				floorPart(model, "PusherTankCap" .. side .. (e < 0 and "F" or "B"), Vector3.new(0.06, 0.36, 0.36),
+					tankAt * CFrame.new(0, 0, e * 0.52) * LYING, light, metal, cylinder)
+			end
+			floorPart(model, "PusherHoseA" .. side, Vector3.new(0.1, 0.36, 0.1),
+				tankAt * CFrame.new(0, 0.38, -0.47), black, plastic)
+			floorPart(model, "PusherHoseB" .. side, Vector3.new(PADDLE_HALF - 0.45, 0.1, 0.1),
+				tankAt * CFrame.new(-(PADDLE_HALF - 0.45) / 2, 0.55, -0.47), black, plastic)
 
 			-- Ось хода — невидимая, без поворота относительно луча: -Z наружу, +Z к центру.
 			local axis = floorPart(model, "PushAxis" .. side, Vector3.new(0.05, 0.05, 0.05), at(bodyAt, ROD_Y), dark, metal)
 			axis.Transparency = 1
-			local paddleRest = bodyAt - BODY_LENGTH / 2 - 0.08 -- лопата в покое — у торца цилиндра
+			-- Между сальником и лопатой — пружина возврата: в покое сжата, на ходу растягивается
+			-- и тянет лопату назад, когда воздух стравлен.
+			local glandFront = frontCap - CAP / 2 - 0.16
+			local paddleRest = glandFront - SPRING_REST - PADDLE_THICK / 2
 			local stroke = (paddleRest - PADDLE_STOP) * SCALE
 			local function moving(part, share)
 				part:SetAttribute("Pusher", side)
@@ -938,26 +989,46 @@ return function(deps)
 				pushers += 1
 				return part
 			end
-			-- Шток — труба в трубе: в покое все ступени в корпусе, на ходу каждая выдвигается
-			-- на свою долю, последняя держит лопату.
+			-- Шток — труба в трубе: в покое ступени уходят в корпус и под пружину до лопаты,
+			-- на ходу каждая выдвигается на свою долю, последняя держит лопату.
+			local rodLength = BODY_LENGTH + SPRING_REST - 0.1
 			for k = 1, STAGES do
-				local width = 0.3 - k * 0.05
-				moving(floorPart(model, "PusherRod" .. side .. k, Vector3.new(BODY_LENGTH - 0.1, width, width),
-					at(bodyAt - 0.05, ROD_Y) * LYING, k % 2 == 1 and light or steel, metal, cylinder), k / STAGES)
+				local width = 0.44 - k * 0.07
+				moving(floorPart(model, "PusherRod" .. side .. k, Vector3.new(rodLength, width, width),
+					at(paddleRest + PADDLE_THICK / 2 + rodLength / 2 + 0.01, ROD_Y) * LYING,
+					k % 2 == 1 and light or steel, metal, cylinder), k / STAGES)
 			end
-			-- Лопата: щит с рёбрами сзади, полозья в направляющих, светящаяся кромка.
-			moving(floorPart(model, "PusherPaddle" .. side, Vector3.new(2 * PADDLE_HALF, 0.6, 0.12),
-				at(paddleRest, FLOOR + 0.42), dark, metal), 1)
-			moving(accent(floorPart(model, "PusherEdge" .. side, Vector3.new(2 * PADDLE_HALF, 0.06, 0.13),
-				at(paddleRest, FLOOR + 0.69), glow, neon)), 1)
-			moving(floorPart(model, "PusherPlate" .. side, Vector3.new(0.5, 0.5, 0.06),
-				at(paddleRest + 0.09, ROD_Y), light, metal), 1)
+			-- Пружина: витки — шестигранные кольца из прутка, каждый едет на свою долю хода,
+			-- поэтому на ходу витки расходятся, как у настоящей пружины.
+			for c = 0, SPRING_COILS do
+				local t = c / SPRING_COILS
+				local coilAt = paddleRest + PADDLE_THICK / 2 + 0.04 + t * (SPRING_REST - 0.08)
+				for k = 0, 5 do
+					local phi = math.rad(60 * k + 30)
+					moving(floorPart(model, "PusherCoil" .. side .. c .. "_" .. k,
+						Vector3.new(SPRING_R * 1.2, SPRING_WIRE, SPRING_WIRE),
+						at(coilAt, ROD_Y) * CFrame.Angles(math.rad(10), 0, 0) * CFrame.Angles(0, 0, phi)
+							* CFrame.new(0, SPRING_R, 0),
+						steel, metal), 1 - t)
+				end
+			end
+			-- Лопата: толстый щит, ребристый сзади, с упорной плитой под шток, полозья
+			-- в направляющих, светящаяся кромка.
+			moving(floorPart(model, "PusherPaddle" .. side, Vector3.new(2 * PADDLE_HALF, PADDLE_HEIGHT, PADDLE_THICK),
+				at(paddleRest, FLOOR + 0.12 + PADDLE_HEIGHT / 2), dark, metal), 1)
+			moving(accent(floorPart(model, "PusherEdge" .. side, Vector3.new(2 * PADDLE_HALF, 0.07, PADDLE_THICK + 0.01),
+				at(paddleRest, FLOOR + 0.12 + PADDLE_HEIGHT - 0.03), glow, neon)), 1)
+			moving(floorPart(model, "PusherPlate" .. side, Vector3.new(0.7, 0.7, 0.08),
+				at(paddleRest + PADDLE_THICK / 2 + 0.04, ROD_Y), light, metal), 1)
+			for _, rx in { -1, -0.45, 0.45, 1 } do
+				local tag = side .. tostring(rx):gsub("[%.%-]", "")
+				moving(floorPart(model, "PusherRib" .. tag, Vector3.new(0.1, PADDLE_HEIGHT - 0.1, 0.34),
+					at(paddleRest + PADDLE_THICK / 2 + 0.17, FLOOR + 0.12 + PADDLE_HEIGHT / 2 - 0.05)
+						* CFrame.new(rx * (PADDLE_HALF - 0.15), 0, 0), mid, metal), 1)
+			end
 			for s = -1, 1, 2 do
-				local tag = side .. (s < 0 and "L" or "R")
-				moving(floorPart(model, "PusherRib" .. tag, Vector3.new(0.08, 0.5, 0.3),
-					at(paddleRest + 0.2, FLOOR + 0.4) * CFrame.new(s * (PADDLE_HALF - 0.6), 0, 0), mid, metal), 1)
-				moving(floorPart(model, "PusherSkid" .. tag, Vector3.new(0.16, 0.05, 0.5),
-					at(paddleRest + 0.13, FLOOR + 0.135) * CFrame.new(s * (PADDLE_HALF - 0.3), 0, 0), light, metal), 1)
+				moving(floorPart(model, "PusherSkid" .. side .. (s < 0 and "L" or "R"), Vector3.new(0.18, 0.05, 0.6),
+					at(paddleRest + 0.1, FLOOR + 0.135) * CFrame.new(s * (PADDLE_HALF - 0.3), 0, 0), light, metal), 1)
 			end
 		end
 		model:SetAttribute("PusherParts", pushers)
