@@ -390,6 +390,7 @@ local function startRun(levelNumber)
 	ProfileStats.Add("runs")
 	activeLevelWaves = Levels[levelNumber].waves
 	WaveState.SetActive(false)
+	WaveState.buildDuringWave = Levels[levelNumber].buildDuringWave == true
 	-- Элементы живут ровно один забег (дизайн-док: «знание сохраняется, имущество — нет»).
 	-- Открытые рецепты лежат в Crafting и здесь намеренно не трогаются.
 	Inventory.Reset()

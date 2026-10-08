@@ -3,9 +3,12 @@
 --
 -- stopped — волну оборвал промокод STOP (PromoCode): недосланные группы больше не спавнятся.
 -- Сбрасывается сам при старте следующей волны.
+-- buildDuringWave — на этом уровне строить можно и пока волна идёт (Levels[n].buildDuringWave,
+-- ставит WaveRunner на старте забега). По умолчанию стройка только между волнами.
 local WaveState = {
 	active = false,
 	stopped = false,
+	buildDuringWave = false,
 }
 
 function WaveState.IsActive()
