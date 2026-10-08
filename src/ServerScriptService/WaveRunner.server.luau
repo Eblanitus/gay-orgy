@@ -47,6 +47,7 @@ local Lithosphere = require(ServerScriptService:WaitForChild("Lithosphere"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
 -- Обучение (задача #298): ограничения уровня и запрет волны, пока не пройдены шаги.
 local Tutorial = require(ServerScriptService:WaitForChild("Tutorial"))
+local RunControl = require(ServerScriptService:WaitForChild("RunControl"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local WaveChangedRemote = Remotes:WaitForChild("WaveChanged")
@@ -353,6 +354,16 @@ local function startRun(levelNumber)
 	end
 
 	task.spawn(runWaves, myGeneration, levelNumber)
+end
+
+-- Промокод обучения (PromoCode) начинает забег в обход выбора уровня и входа в лобби.
+-- levelPlayable — та же проверка, что у обычного входа: сломанный уровень не запускается.
+RunControl.StartLevel = function(levelNumber)
+	if not levelPlayable(levelNumber) then
+		return false
+	end
+	startRun(levelNumber)
+	return true
 end
 
 RequestStartWaveRemote.OnServerEvent:Connect(function(player)
