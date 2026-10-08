@@ -278,6 +278,62 @@ local function insideBuilding(x, z)
 	return Grid.GetOccupant(cx, cz) ~= nil
 end
 
+-- Стол клеток сетки не занимает (см. LabTable): он цель, а не преграда для маршрута.
+-- Поэтому и occupied его не видит, и раньше толкучка вдавливала тех, кто грызёт его
+-- край, прямо в стол: мелкий Мини целиком скрывался в столешнице — «коснулся и исчез».
+-- Для тела же стол твёрдый: капсула выталкивается из его прямоугольника (Arena.tableHalf,
+-- габарит в мировых осях). Грызть это не мешает: жук встаёт грызть дальше от центра
+-- (LabTable.REACH больше полудлины стола), чем край стола плюс его морда.
+local TABLE_SAMPLES = 5 -- точек вдоль оси капсулы: от брюшка до головы
+
+local function outOfTable(me, x, z, fx, fz)
+	local half = Arena.tableHalf
+	if not half or (half.X <= 0 and half.Z <= 0) then
+		return x, z
+	end
+	local cx, cz = Arena.table.X, Arena.table.Z
+	local minX, maxX = cx - half.X, cx + half.X
+	local minZ, maxZ = cz - half.Z, cz + half.Z
+	local radius = me.radius
+
+	for _ = 1, HARD_ITERATIONS do
+		local depth, nx, nz = 0, 0, 0
+		for i = 0, TABLE_SAMPLES - 1 do
+			local along = me.back + (me.front - me.back) * i / (TABLE_SAMPLES - 1)
+			local px, pz = x + fx * along, z + fz * along
+			local qx, qz = math.clamp(px, minX, maxX), math.clamp(pz, minZ, maxZ)
+			local dx, dz = px - qx, pz - qz
+			local distance = math.sqrt(dx * dx + dz * dz)
+			if distance > 1e-3 then
+				if radius - distance > depth then
+					depth, nx, nz = radius - distance, dx / distance, dz / distance
+				end
+			else
+				-- Точка внутри стола: наружу через ближайший край.
+				local exits = {
+					{ px - minX, -1, 0 }, { maxX - px, 1, 0 },
+					{ pz - minZ, 0, -1 }, { maxZ - pz, 0, 1 },
+				}
+				local best = exits[1]
+				for _, exit in exits do
+					if exit[1] < best[1] then
+						best = exit
+					end
+				end
+				if best[1] + radius > depth then
+					depth, nx, nz = best[1] + radius, best[2], best[3]
+				end
+			end
+		end
+		if depth <= 0 then
+			break
+		end
+		x += nx * (depth + 1e-3)
+		z += nz * (depth + 1e-3)
+	end
+	return x, z
+end
+
 -- Ближайшие точки двух отрезков на плоскости XZ (Ericson, «Real-Time Collision Detection»).
 -- Возвращает квадрат расстояния и обе точки: по ним строится нормаль выталкивания.
 local function closestSegments(px, pz, qx, qz, rx, rz, sx, sz)
@@ -830,6 +886,9 @@ function Crowd.Resolve(model, desired, dt, facing)
 	if not caged and occupied(x, z, me) then
 		z = homeZ
 	end
+
+	-- Внутрь стола — тоже нет (см. outOfTable).
+	x, z = outOfTable(me, x, z, fx, fz)
 
 	-- Стена могла вернуть тело в соседа. Тогда шаг не делается: жук остаётся на прошлой
 	-- позиции (она заведомо допустима: allowed считан из неё). Разворот вокруг своей оси
