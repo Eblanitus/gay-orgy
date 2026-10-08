@@ -13,6 +13,7 @@ local EnemyDiedRemote = Remotes:WaitForChild("EnemyDied")
 local DamageDealtRemote = Remotes:WaitForChild("DamageDealt")
 
 local Grid = require(ServerScriptService:WaitForChild("Grid"))
+local EnemyFlight = require(ServerScriptService:WaitForChild("EnemyFlight"))
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
 local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
@@ -1673,6 +1674,21 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 	end
 
 	print(("[Манекен] %s (%s) появился у пролома (HP = %d)"):format(enemy.Name, enemyType, hp))
+
+	-- Летающий родился в конце коридора: сначала выводим его по коридору к двери зала, и
+	-- только оттуда он летит к цели напрямик. Иначе курс от дальнего конца к турели
+	-- идёт поверх стен коридора, и жук оказывается снаружи (Моль над крышей бункера).
+	if enemyData.flying and not startPosition and Arena.lane ~= nil then
+		local entranceX, entranceZ = Grid.GetEntranceCell()
+		local door = Grid.ToWorld(entranceX, entranceZ)
+		local doorway = Vector3.new(door.X, spawnPosition.Y, door.Z)
+		while enemy.Parent do
+			local dt = RunService.Heartbeat:Wait()
+			if not enemy.Parent or EnemyFlight.FlyStep(enemy, doorway, enemyData.speed, dt, 1.5, false) then
+				break
+			end
+		end
+	end
 
 	-- Лицехват не идёт к выходу и не участвует в толкучке — свой цикл движения
 	-- (flyToTurret), без onBreach и без Crowd.Remove. Отличается от остальных летунов
