@@ -576,6 +576,11 @@ return function(deps)
 	-- Тянет тем же атрибутом Push, что и притяжение элементов (его тратит EnemySpawner).
 	-- Держит станом (StunnedUntil): пока его пилят, жук не идёт и не грызёт. Опускать ли
 	-- диск — атрибут Sawing, картинку по нему рисует клиент (BuildingVisuals.addSaw).
+	--
+	-- Лента конвейера липкая: жук, вставший на неё, не может с неё уйти, если у него не хватает
+	-- сил. Сила — размер: спина выше saw.stickTop (Гигант и прочие крупные) — вырывается и идёт
+	-- дальше, ниже — стоит, пока не отпустит лента, а вытяжка тянет его по ленте под диск.
+	-- Держит тем же станом: его срок обновляется каждый тик, пока жук на ленте.
 	local sawVictims = setmetatable({}, { __mode = "k" })
 
 	local function flatTo(from, to)
@@ -621,9 +626,19 @@ return function(deps)
 		local pivot = tower:GetPivot()
 		local laneHalf = towerData.footprintShape.arm / 2
 		local feed, feedGap = nil, math.huge
+		-- Лента — сквозной конвейер вдоль Z модели: шириной arm, от конца до конца span.
+		local beltHalfX = towerData.footprintShape.arm / 2
+		local beltHalfZ = towerData.footprintShape.span / 2
+		local stickTop = plan.stickTop or towerData.crawlGap
 		for _, enemy in Targeting.EnemiesInRange(center, towerData.range, enemiesFolder, aimFilter(towerData, tower)) do
-			if enemy ~= victim and EnemyBody.TopHeight(enemy) <= towerData.crawlGap then
-				local here = pivot:PointToObjectSpace(enemy:GetPivot().Position)
+			local top = EnemyBody.TopHeight(enemy)
+			local here = pivot:PointToObjectSpace(enemy:GetPivot().Position)
+			if enemy ~= victim and top <= stickTop
+				and math.abs(here.X) <= beltHalfX and math.abs(here.Z) <= beltHalfZ then
+				enemy:SetAttribute("StunnedUntil", math.max(enemy:GetAttribute("StunnedUntil") or 0, now + plan.hold))
+				enemy:SetAttribute("Stunned", true)
+			end
+			if enemy ~= victim and top <= towerData.crawlGap then
 				if math.abs(here.Z) <= laneHalf and math.abs(here.X) > 1 and math.abs(here.X) < feedGap then
 					feed, feedGap = here.X < 0 and "L" or "R", math.abs(here.X)
 				end
