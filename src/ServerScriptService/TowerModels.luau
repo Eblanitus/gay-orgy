@@ -780,8 +780,7 @@ return function(deps)
 			floorPart(model, "SumpGrate" .. i, Vector3.new(1.0, 0.02, 0.06),
 				CFrame.new(0, FLOOR + 0.09, -0.9 + i * 0.36), black, plastic)
 		end
-		-- Лучи креста — пандусы: внешний край приподнят, к ванне спускаются. По бокам бортики:
-		-- по ним видно, что жука ведёт по лучу в центр.
+		-- Лучи креста — пандусы: внешний край приподнят, к ванне спускаются.
 		local rampLength = EDGE - ARM
 		local rise = 0.14
 		local tilt = math.atan2(rise, rampLength)
@@ -794,8 +793,6 @@ return function(deps)
 				around * CFrame.new(0, FLOOR + rise + 0.05, -(EDGE - 0.06)), light, metal)
 			for s = -1, 1, 2 do
 				local tag = side .. (s < 0 and "L" or "R")
-				floorPart(model, "RampKerb" .. tag, Vector3.new(0.06, rise + 0.14, rampLength),
-					around * CFrame.new(s * (ARM - 0.03), FLOOR + (rise + 0.14) / 2, -(ARM + rampLength / 2)), light, metal)
 				-- Шеврон острием к центру: туда тянет.
 				accent(floorPart(model, "Arrow" .. tag, Vector3.new(0.1, 0.03, 0.62),
 					ramp * CFrame.new(s * 0.2, 0.055, 0.02) * CFrame.Angles(0, math.rad(-s * 38), 0), glow, neon))
@@ -933,7 +930,7 @@ return function(deps)
 		-- ни пандус спереди.
 		local guardAt = CFrame.new(restAt) * CFrame.Angles(math.rad(swing / 2), 0, 0)
 		local GUARD_R = 1.25
-		local GUARD_PLATES = 9
+		local GUARD_PLATES = 12
 		local fromAngle, toAngle = math.rad(-90), math.rad(90) -- верхняя половина: от заднего края до переднего
 		local step = (toAngle - fromAngle) / GUARD_PLATES
 		for i = 1, GUARD_PLATES do
@@ -945,9 +942,12 @@ return function(deps)
 		end
 		for s = -1, 1, 2 do
 			local tag = s < 0 and "L" or "R"
-			for i, row in { { 0, 0.45 }, { 0.45, 0.8 }, { 0.8, 1.05 }, { 1.05, 1.22 } } do
+			-- Ступеньки целиком внутри дуги: ширина по ВЕРХУ ступеньки и по внутренней грани
+			-- пластин — иначе углы ступенек торчали за кожух.
+			local innerR = GUARD_R - 0.05
+			for i, row in { { 0, 0.4 }, { 0.4, 0.7 }, { 0.7, 0.9 }, { 0.9, 1.04 }, { 1.04, 1.13 }, { 1.13, 1.19 } } do
 				local rowMid = (row[1] + row[2]) / 2
-				local width = 2 * math.sqrt(GUARD_R * GUARD_R - rowMid * rowMid) - 0.08
+				local width = 2 * math.sqrt(innerR * innerR - row[2] * row[2])
 				addPart(arm, "GuardSide" .. i .. tag, Vector3.new(0.04, row[2] - row[1], width),
 					guardAt * CFrame.new(s * 0.23, rowMid, 0), dark, metal)
 			end
@@ -966,7 +966,7 @@ return function(deps)
 		addPart(arm, "HandleGrip", Vector3.new(0.52, 0.18, 0.18), guardAt * CFrame.new(0, 1.4, -0.75),
 			black, plastic, cylinder)
 
-		-- Диск: полотно, зубчатый венец (акцент), ступица и вырезы — по ним видно вращение.
+		-- Диск: полотно, гладкий венец (акцент), ступица и узор — по ним видно вращение.
 		-- Вал через ступицу: слева в него упирается рычаг, справа — шкив ремня.
 		addPart(arm, "BladeAxle", Vector3.new(0.78, 0.16, 0.16), CFrame.new(restAt + Vector3.new(-0.02, 0, 0)), light, metal, cylinder)
 		local hub = addPart(arm, "BladeHub", Vector3.new(0.3, 0.46, 0.46), CFrame.new(restAt), black, metal, cylinder)
@@ -976,14 +976,43 @@ return function(deps)
 		local teeth = accent(addPart(arm, "BladeTeeth", Vector3.new(0.04, 2.22, 2.22), CFrame.new(restAt),
 			glow, neon, cylinder))
 		teeth:SetAttribute("Whirl", 900)
-		for i = 1, 4 do
-			local angle = math.rad(90 * i + 20)
-			local slot = addPart(arm, "BladeSlot" .. i, Vector3.new(0.08, 0.1, 0.4),
-				CFrame.new(restAt + Vector3.new(0, math.cos(angle) * 0.62, math.sin(angle) * 0.62))
-					* CFrame.Angles(-angle, 0, 0),
-				black, plastic)
-			slot:SetAttribute("Whirl", 900)
-			slot:SetAttribute("WhirlAxis", "BladeHub")
+		-- Узор диска — три светящиеся спирали от ступицы к краю (акцент): на ходу они
+		-- закручиваются в вихрь. Венец гладкий, без зубцов.
+		local SPIRAL_POINTS = 6
+		local slot = 0
+		for arm3 = 0, 2 do
+			local function point(j)
+				local radius = 0.3 + (j - 1) * 0.13
+				local angle = math.rad(120 * arm3 + (j - 1) * 24)
+				return Vector3.new(0, math.cos(angle) * radius, math.sin(angle) * radius)
+			end
+			for j = 1, SPIRAL_POINTS - 1 do
+				local from, to = point(j), point(j + 1)
+				local d = to - from
+				slot += 1
+				local part = accent(addPart(arm, "BladeSlot" .. slot, Vector3.new(0.08, 0.07, d.Magnitude + 0.05),
+					CFrame.new(restAt + (from + to) / 2) * CFrame.Angles(math.atan2(-d.Y, d.Z), 0, 0),
+					glow, neon))
+				part:SetAttribute("Whirl", 900)
+				part:SetAttribute("WhirlAxis", "BladeHub")
+			end
+		end
+
+		-- ===== ЗАРЯДНАЯ СТАНЦИЯ: в покое диск стоит в ней и питается элементом =====
+		-- Две стойки по бокам проёма, на них светящиеся гнёзда ровно на оси диска в покое.
+		-- На концах вала — штыри: в покое они входят в гнёзда, опускаясь, рычаг их выдёргивает.
+		-- Штыри не шире проёма (0.45): иначе рычаг цеплял бы ими стол.
+		for s = -1, 1, 2 do
+			local tag = s < 0 and "L" or "R"
+			local postHeight = restAt.Y - DECK_TOP
+			addPart(model, "ChargerBase" .. tag, Vector3.new(0.34, 0.1, 0.5),
+				CFrame.new(s * 0.64, DECK_TOP + 0.05, restAt.Z), light, metal)
+			addPart(model, "ChargerPost" .. tag, Vector3.new(0.16, postHeight + 0.12, 0.26),
+				CFrame.new(s * 0.6, DECK_TOP + (postHeight + 0.12) / 2, restAt.Z), mid, metal)
+			accent(addPart(model, "ChargerCup" .. tag, Vector3.new(0.08, 0.3, 0.3),
+				CFrame.new(restAt + Vector3.new(s * 0.5, 0, 0)), glow, neon, cylinder))
+			accent(addPart(arm, "ChargePin" .. tag, Vector3.new(0.09, 0.1, 0.1),
+				CFrame.new(restAt + Vector3.new(s * 0.395, 0, 0)), glow, neon, cylinder))
 		end
 
 		-- Пульт на правом луче стола: коробка и лампа «готова».
