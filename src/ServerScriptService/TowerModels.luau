@@ -767,7 +767,11 @@ return function(deps)
 		local EDGE = 2.0 -- конец луча: ровно край следа постройки (5 клеток по 0.8, Arena.ReachFor)
 		local ARM = 0.9 -- полуширина луча; она же полуширина центральной ванны
 		local DECK_EDGE = 1.8 -- конец луча стола: губа пандуса выглядывает из-под него
-		local DECK_BOTTOM = FLOOR + towerData.crawlGap + 0.05 -- просвет камеры = подлаз
+		-- Модель строится в мелких единицах и в конце растягивается в SCALE раз (под размер
+		-- Колбы). Камера — нет: её высота в игре ровно подлаз (crawlGap), поэтому здесь она
+		-- задана делённой на SCALE — после растяжки выйдет ровно crawlGap.
+		local SCALE = towerData.modelScale or 1
+		local DECK_BOTTOM = FLOOR + (towerData.crawlGap + 0.05) / SCALE -- просвет камеры = подлаз
 		local DECK_TOP = DECK_BOTTOM + 0.3
 		local SLOT_X = 0.45 -- полуширина проёма под диск
 		local SLOT_BACK = 1.1 -- проём открыт спереди до края: опускаясь, диск проходит передний край стола
@@ -1019,6 +1023,18 @@ return function(deps)
 		addPart(model, "Panel", Vector3.new(0.6, 0.35, 0.8), CFrame.new(1.35, DECK_TOP + 0.175, -0.3), dark, metal)
 		accent(addPart(model, "PanelLamp", Vector3.new(0.12, 0.05, 0.5), CFrame.new(1.35, DECK_TOP + 0.37, -0.3),
 			glow, neon))
+
+		-- Растяжка вокруг точки на полу под осью: пол остаётся полом, ось — осью.
+		if SCALE ~= 1 then
+			local floorAt = Vector3.new(0, FLOOR, 0)
+			for _, part in model:GetDescendants() do
+				if part:IsA("BasePart") and part ~= model.PrimaryPart then
+					local cf = part.CFrame
+					part.Size *= SCALE
+					part.CFrame = cf - cf.Position + floorAt + (cf.Position - floorAt) * SCALE
+				end
+			end
+		end
 
 		bindElementTint(model, accents, 0, 0, ACCENT_NEUTRAL_COLOR)
 
