@@ -25,6 +25,7 @@ local EnemyTraits = require(ServerScriptService:WaitForChild("EnemyTraits"))
 local EnemyFlight = require(ServerScriptService:WaitForChild("EnemyFlight"))
 
 local alive, flat = Sense.alive, Sense.flat
+local NO_RULES = {}
 local enemiesFolder = Sense.enemiesFolder
 
 local EnemyBehavior = {}
@@ -263,6 +264,31 @@ end
 
 -- ============================ Паника ============================
 
+-- Новая точка бегства для повторного испуга. Не нашлась (зажат со всех сторон) — fleeTo
+-- остаётся пустым, и испуг идёт по-старому.
+local function runToSpot(enemy, state, turret, rehit, now)
+	state.fleeFrom = turret:GetPivot().Position
+	local spot = Sense.FleeSpot(enemy, state.fleeFrom, state.lastFleeDirection, rehit)
+	if not spot then
+		return
+	end
+	state.fleeTo = spot
+	state.fleeReached = false
+	state.fleeStalled = false
+	state.fleeAngle = 0
+	state.panicUntil = state.runUntil
+end
+
+-- Забег кончился (место нашлось или вышел срок): жук идёт дальше по маршруту. panicUntil
+-- остаётся меткой конца — по ней Damaged узнаёт «попали сразу после возврата».
+local function endRun(state, now)
+	state.fleeTo = nil
+	state.fleeReached = false
+	state.runUntil = nil
+	state.panicUntil = now
+	state.repath = true
+end
+
 -- Урон по жуку. Зовётся из EnemySpawner по падению HP — там же, где считается кровь.
 --
 -- Откуда стреляли, жуку никто не говорит (урон приходит из полудюжины мест),
@@ -299,6 +325,29 @@ function EnemyBehavior.Damaged(enemy, enemyData, state, amount)
 	local rules = Sense.rules(enemyData.caste)
 
 	if panic == "scout" then
+		-- Повторный испуг (Castes[0].rehit): попали по жуку, которому уже некуда отходить —
+		-- он бежит дальше и в другую сторону, пока не найдёт место, где по нему не бьют.
+		local rehit = rules.rehit
+		if rehit and not enemyData.flying then
+			local running = state.panicUntil ~= nil and now < state.panicUntil
+			local again = state.panicUntil ~= nil and not running and now - state.panicUntil < rehit.window
+			if state.fleeTo then
+				state.lastHitAt = now
+				if not state.fleeReached then
+					return -- ещё бежит к своей точке: бежит дальше
+				end
+				runToSpot(enemy, state, turret, rehit, now)
+				return
+			elseif again or (running and state.fleeStalled) then
+				state.lastHitAt = now
+				state.runUntil = now + rehit.budget
+				runToSpot(enemy, state, turret, rehit, now)
+				if state.fleeTo then
+					return
+				end
+			end
+		end
+
 		-- «Пугаются — отходят, через 3 секунды возвращаются.» Каждое новое попадание
 		-- продлевает срок: под непрерывным огнём жук так и не возвращается, и это верно.
 		-- Разбегаются веером, а не одной колонной строго от турели: у каждого свой
@@ -385,6 +434,36 @@ function EnemyBehavior.State(enemy, enemyData, state)
 		return "flee"
 	end
 
+	-- Забег повторного испуга: добежал — смотрит, безопасно ли тут.
+	if state.fleeTo then
+		local rehit = Sense.rules(enemyData.caste).rehit
+		if not rehit or not state.panicUntil or now >= state.panicUntil then
+			endRun(state, now) -- вышел срок забега
+		else
+			local position = enemy:GetPivot().Position
+			state.fleeReached = state.fleeStalled == true
+				or flat(state.fleeTo - position).Magnitude <= rehit.reach
+			if state.fleeReached and now - (state.lastHitAt or 0) >= rehit.quiet then
+				if Sense.coverage(position) == 0 then
+					endRun(state, now) -- тихо и ни одна турель не достаёт
+					return nil
+				end
+				-- Не бьют, но место под огнём: бежит искать другое.
+				local turret = Sense.nearestTurret(position)
+				if turret then
+					state.fleeFrom = turret:GetPivot().Position
+					local spot = Sense.FleeSpot(enemy, state.fleeFrom, state.lastFleeDirection, rehit)
+					if spot then
+						state.fleeTo = spot
+						state.fleeReached = false
+						state.fleeStalled = false
+						state.lastHitAt = now
+					end
+				end
+			end
+		end
+	end
+
 	if state.panicUntil and now < state.panicUntil then
 		return "flee"
 	end
@@ -442,6 +521,17 @@ end
 -- Куда отходит испуганный: прочь от того, от чего бежит, под своим углом разброса.
 function EnemyBehavior.FleeStep(enemy, state, step)
 	local position = enemy:GetPivot().Position
+
+	-- Повторный испуг: бежит к выбранной точке и, добежав, стоит там.
+	if state.fleeTo then
+		local toSpot = flat(state.fleeTo - position)
+		if toSpot.Magnitude <= ((Sense.rules(0).rehit or NO_RULES).reach or 3) then
+			return Vector3.zero
+		end
+		state.lastFleeDirection = toSpot.Unit
+		return toSpot.Unit * math.min(step, toSpot.Magnitude)
+	end
+
 	local away = flat(position - (state.fleeFrom or position))
 	if away.Magnitude < 1e-3 then
 		away = Vector3.new(math.cos(state.seed or 0), 0, math.sin(state.seed or 0))
@@ -451,7 +541,16 @@ function EnemyBehavior.FleeStep(enemy, state, step)
 		local c, s = math.cos(angle), math.sin(angle)
 		away = Vector3.new(away.X * c - away.Z * s, 0, away.X * s + away.Z * c)
 	end
+	state.lastFleeDirection = away.Unit
 	return away.Unit * step
+end
+
+-- Сколько шага испуга жук реально прошёл (после fleeConfine): упёрся в стену или постройку —
+-- стоит «в углу», и попадание по нему теперь значит повторный испуг (см. Damaged).
+function EnemyBehavior.FleeMoved(state, enemyData, wanted, got)
+	local share = (Sense.rules(enemyData.caste).rehit or NO_RULES).stalled or 0
+	state.fleeStalled = wanted > 1e-3 and got < wanted * share
+	return not state.fleeStalled
 end
 
 -- Множитель скорости от пола под ногами: на хитине жуки быстрее. Заодно

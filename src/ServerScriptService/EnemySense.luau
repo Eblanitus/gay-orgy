@@ -272,6 +272,45 @@ function Sense.SafeSpot(enemy, turret, plan)
 	return nil
 end
 
+-- ============================ Бегство ============================
+--
+-- Повторный испуг разведчика (Enemies.Castes[0].rehit): куда бежать, чтобы по нему не били.
+-- Перебирает направления и дальности вокруг жука, берёт точку без турелей над ней, подальше
+-- от стреляющего и не в ту сторону, куда он уже бежал. Путь до точки должен быть свободен
+-- до края поля плюс edge: испуг ни сетки, ни стен не знает (см. fleeConfine в EnemySpawner).
+function Sense.FleeSpot(enemy, from, avoidDirection, plan)
+	local position = enemy:GetPivot().Position
+	local best, bestScore
+	local offset = math.random() * math.pi * 2 / plan.directions
+	for i = 0, plan.directions - 1 do
+		local angle = offset + i * math.pi * 2 / plan.directions
+		local direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
+
+		-- Свободный путь считается один раз на направление: самая дальняя точка плюс запас.
+		local free = 0
+		local reach = plan.distances[#plan.distances] + plan.edge
+		while free + plan.step <= reach and Sense.standable(position + direction * (free + plan.step)) do
+			free += plan.step
+		end
+
+		for _, distance in plan.distances do
+			if distance + plan.edge <= free then
+				local spot = position + direction * distance
+				local score = Sense.coverage(spot) * plan.coverPenalty
+					- flat(spot - from).Magnitude
+					+ math.random() * plan.jitter
+				if avoidDirection and direction:Dot(avoidDirection) > plan.sameDot then
+					score += plan.samePenalty
+				end
+				if not bestScore or score < bestScore then
+					best, bestScore = spot, score
+				end
+			end
+		end
+	end
+	return best and Sense.onFloor(best) or nil
+end
+
 -- ============================ Колония ============================
 --
 -- «Разведчики ищут лабораторию. Нашли — грызут стол.» Пока лабораторию не нашли, они

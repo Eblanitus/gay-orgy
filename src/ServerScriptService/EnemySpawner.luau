@@ -843,7 +843,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				end
 				local nose = (enemy:GetAttribute("FootFront") or 0) + (enemy:GetAttribute("FootRadius") or 1)
 				desired = fleeConfine(position, position + move, nose, profile.bodyHeight)
-				setVelocity(heading * fleeSpeed)
+				-- Упёрся и стоит (или добежал до точки) — не бежит на месте.
+				local moving = EnemyBehavior.FleeMoved(state, enemyData, move.Magnitude, flat(desired - position).Magnitude)
+				setVelocity(moving and move.Magnitude > 1e-3 and heading * fleeSpeed or Vector3.zero)
 				-- Отбежав, он сошёл с маршрута: путь надо будет считать заново.
 				dirty = true
 			elseif climb then
