@@ -28,6 +28,7 @@ Loose.Groups = {
 	Default = "Default",
 	Enemies = "Enemies", -- видимые тела жуков: толкают трупы, больше ни с чем не сталкиваются
 	Corpses = "Corpses", -- трупы, лапы, осколки: лежат на полу и платформах, толкаются друг о друга
+	Flat = "FlatRemains", -- лепёшки раздавленных жуков: держат трупы и машину, но не игрока (иначе это платформа над полом)
 	Car = "ArcadeCar", -- корпус машины Аркады
 	Wheel = "ArcadeWheel", -- колёса машины: пол держат лучи подвески, колёса только расшвыривают останки
 	Barrier = "PlayerBarrier", -- невидимые крышки над стенами (MapBarriers): держат только игрока
@@ -44,6 +45,14 @@ local COLLIDE = {
 	{ "Enemies", "Enemies", false },
 	{ "Corpses", "Default", true },
 	{ "Corpses", "Corpses", true },
+	{ "Flat", "Default", false },
+	{ "Flat", "Flat", false },
+	{ "Flat", "Enemies", false },
+	{ "Flat", "Barrier", false },
+	{ "Flat", "TowerSolid", false },
+	{ "Flat", "Corpses", true },
+	{ "Flat", "Car", true },
+	{ "Flat", "Wheel", true },
 	-- Машина сталкивается с полем, ограждением и останками, но не с жуками: давку считает код,
 	-- и жук под колёсами не должен подбрасывать машину.
 	{ "Car", "Default", true },

@@ -485,13 +485,13 @@ return function(deps)
 						Color = part.Color:Lerp(p.color, cracked and k.darken or p.darken),
 						Transparency = item.hide and 1 or part.Transparency,
 					}):Play()
-					-- Лепёшка — твёрдая: лапы, трупы, машина ложатся на неё сверху, а не проходят
+					-- Лепёшка — твёрдая для останков и машины (но не для игрока: Loose.Groups.Flat), они ложатся на неё сверху, а не проходят
 					-- насквозь (правило автора: всё, что лежит на карте, имеет коллизию).
 					-- Включается после расплющивания: в полёте деталь раздвигала бы всё на пути.
 					if not item.hide then
 						task.delay(p.splatTime, function()
 							if part.Parent then
-								part.CollisionGroup = CORPSE_GROUP
+								part.CollisionGroup = Loose.Groups.Flat
 								part.CanCollide = true
 							end
 						end)
