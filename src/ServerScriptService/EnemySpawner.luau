@@ -1707,12 +1707,18 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 end
 
 -- Спавнит count врагов типа enemyType. При count > 1 — с интервалом и разбросом по позиции,
--- чтобы не спавились друг на друге. hpOverride — для волн (см. Waves).
+-- чтобы не спавились друг на друге. hpOverride — для волн (см. Waves), armorOverride —
+-- броня группы вместо брони вида (поле armor группы в Waves; Стандарт Бункера).
 --
 -- Большая группа спавнится несколько секунд, и за это время забег может кончиться и начаться
 -- заново. isCancelled — проверка между спавнами: без неё остаток старой волны досыпался бы
 -- уже в новый забег (см. WaveRunner).
-function EnemySpawner.SpawnGroup(enemyType, count, hpOverride, isCancelled)
+function EnemySpawner.SpawnGroup(enemyType, count, hpOverride, isCancelled, armorOverride)
+	-- Броня — атрибут Armor на самом жуке (его читает Effects.ApplyArmor): ставится поверх
+	-- брони вида сразу после появления, до первого шага.
+	local setup = armorOverride and function(enemy)
+		enemy:SetAttribute("Armor", armorOverride)
+	end or nil
 	for i = 1, count do
 		if isCancelled and isCancelled() then
 			return
@@ -1725,7 +1731,7 @@ function EnemySpawner.SpawnGroup(enemyType, count, hpOverride, isCancelled)
 		) or Vector3.new(0, 0, 0)
 
 		task.spawn(function()
-			spawnEnemy(enemyType, offset, hpOverride)
+			spawnEnemy(enemyType, offset, hpOverride, nil, setup)
 		end)
 
 		if i < count then

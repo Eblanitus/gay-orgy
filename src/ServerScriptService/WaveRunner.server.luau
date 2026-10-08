@@ -326,7 +326,7 @@ local function runWaves(myGeneration, levelNumber)
 		local groupsLeft = #groups
 		for _, group in groups do
 			task.spawn(function()
-				EnemySpawner.SpawnGroup(group.enemyType, group.count, group.hp, spawnCancelled)
+				EnemySpawner.SpawnGroup(group.enemyType, group.count, group.hp, spawnCancelled, group.armor)
 				groupsLeft -= 1
 			end)
 		end
