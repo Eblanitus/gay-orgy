@@ -1,97 +1,103 @@
--- Уровень 2 «Бункер»: только каста разведчиков (Normal, Mini, Armored, Moth), только Колбы
--- и элементы до тира 1 (правила уровня — поле rules в Levels, проверки — в Tutorial).
--- Уровень учит двум вещам: летунам (Моль готовит к Лицехвату) и крафту тира 1.
+-- Уровень 2 «Бункер»: только каста разведчиков (Normal, Mini, Armored, Sprinter; Моль — отдельно,
+-- см. ниже), только Колбы и элементы до тира 1 (правила уровня — поле rules в Levels,
+-- проверки — в Tutorial). Уровень учит летунам (Моль готовит к Лицехвату) и крафту тира 1.
+--
+-- Моли в волнах нет: она прилетает сама по одной, и между волнами, и во время них
+-- (поле moths в Levels, спавн — WaveRunner). Пачкой она смотрелась ненатурально (просьба автора).
+--
+-- HP у всех жуков Бункера ×1.5 к базовому значению типа из Enemies (просьба автора «всем
+-- увеличить хп, кроме Моли»): поле hp группы, так что другие уровни это не трогает.
+-- Жуков в волнах меньше, чем было: тяжелее каждый, а не толпа больше.
 --
 -- Волны тематические, нагрузка нарочно скачет: всплески (5, 8, 11, 13, 15) чередуются
--- с передышками (6, 9, 10). Стол грызёт только Обычный (у Мини chewDamage = 0, Броня
--- ходит по периметру), поэтому в толпу Мини и в броню подмешано немного Обычных — иначе
--- такую волну нельзя проиграть.
+-- с передышками (6, 10). Стол грызёт Обычный, Спринтер бьёт его с разбега (breachBite);
+-- у Мини chewDamage = 0, Броня ходит по периметру, поэтому в толпу Мини и в броню
+-- подмешаны Обычные — иначе такую волну нельзя проиграть.
 --
--- hint — строка в журнал, когда волна ждёт кнопки (WaveRunner): игрок читает её до старта.
+-- hint — строка в журнал, когда волна ждёт старта (WaveRunner): игрок читает её до волны.
 -- Подсказки про крафт стоят перед волнами, где элемент тира 1 заметно выгоднее базового
--- (офлайн-симулятор: на волне 4 Луже хватает одной Колбы, Земле нужно четыре).
---
--- hp везде равно базовому значению типа из Enemies — выписано явно для читаемости.
+-- (офлайн-симулятор).
 local Waves = {
 	-- 1. Знакомство: обычные и мелкие.
 	{ number = 1, groups = {
-		{ enemyType = "Normal",  count = 4, hp = 30 },
-		{ enemyType = "Mini",    count = 3, hp = 14 },
+		{ enemyType = "Normal",   count = 4, hp = 45 },
+		{ enemyType = "Mini",     count = 2, hp = 21 },
 	} },
 	-- 2. Броня: бронированные идут по периметру и ломают всё на пути.
 	{ number = 2, groups = {
-		{ enemyType = "Armored", count = 4, hp = 42 },
-		{ enemyType = "Normal",  count = 3, hp = 30 },
+		{ enemyType = "Armored",  count = 3, hp = 63 },
+		{ enemyType = "Normal",   count = 2, hp = 45 },
 	} },
-	-- 3. Только Моль: первые летуны.
+	-- 3. Первые Спринтеры. С этой волны начинает прилетать Моль.
 	{ number = 3, groups = {
-		{ enemyType = "Moth",    count = 8, hp = 10 },
-	}, hint = "ПОДСКАЗКА: летучие жуки! Колба бьёт и по воздуху. Моль летит на свет турелей с элементом" },
+		{ enemyType = "Sprinter", count = 3, hp = 27 },
+		{ enemyType = "Normal",   count = 3, hp = 45 },
+	}, hint = "ПОДСКАЗКА: Спринтер бежит к столу и бьёт его с разбега. А на свет турелей с элементом теперь прилетает Моль: она отвлекает турели, Колба бьёт и по воздуху" },
 	-- 4. Толпа мелких, в ней прячутся обычные: Колба бьёт ближайшего.
 	{ number = 4, groups = {
-		{ enemyType = "Mini",    count = 25, hp = 14 },
-		{ enemyType = "Normal",  count = 5, hp = 30 },
+		{ enemyType = "Mini",     count = 15, hp = 21 },
+		{ enemyType = "Normal",   count = 4, hp = 45 },
 	}, hint = "ПОДСКАЗКА: скрести два базовых элемента на крафт-столе, выйдет элемент сильнее. Вода + Вода = Лужа: бьёт чаще и замедляет толпу" },
-	-- 5. Смесь всех четырёх, первый всплеск.
+	-- 5. Смесь, первый всплеск.
 	{ number = 5, groups = {
-		{ enemyType = "Normal",  count = 10, hp = 30 },
-		{ enemyType = "Mini",    count = 10, hp = 14 },
-		{ enemyType = "Armored", count = 3, hp = 42 },
-		{ enemyType = "Moth",    count = 4, hp = 10 },
+		{ enemyType = "Normal",   count = 8, hp = 45 },
+		{ enemyType = "Mini",     count = 6, hp = 21 },
+		{ enemyType = "Armored",  count = 2, hp = 63 },
+		{ enemyType = "Sprinter", count = 2, hp = 27 },
 	} },
 	-- 6. Передышка.
 	{ number = 6, groups = {
-		{ enemyType = "Normal",  count = 6, hp = 30 },
-		{ enemyType = "Moth",    count = 6, hp = 10 },
+		{ enemyType = "Normal",   count = 5, hp = 45 },
 	} },
 	-- 7. Стена брони.
 	{ number = 7, groups = {
-		{ enemyType = "Armored", count = 12, hp = 42 },
-		{ enemyType = "Normal",  count = 4, hp = 30 },
+		{ enemyType = "Armored",  count = 8, hp = 63 },
+		{ enemyType = "Normal",   count = 3, hp = 45 },
 	}, hint = "ПОДСКАЗКА: Земля + Земля = Грунт. Бьёт вдвое сильнее Земли, броня его почти не держит" },
 	-- 8. Большая толпа, всплеск.
 	{ number = 8, groups = {
-		{ enemyType = "Mini",    count = 40, hp = 14 },
-		{ enemyType = "Normal",  count = 10, hp = 30 },
+		{ enemyType = "Mini",     count = 24, hp = 21 },
+		{ enemyType = "Normal",   count = 6, hp = 45 },
 	} },
-	-- 9. Рой Моли.
+	-- 9. Рывок Спринтеров.
 	{ number = 9, groups = {
-		{ enemyType = "Moth",    count = 20, hp = 10 },
+		{ enemyType = "Sprinter", count = 8, hp = 27 },
+		{ enemyType = "Normal",   count = 2, hp = 45 },
 	} },
 	-- 10. Передышка.
 	{ number = 10, groups = {
-		{ enemyType = "Normal",  count = 8, hp = 30 },
-		{ enemyType = "Armored", count = 6, hp = 42 },
+		{ enemyType = "Normal",   count = 6, hp = 45 },
+		{ enemyType = "Armored",  count = 4, hp = 63 },
 	} },
 	-- 11. Большой всплеск: все сразу.
 	{ number = 11, groups = {
-		{ enemyType = "Normal",  count = 20, hp = 30 },
-		{ enemyType = "Mini",    count = 30, hp = 14 },
-		{ enemyType = "Armored", count = 10, hp = 42 },
-		{ enemyType = "Moth",    count = 10, hp = 10 },
+		{ enemyType = "Normal",   count = 12, hp = 45 },
+		{ enemyType = "Mini",     count = 16, hp = 21 },
+		{ enemyType = "Armored",  count = 6, hp = 63 },
+		{ enemyType = "Sprinter", count = 4, hp = 27 },
 	} },
-	-- 12. Броня с летунами.
+	-- 12. Броня, за ней Спринтеры.
 	{ number = 12, groups = {
-		{ enemyType = "Armored", count = 20, hp = 42 },
-		{ enemyType = "Moth",    count = 10, hp = 10 },
-		{ enemyType = "Normal",  count = 6, hp = 30 },
+		{ enemyType = "Armored",  count = 12, hp = 63 },
+		{ enemyType = "Sprinter", count = 4, hp = 27 },
+		{ enemyType = "Normal",   count = 4, hp = 45 },
 	} },
 	-- 13. Лавина мелких.
 	{ number = 13, groups = {
-		{ enemyType = "Mini",    count = 60, hp = 14 },
-		{ enemyType = "Normal",  count = 12, hp = 30 },
+		{ enemyType = "Mini",     count = 36, hp = 21 },
+		{ enemyType = "Normal",   count = 8, hp = 45 },
 	} },
-	-- 14. Рой Моли с прикрытием.
+	-- 14. Спринтеры волной.
 	{ number = 14, groups = {
-		{ enemyType = "Moth",    count = 30, hp = 10 },
-		{ enemyType = "Normal",  count = 10, hp = 30 },
+		{ enemyType = "Sprinter", count = 12, hp = 27 },
+		{ enemyType = "Normal",   count = 6, hp = 45 },
 	} },
 	-- 15. Финал.
 	{ number = 15, groups = {
-		{ enemyType = "Normal",  count = 30, hp = 30 },
-		{ enemyType = "Mini",    count = 40, hp = 14 },
-		{ enemyType = "Armored", count = 20, hp = 42 },
-		{ enemyType = "Moth",    count = 20, hp = 10 },
+		{ enemyType = "Normal",   count = 18, hp = 45 },
+		{ enemyType = "Mini",     count = 24, hp = 21 },
+		{ enemyType = "Armored",  count = 12, hp = 63 },
+		{ enemyType = "Sprinter", count = 8, hp = 27 },
 	} },
 }
 

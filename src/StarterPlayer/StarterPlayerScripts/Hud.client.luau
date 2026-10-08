@@ -624,8 +624,33 @@ local function cancelWaveHold()
 	holdBar.Size = UDim2.new(0, 0, 0, 6)
 end
 
+-- Таймер между волнами (Levels[n].betweenWaves): вместо кнопки — отсчёт до волны на её месте.
+-- Сервер шлёт секунды в WaveReady, клиент досчитывает сам; нажимать нечего.
+local START_TEXT = startWaveButton.Text
+local countdownUntil = nil
+
+local function stopCountdown()
+	countdownUntil = nil
+	startWaveButton.Text = START_TEXT
+	startWaveButton.AutoButtonColor = true
+end
+
+local function startCountdown(seconds)
+	countdownUntil = os.clock() + seconds
+	startWaveButton.AutoButtonColor = false
+	task.spawn(function()
+		local mine = countdownUntil
+		while countdownUntil == mine do
+			local left = math.max(0, math.ceil(mine - os.clock()))
+			-- На телефоне кнопка узкая (32% ширины): длинная строка обрезалась бы.
+			startWaveButton.Text = (MobileUI.isMobile and "ЧЕРЕЗ %d" or "ВОЛНА ЧЕРЕЗ %d"):format(left)
+			task.wait(0.2)
+		end
+	end)
+end
+
 local function startWaveHold()
-	if holdingWave or not startWaveButton.Visible then
+	if holdingWave or not startWaveButton.Visible or countdownUntil then
 		return
 	end
 	holdingWave = true
@@ -682,12 +707,17 @@ ReplicatedStorage:GetAttributeChangedSignal("TutorialWaveLocked"):Connect(functi
 	end
 end)
 
-Remotes.WaveReady.OnClientEvent:Connect(function(waveNumber, totalWaves)
+Remotes.WaveReady.OnClientEvent:Connect(function(waveNumber, totalWaves, countdown)
 	setInRun(true)
 	-- Готовность волны говорит сама кнопка «Начать»: номер — в шапке.
 	showWave(waveNumber, totalWaves)
 	waveReady = true
 	startWaveButton.Visible = not ReplicatedStorage:GetAttribute("TutorialWaveLocked")
+	if typeof(countdown) == "number" then
+		startCountdown(countdown)
+	else
+		stopCountdown()
+	end
 
 	-- Готовность волны 1 приходит и после входа в уровень из лобби. Без сброса здесь баннер
 	-- победы/поражения предыдущего забега висел бы поверх новой попытки до первого нажатия волны.
@@ -704,6 +734,7 @@ Remotes.WaveChanged.OnClientEvent:Connect(function(waveNumber, totalWaves)
 	resultFrame.Visible = false
 	startWaveButton.Visible = false
 	cancelWaveHold()
+	stopCountdown()
 end)
 
 Remotes.MatterChanged.OnClientEvent:Connect(function(amount)
@@ -768,6 +799,7 @@ Remotes.RunEnded.OnClientEvent:Connect(function(won, levelNumber)
 	Theme.Open(resultFrame)
 	startWaveButton.Visible = false
 	cancelWaveHold()
+	stopCountdown()
 	-- Сервер тут же возвращает игрока в лобби — рамку забега прячем,
 	-- баннер остаётся висеть поверх лобби до следующего WaveReady/WaveChanged.
 	setInRun(false)

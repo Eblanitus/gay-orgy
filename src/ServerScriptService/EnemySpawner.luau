@@ -1690,6 +1690,25 @@ function EnemySpawner.SpawnGroup(enemyType, count, hpOverride, isCancelled)
 	end
 end
 
+-- Один жук вне состава волны (Моль Бункера, поле moths в Levels): атрибут Ambient — волна
+-- его не ждёт (WaveRunner не считает таких в зачистке). life — через сколько секунд живой
+-- улетает (исчезает без награды), чтобы недобитые не копились до конца забега.
+function EnemySpawner.SpawnAmbient(enemyType, life)
+	task.spawn(function()
+		spawnEnemy(enemyType, Vector3.zero, nil, nil, function(enemy)
+			enemy:SetAttribute("Ambient", true)
+			if life then
+				task.delay(life, function()
+					if enemy.Parent and (enemy:GetAttribute("HP") or 0) > 0 then
+						Crowd.Remove(enemy)
+						enemy:Destroy()
+					end
+				end)
+			end
+		end)
+	end)
+end
+
 -- Сколько жуков создаётся прямо сейчас и ещё не появилось в Workspace.Enemies.
 -- Волна не зачищена, пока это не ноль, даже если папка пуста.
 function EnemySpawner.Spawning()
