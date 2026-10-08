@@ -983,25 +983,31 @@ return function(deps)
 		local teeth = accent(addPart(arm, "BladeTeeth", Vector3.new(0.04, 2.22, 2.22), CFrame.new(restAt),
 			glow, neon, cylinder))
 		teeth:SetAttribute("Whirl", 900)
-		-- Узор диска — три светящиеся спирали от ступицы к краю (акцент): на ходу они
+		-- Узор диска — три ряда светящихся плюсов по спирали (акцент): два идут по ходу,
+		-- один против, сдвинуты по углу. Плюс — два бруска, крест-накрест. На ходу ряды
 		-- закручиваются в вихрь. Венец гладкий, без зубцов.
-		local SPIRAL_POINTS = 6
+		local PLUS_COUNT = 10
+		local DISC_R = 1.06 -- полуширина диска (Blade 2.12)
+		local PLUS_ARMS = {
+			{ offset = 0, sense = 1 },
+			{ offset = math.pi, sense = 1 },
+			{ offset = math.pi / 3, sense = -1 },
+		}
 		local slot = 0
-		for arm3 = 0, 2 do
-			local function point(j)
-				local radius = 0.3 + (j - 1) * 0.13
-				local angle = math.rad(120 * arm3 + (j - 1) * 24)
-				return Vector3.new(0, math.cos(angle) * radius, math.sin(angle) * radius)
-			end
-			for j = 1, SPIRAL_POINTS - 1 do
-				local from, to = point(j), point(j + 1)
-				local d = to - from
-				slot += 1
-				local part = accent(addPart(arm, "BladeSlot" .. slot, Vector3.new(0.08, 0.07, d.Magnitude + 0.05),
-					CFrame.new(restAt + (from + to) / 2) * CFrame.Angles(math.atan2(-d.Y, d.Z), 0, 0),
-					glow, neon))
-				part:SetAttribute("Whirl", 900)
-				part:SetAttribute("WhirlAxis", "BladeHub")
+		for _, row in PLUS_ARMS do
+			for j = 0, PLUS_COUNT - 1 do
+				local t = j / (PLUS_COUNT - 1)
+				local radius = DISC_R * (0.18 + 0.72 * t)
+				local angle = row.offset + row.sense * t * math.pi * 2
+				local center = restAt + Vector3.new(0, math.cos(angle) * radius, math.sin(angle) * radius)
+				local length = DISC_R * (0.12 + 0.12 * t)
+				local thick = DISC_R * (0.03 + 0.035 * t)
+				for _, size in { Vector3.new(0.08, thick, length), Vector3.new(0.08, length, thick) } do
+					slot += 1
+					local part = accent(addPart(arm, "BladeSlot" .. slot, size, CFrame.new(center), glow, neon))
+					part:SetAttribute("Whirl", 900)
+					part:SetAttribute("WhirlAxis", "BladeHub")
+				end
 			end
 		end
 
