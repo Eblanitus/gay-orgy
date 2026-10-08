@@ -216,7 +216,7 @@ local function makeStat(caption, x, width, align, valueSize)
 	value.Parent = readouts
 	-- Приборный шрифт только у числа: подпись живёт обычным начертанием (Theme.StatCaption).
 	Theme.Display(value)
-	return value
+	return value, cap
 end
 
 local center = GROUP_W / 2
@@ -229,8 +229,15 @@ matterLabel.TextColor3 = Theme.color.energy
 local waveLabel = makeStat("волна", center - WAVE_W / 2, WAVE_W, Enum.TextXAlignment.Center, valueSize)
 waveLabel.Text = "- / -"
 
-local hpLabel = makeStat("прочность", center + SIDE_GAP, SIDE_W, Enum.TextXAlignment.Left, valueSize)
+local hpLabel, hpCaption = makeStat("прочность", center + SIDE_GAP, SIDE_W, Enum.TextXAlignment.Left, valueSize)
 hpLabel.Text = "-"
+
+-- Подпись «ПРОЧНОСТЬ» красится слева направо как шкала: левая доля по проценту
+-- прочности — цветом состояния (тот же hpColor, что у числа), остальное — тусклым.
+-- UIGradient умножает на TextColor3, поэтому у подписи он белый.
+hpCaption.TextColor3 = Color3.new(1, 1, 1)
+local hpCaptionGradient = Instance.new("UIGradient")
+hpCaptionGradient.Parent = hpCaption
 
 -- Ход забега под числом волны — черточками, по одной на каждую волну уровня (просьба
 -- автора): дошедшие до текущей бирюзовые, остальные тусклые. Бирюза на арене —
@@ -306,6 +313,27 @@ local function hpColor(hp, limit)
 	end
 	return Theme.color.danger
 end
+
+local function paintHpCaption(hp, limit)
+	local share = limit > 0 and math.clamp(hp / limit, 0, 1) or 0
+	local filled = hpColor(hp, limit)
+	local rest = Theme.color.textDim
+	if share >= 1 then
+		hpCaptionGradient.Color = ColorSequence.new(filled)
+	elseif share <= 0 then
+		hpCaptionGradient.Color = ColorSequence.new(rest)
+	else
+		-- Жёсткая граница на доле прочности (два ключа с почти одним положением).
+		share = math.clamp(share, 0.002, 0.998)
+		hpCaptionGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, filled),
+			ColorSequenceKeypoint.new(share, filled),
+			ColorSequenceKeypoint.new(share + 0.001, rest),
+			ColorSequenceKeypoint.new(1, rest),
+		})
+	end
+end
+paintHpCaption(0, 0)
 
 -- ============ Журнал ============
 
@@ -693,6 +721,7 @@ local function updateTableHp()
 	local maxHp = craftTable:GetAttribute("MaxHP") or hp
 	hpLabel.Text = tostring(math.floor(hp))
 	hpLabel.TextColor3 = hpColor(hp, maxHp)
+	paintHpCaption(hp, maxHp)
 	Theme.Blink(hpLabel)
 end
 
