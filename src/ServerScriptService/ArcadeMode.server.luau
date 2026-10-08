@@ -22,6 +22,7 @@ local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
 local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
+local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 local PlayerData = require(ServerScriptService:WaitForChild("PlayerData"))
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -121,8 +122,8 @@ local GAIT_MID_EVERY = Balance.gait.midEvery
 local GAIT_FAR_EVERY = Balance.gait.farEvery
 local GAIT_MAX_DT = Balance.gait.maxDt -- потолок накопленного шага, чтобы жук не прыгал после фриза сервера
 
--- Те же числа, что и у обычной смерти в EnemySpawner (DEATH_SPLAT_SIZE/DROPS) —
--- труп и кровь того же жука, что и на арене.
+-- Кровь давки: машина выжимает больше, чем смерть на арене (PhysicsFX.blood.death), — свои
+-- числа. Форма, брызги и высыхание — те же, что у арены (BloodFX).
 local SPLAT_SIZE = Balance.splat.size -- на жука масштаба 3, как у арены (Corpses считает scale = Scale / 3)
 local SPLAT_DROPS = Balance.splat.drops
 
@@ -319,7 +320,14 @@ local function killBug(slot, carPos, carry)
 		-- раздавили (тот же порядок, что и в EnemySpawner) — поле аркады на своей
 		-- высоте, отличной от пола арены, поэтому Corpses.Splat принимает GROUND_Y явно.
 		local scale = model:GetAttribute("Scale") or 3
-		Corpses.Splat(model:GetPivot().Position, SPLAT_SIZE * scale / 3, SPLAT_DROPS, GROUND_Y)
+		-- Брызги — по ходу машины (а стоит — от неё).
+		local at = model:GetPivot().Position
+		local push = carry and Vector3.new(carry.X, 0, carry.Z) or Vector3.zero
+		if push.Magnitude < 1 and carPos then
+			push = Vector3.new(at.X - carPos.X, 0, at.Z - carPos.Z)
+		end
+		Corpses.Splat(at, SPLAT_SIZE * scale / 3, SPLAT_DROPS, GROUND_Y,
+			push.Magnitude > 1e-3 and push.Unit * PhysicsFX.blood.stretch or nil)
 		Corpses.Leave(model, { fraction = 1, from = carPos, floorY = GROUND_Y, carry = carry, remains = "crush" })
 	end
 	emptyBugSlot(slot)

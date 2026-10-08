@@ -481,7 +481,7 @@ end)
 
 -- ============ События сервера (Corpses, Impulse) ============
 
-EnemyFX.OnClientEvent:Connect(function(kind, a, b, c, d)
+EnemyFX.OnClientEvent:Connect(function(kind, a, b, c, d, e)
 	if kind == "death" then
 		-- Серверная модель ещё на месте: событие уходит до её Destroy.
 		local visual = a and a:FindFirstChild("Visual")
@@ -528,7 +528,7 @@ EnemyFX.OnClientEvent:Connect(function(kind, a, b, c, d)
 		end
 		untrack(a)
 	elseif kind == "splat" then
-		CorpseFX.Splat(a, b, c, d)
+		CorpseFX.Splat(a, b, c, d, e)
 	elseif kind == "absorb" then
 		CorpseFX.Absorb(a, b)
 	elseif kind == "clear" then

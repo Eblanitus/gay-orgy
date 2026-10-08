@@ -41,6 +41,7 @@ local EnemyGait = require(ReplicatedStorage:WaitForChild("EnemyGait"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 local BugPalette = require(ReplicatedStorage:WaitForChild("BugPalette"))
+local BloodFX = require(ReplicatedStorage:WaitForChild("BloodFX"))
 
 -- Группы столкновений (заводит общий слой Loose на сервере, клиенту они реплицируются). Труп обязан ловить толчок от жука, но только его: тело жука
 -- анкорнуто и физикой не двигается вовсе, поэтому столкновение здесь одностороннее —
@@ -77,20 +78,16 @@ local Corpses = {}
 -- которые ничего не считают и не двигаются.
 local MAX_CORPSES = 60
 
--- Сколько пятен крови. Их много больше, чем трупов (каждое попадание — капли),
--- но каждое — одна плоская деталь без тени и без запросов.
-local MAX_STAINS = 220
+-- Сколько луж и лепёшек останков (давит, плавит, растворяет, тает, болото): каждая — модель
+-- из нескольких плоских деталей. Кровь считается отдельно, по деталям (BloodFX).
+local MAX_STAINS = 120
 
 -- Насколько труп выцветает к серому: дешёвый и ясный сигнал «мёртв», который не
 -- конфликтует ни с одной меткой индикации (индикация с трупа снята вместе с моделью).
 local DEATH_FADE = 0.5
 local DEATH_COLOR = BugPalette.Dead
 
--- Кровь — гемолимфа из палитры жуков (BugPalette.Blood): тёмная олива. Прежняя сочная
--- зелень на светлом полу горела салатовым и спорила со всем остальным. Оттенок каждого
--- пятна чуть свой (BLOOD_SPREAD): один цвет на всё поле читается как краска, а не как следы.
-local BLOOD_COLOR = BugPalette.Blood
-local BLOOD_SPREAD = 14 -- единиц RGB в обе стороны
+-- Плоские детали останков на полу (лепёшка, след волочения): толщина и зазор над полом.
 local BLOOD_THICKNESS = 0.06 -- studs: пятно плоское, но не нулевое — иначе мерцает с полом
 local BLOOD_LIFT = 0.03 -- studs над полом: тот же зазор против z-fighting
 
@@ -423,7 +420,8 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 	local speed = plan.speedMin + (plan.speed - plan.speedMin) * math.clamp(fraction, 0, 1.5)
 	Loose.Kick(root, direction * speed + (carry or Vector3.zero), Loose.RandomSpin(plan.spin))
 
-	Corpses.Splat(root.Position, plan.splatSize * scale, 1, floorY)
+	-- Кровь брызжет туда же, куда полетела конечность.
+	Corpses.Splat(root.Position, plan.splatSize * scale, 1, floorY, direction * PhysicsFX.blood.stretch)
 	Loose.Track(piece, "gore")
 end
 
@@ -844,57 +842,12 @@ task.spawn(function()
 	end
 end)
 
--- Пятно крови на полу. size — диаметр основного пятна в studs; drops — сколько вокруг
--- него брызг. Капля всегда ложится на опору под собой, а не на ту высоту, где шла кровь:
--- следы боя нужны на карте, а не в воздухе над ней.
---
--- Плоский цилиндр, а не декаль с картинкой: текстура потребовала бы залитого
--- ассета, а форма пятна собирается из нескольких кругов разного размера не хуже.
--- floorY переопределяет высоту пола для вызвавшего (по умолчанию опора под каплей, Loose.FloorAt) —
--- нужен тем, чьё поле живёт не на арене (например, Аркада).
-function Corpses.Splat(position, size, drops, floorY)
-	local folder = container("Blood")
-
-	local function drop(at, diameter)
-		local stain = Instance.new("Part")
-		stain.Name = "Blood"
-		stain.Shape = Enum.PartType.Cylinder
-		-- Цилиндр в Roblox вытянут вдоль своей X, поэтому толщина — это X, а поворот
-		-- на 90° по Z кладёт его плашмя. Овал вместо круга (Y и Z разные) — чтобы
-		-- пятна не читались одинаковыми штампами.
-		stain.Size = Vector3.new(BLOOD_THICKNESS, diameter, diameter * (0.75 + math.random() * 0.5))
-		-- Каждая капля — на свою опору: в яму, на обломок, на пол (Loose.FloorAt).
-		local y = (floorY or Loose.FloorAt(at.X, at.Z)) + BLOOD_LIFT
-		stain.CFrame = CFrame.new(at.X, y, at.Z)
-			* CFrame.Angles(0, math.random() * math.pi * 2, 0)
-			* CFrame.Angles(0, 0, math.rad(90))
-		stain.Anchored = true
-		stain.CanCollide = false
-		stain.CanQuery = false
-		stain.CanTouch = false
-		stain.CastShadow = false
-		stain.Material = Enum.Material.SmoothPlastic
-		-- Не вплотную: глухое пятно на светлом полу читается как зелёная наклейка,
-		-- а не как след — замечено на плейтесте.
-		stain.Transparency = 0.3
-		local shade = (math.random() - 0.5) * 2 * BLOOD_SPREAD / 255
-		stain.Color = Color3.new(
-			math.clamp(BLOOD_COLOR.R + shade, 0, 1),
-			math.clamp(BLOOD_COLOR.G + shade, 0, 1),
-			math.clamp(BLOOD_COLOR.B + shade, 0, 1)
-		)
-		stain.Parent = folder
-		remember(stains, stain, MAX_STAINS)
-	end
-
-	drop(position, size)
-
-	for _ = 1, drops or 0 do
-		local angle = math.random() * math.pi * 2
-		local distance = size * (0.5 + math.random())
-		drop(position + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance),
-			size * (0.25 + math.random() * 0.3))
-	end
+-- Пятно крови на полу — строит BloodFX (форма, брызги по удару, высыхание; числа —
+-- PhysicsFX.blood). size — диаметр основного пятна, studs; drops — брызг; floorY — высота
+-- пола для всех капель (по умолчанию каждая на свою опору, Loose.FloorAt); direction — куда
+-- летит кровь, длина вектора — вытяжка пятна.
+function Corpses.Splat(position, size, drops, floorY, direction)
+	BloodFX.Splat(position, size, drops, floorY, direction)
 end
 
 -- Гора поглощает труп (подтверждённое решение автора): выросшая преграда забирает
@@ -928,6 +881,7 @@ function Corpses.Clear()
 			stain:Destroy()
 		end
 	end
+	BloodFX.Clear()
 	Loose.ClearTracked() -- оторванные конечности и осколки
 	table.clear(corpses)
 	table.clear(stains)

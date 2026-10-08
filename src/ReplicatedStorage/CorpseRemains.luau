@@ -11,6 +11,7 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
+local BloodFX = require(ReplicatedStorage:WaitForChild("BloodFX"))
 local CollectionService = game:GetService("CollectionService")
 
 return function(deps)
@@ -70,36 +71,10 @@ return function(deps)
 		return part
 	end
 
-	-- Плоский овал на полу — как пятно крови (Corpses.Splat): цилиндр плашмя.
-	local function disc(parent, at, floorY, diameter, color, material)
-		local part = plainPart("Spot", parent)
-		part.Shape = Enum.PartType.Cylinder
-		part.Material = material or Enum.Material.SmoothPlastic
-		part.Color = color
-		part.Size = Vector3.new(THICKNESS, diameter, diameter * (0.75 + math.random() * 0.5))
-		part.CFrame = CFrame.new(at.X, floorY + LIFT, at.Z)
-			* CFrame.Angles(0, math.random() * math.pi * 2, 0)
-			* CFrame.Angles(0, 0, math.rad(90))
-		return part
-	end
-
-	-- Лужа из нескольких овалов (основной и наплывы по краям): один круг читается штампом.
-	-- Овалы растут из точки за growTime.
+	-- Лужа — рваный плоский многоугольник, как пятно крови (BloodFX): круглые овалы
+	-- читались мультяшными наклейками. Растекается из точки за growTime.
 	local function puddle(parent, center, floorY, diameter, color, material, growTime)
-		local spots = { disc(parent, center, floorY, diameter, color, material) }
-		for _ = 1, 3 do
-			local angle = math.random() * math.pi * 2
-			local distance = diameter * (0.3 + math.random() * 0.15)
-			local at = center + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
-			table.insert(spots, disc(parent, at, floorY, diameter * (0.35 + math.random() * 0.2), color, material))
-		end
-		local info = TweenInfo.new(growTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		for _, spot in spots do
-			local size = spot.Size
-			spot.Size = Vector3.new(THICKNESS, 0.2, 0.2)
-			TweenService:Create(spot, info, { Size = size }):Play()
-		end
-		return spots
+		return BloodFX.Pool(parent, center, floorY, diameter, color, material, growTime)
 	end
 
 	-- Пятно гаснет и уходит.

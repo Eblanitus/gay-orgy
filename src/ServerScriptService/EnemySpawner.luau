@@ -76,13 +76,26 @@ local ALLY_REPATH = 1
 local BITE_MARGIN = 0.5
 local VELOCITY_EPSILON = 0.5 -- studs/сек: насколько должна измениться скорость, чтобы переписать атрибут
 local FACEHUGGER_HEIGHT = 3.6 -- studs над пивотом турели — над стеклянной сферой Колбы, не внутри неё (не ниже; выше — если корпус турели выше, см. clingPoint)
--- Кровь на карте. Раненый жук капает не чаще BLEED_INTERVAL: без паузы тиковые
--- турели (Испаритель — 5 тиков/сек) заливали бы пол целиком за одну волну. Смерть даёт
--- отдельное большое пятно с брызгами — именно оно читается как «здесь кого-то убили».
-local BLEED_INTERVAL = 0.5
-local BLEED_SIZE = 0.7 -- studs, диаметр капли от попадания
-local DEATH_SPLAT_SIZE = 2.2 -- studs, диаметр пятна на месте смерти
-local DEATH_SPLAT_DROPS = 4 -- брызг вокруг него
+-- Кровь на карте — числа в PhysicsFX.blood, пятно строит клиент (BloodFX). Раненый жук
+-- брызжет не чаще blood.hit.interval: без паузы тиковые турели (Испаритель — 5 тиков/сек)
+-- заливали бы пол целиком за одну волну. Смерть даёт пятно покрупнее с брызгами — именно оно
+-- читается как «здесь кого-то убили». Все размеры — × Scale/3 (раньше пятна попадания и
+-- смерти множились на весь Scale и выходили втрое больше задуманного: лужи по 6 studs).
+local BLOOD = PhysicsFX.blood
+
+-- Куда летит кровь: от стрелка через жука (атрибут HitFrom), длина — вытяжка пятна.
+-- Тик дебаффа или зоны (LastHitTick) направления не даёт — HitFrom там от прошлого удара.
+local function bloodDirection(enemy, at)
+	if enemy:GetAttribute("LastHitTick") then
+		return nil
+	end
+	local from = enemy:GetAttribute("HitFrom")
+	if typeof(from) ~= "Vector3" then
+		return nil
+	end
+	local away = Vector3.new(at.X - from.X, 0, at.Z - from.Z)
+	return away.Magnitude > 1e-3 and away.Unit * BLOOD.stretch or nil
+end
 -- Виды останков без крови на месте смерти (по вики): плавит, растворяет, уничтожает.
 local NO_BLOOD = { melt = true, dissolve = true, destroy = true }
 
@@ -1104,13 +1117,16 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			-- Два PivotTo за кадр делать нельзя — жук дрожал бы между двумя положениями.
 			local pathCF = CFrame.lookAt(resolved, resolved + facing, facingUp) * CFrame.Angles(0, math.pi, 0)
 			-- След гемолимфы — ТОЛЬКО под Кровотечением (решение автора): капля через каждые
-			-- PhysicsFX.bleed.step пройденных studs (× масштаб вида). Атрибут Bleeding ставит Effects.
+			-- PhysicsFX.blood.trail.step пройденных studs (× масштаб вида). Атрибут Bleeding ставит Effects.
 			if state.pathPosition and enemy:GetAttribute("Bleeding") then
 				local size = (enemy:GetAttribute("Scale") or 3) / 3
-				state.bleedTrail = (state.bleedTrail or 0) + (resolved - state.pathPosition).Magnitude
-				if state.bleedTrail >= PhysicsFX.bleed.step * size then
+				local moved = resolved - state.pathPosition
+				state.bleedTrail = (state.bleedTrail or 0) + moved.Magnitude
+				if state.bleedTrail >= BLOOD.trail.step * size then
 					state.bleedTrail = 0
-					Corpses.Splat(resolved, PhysicsFX.bleed.size * size, 0)
+					local heading = Vector3.new(moved.X, 0, moved.Z)
+					Corpses.Splat(resolved, BLOOD.trail.size * size, 0, nil,
+						heading.Magnitude > 1e-3 and heading.Unit * BLOOD.trail.stretch or nil)
 				end
 			end
 			state.pathPosition = resolved
@@ -1499,9 +1515,26 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 		local currentHp = enemy:GetAttribute("HP") or 0
 		if enemy.Parent and currentHp < lastHp and currentHp > 0 then
 			local now = os.clock()
-			if now - lastBleed >= BLEED_INTERVAL then
+			if now - lastBleed >= BLOOD.hit.interval then
+				-- Кто ударил (LastHitTick, HitFrom) помечается сразу после записи HP
+				-- (Effects.MarkHit) — поэтому решение откладывается до конца этого удара.
+				local at = enemy:GetPivot().Position
+				local lost = (lastHp - currentHp) / math.max(enemy:GetAttribute("MaxHP") or lastHp, 1)
+				local before = lastBleed
 				lastBleed = now
-				Corpses.Splat(enemy:GetPivot().Position, BLEED_SIZE * (enemy:GetAttribute("Scale") or enemyData.scale or 1), 1)
+				task.defer(function()
+					local scale = (enemy:GetAttribute("Scale") or enemyData.scale or 3) / 3
+					if not enemy:GetAttribute("LastHitTick") then
+						-- Удар: брызги по удару, крупнее от сильного.
+						local size = math.min(BLOOD.hit.size + BLOOD.hit.byDamage * lost, BLOOD.hit.maxSize)
+						Corpses.Splat(at, size * scale, BLOOD.hit.drops, nil, bloodDirection(enemy, at))
+					elseif enemy:GetAttribute("Bleeding") then
+						-- Тик Кровотечения — капает под себя. Горение, яд, зоны крови не дают.
+						Corpses.Splat(at, BLOOD.drip.size * scale, 0)
+					elseif lastBleed == now then
+						lastBleed = before -- крови не было — пауза не тратится
+					end
+				end)
 			end
 
 			-- «Жуки реагируют на стрельбу. Каждая каста реагирует по-разному.» Падение HP —
@@ -1590,7 +1623,9 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 			-- Кровь — там, где тело было телом: расплавленный, растворённый и сгоревший
 			-- в свет жук крови не оставляет.
 			if not NO_BLOOD[remains] then
-				Corpses.Splat(deathPoint, DEATH_SPLAT_SIZE * (enemy:GetAttribute("Scale") or enemyData.scale or 1), DEATH_SPLAT_DROPS)
+				local scale = (enemy:GetAttribute("Scale") or enemyData.scale or 3) / 3
+				Corpses.Splat(deathPoint, BLOOD.death.size * scale, BLOOD.death.drops, nil,
+					bloodDirection(enemy, deathPoint))
 			end
 
 			-- Гора вырастает из трупа и поглощает его (Corpses.Absorb в TowerBuilder.BuildBarrier),

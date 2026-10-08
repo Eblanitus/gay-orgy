@@ -13,7 +13,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
-local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
@@ -164,8 +163,12 @@ function Corpses.Statue(enemy, statue)
 	EnemyFX:FireAllClients("statue", enemy, statue)
 end
 
-function Corpses.Splat(position, size, drops, floorY)
-	EnemyFX:FireAllClients("splat", position, size, drops or 0, floorY or Arena.floorY)
+-- Кровь на полу (строит клиент, BloodFX). floorY — только если поле не на арене (Аркада):
+-- иначе каждая капля ложится на свою опору — в яму, на плиту, на обломок (Loose.FloorAt).
+-- Раньше сюда всегда подставлялся плоский пол арены, и кровь висела над ямами.
+-- direction — куда летит кровь, длина вектора — вытяжка пятна (PhysicsFX.blood).
+function Corpses.Splat(position, size, drops, floorY, direction)
+	EnemyFX:FireAllClients("splat", position, size, drops or 0, floorY, direction)
 end
 
 -- Гора поглощает трупы в своём следу.

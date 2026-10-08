@@ -982,7 +982,7 @@ local Elements = {
 	},
 	Metal = {
 		name = "Металл",
-		bleeds = true, -- Кровотечение (дебаффы v2): раненый оставляет след (см. PhysicsFX.bleed)
+		bleeds = true, -- Кровотечение (дебаффы v2): раненый оставляет след (см. PhysicsFX.blood.trail)
 		color = Color3.fromRGB(175, 180, 190),
 		tier = 3,
 		-- Хаос Камня выпрямлен: рандома нет вовсе, ровно 16 за выстрел полтора раза
