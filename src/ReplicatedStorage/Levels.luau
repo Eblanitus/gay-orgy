@@ -9,13 +9,21 @@
 --   towers   — какие постройки можно ставить (нет поля — все);
 --   maxTier  — элементы выше этого тира (Elements.tier) не купить и не скрафтить;
 --   roulette, upgrader = false — закрыть Рулетку и Апгрейдер (они выдают элементы любого тира).
+--
+-- betweenWaves — секунд между волнами: кнопка «Начать» только перед первой волной, дальше
+--   следующая стартует сама по таймеру (WaveRunner). Нет поля — каждую волну зовёт кнопка.
+-- moths — Моль прилетает сама по одной, вне состава волн: с волны fromWave (с момента,
+--   когда та ждёт старта), паузы между Молями — случайные от gap[1] до gap[2] секунд,
+--   life — через сколько секунд недобитая улетает (исчезает), чтобы не копились.
 local Waves = require(script.Parent:WaitForChild("Waves"))
 local TutorialWaves = require(script.Parent:WaitForChild("TutorialWaves"))
 
 local Levels = {
 	[1] = { number = 1, name = "Обучение", waves = TutorialWaves, map = "Arena", tutorial = true },
 	[2] = { number = 2, name = "Бункер", waves = Waves, map = "Arena",
-		rules = { towers = { Ballista = true }, maxTier = 1, roulette = false, upgrader = false } },
+		rules = { towers = { Ballista = true }, maxTier = 1, roulette = false, upgrader = false },
+		betweenWaves = 25,
+		moths = { fromWave = 3, gap = { 15, 40 }, life = 90 } },
 }
 
 return Levels

@@ -106,6 +106,25 @@ local startRequested = false
 -- игроку, чей клиент подписался позже рассылки: без этого кнопка волны не появлялась вовсе,
 -- и забег вставал насмерть.
 local pendingWave = nil
+-- Когда (os.clock) следующая волна стартует сама — на уровнях с таймером между волнами
+-- (Levels[n].betweenWaves). nil — волна ждёт кнопки. Досылается позже зашедшему игроку.
+local waveDeadline = nil
+
+-- Жуки волны — всё в Workspace.Enemies, кроме прилетевших вне состава (Ambient: Моль Бункера).
+-- Волна зачищена без них: иначе вьющаяся у турели Моль держала бы волну вечно.
+local function waveEnemiesLeft()
+	for _, enemy in enemiesFolder:GetChildren() do
+		if not enemy:GetAttribute("Ambient") then
+			return true
+		end
+	end
+	return false
+end
+
+-- Сколько секунд до автостарта волны (для WaveReady); nil — волна ждёт кнопки.
+local function countdownLeft()
+	return waveDeadline and math.max(0, math.ceil(waveDeadline - os.clock())) or nil
+end
 
 -- Прямое объявление вперёд: LabTable.OnDestroyed ниже вызывает returnToLobby, а определена
 -- она только дальше по файлу — без этой строки имя внутри колбэка ушло бы в глобальную (nil),
@@ -225,31 +244,56 @@ local function runWaves(myGeneration, levelNumber)
 		return generation ~= myGeneration
 	end
 
+	local levelInfo = Levels[levelNumber]
+
+	-- Моль вне состава волн (Levels[n].moths): по одной, через случайные паузы, и между
+	-- волнами, и во время них. Начинает с момента, когда волна fromWave ждёт старта.
+	local reachedWave = 0
+	local moths = levelInfo.moths
+	if moths then
+		task.spawn(function()
+			while not runEnded and not cancelled() do
+				task.wait(moths.gap[1] + math.random() * (moths.gap[2] - moths.gap[1]))
+				if runEnded or cancelled() then
+					return
+				end
+				if reachedWave >= moths.fromWave then
+					EnemySpawner.SpawnAmbient("Moth", moths.life)
+				end
+			end
+		end)
+	end
+
 	for i, wave in ipairs(activeLevelWaves) do
 		if runEnded or cancelled() then
 			return
 		end
+		reachedWave = wave.number
 
-		-- Ждём кнопки. Пауза между волнами теперь не по таймеру, а по готовности игрока:
-		-- в maze строить надо до волны, а сколько на это нужно времени, таймер знать не может.
+		-- Ждём кнопки. Пауза между волнами по готовности игрока: в maze строить надо до волны,
+		-- а сколько на это нужно времени, таймер знать не может. На уровнях с betweenWaves
+		-- кнопка только перед первой волной, дальше волна стартует сама по таймеру.
 		startRequested = false
 		pendingWave = wave.number
+		waveDeadline = (i > 1 and levelInfo.betweenWaves) and os.clock() + levelInfo.betweenWaves or nil
 		WaveState.SetActive(false)
-		WaveReadyRemote:FireAllClients(wave.number, #activeLevelWaves)
+		WaveReadyRemote:FireAllClients(wave.number, #activeLevelWaves, countdownLeft())
 		-- Подсказка уровня (поле hint в Waves): в журнал, пока волна ждёт кнопки, чтобы
 		-- игрок прочитал её до старта, а не посреди боя.
 		if wave.hint then
 			Remotes.Notify:FireAllClients(wave.hint)
 		end
-		while not startRequested do
+		while not startRequested and not (waveDeadline and os.clock() >= waveDeadline) do
 			if runEnded or cancelled() then
 				pendingWave = nil
+				waveDeadline = nil
 				return
 			end
 			task.wait(0.1)
 		end
 		startRequested = false
 		pendingWave = nil
+		waveDeadline = nil
 		Tutorial.Report("wave")
 
 		-- Состав волны спрашивается один раз и дальше используется везде: спроси мы его
@@ -287,7 +331,7 @@ local function runWaves(myGeneration, levelNumber)
 			end)
 		end
 
-		while groupsLeft > 0 or EnemySpawner.Spawning() > 0 or #enemiesFolder:GetChildren() > 0 do
+		while groupsLeft > 0 or EnemySpawner.Spawning() > 0 or waveEnemiesLeft() do
 			if runEnded or cancelled() then
 				return
 			end
@@ -372,11 +416,15 @@ RunControl.StartLevel = function(levelNumber)
 end
 
 RequestStartWaveRemote.OnServerEvent:Connect(function(player)
+	-- Таймер между волнами: кнопки нет, старт по времени (Levels[n].betweenWaves).
+	if waveDeadline then
+		return
+	end
 	if not Tutorial.WaveAllowed() then
 		Remotes.Notify:FireClient(player, "сначала пройди шаги обучения — подсказка внизу")
 		-- Hud прячет кнопку сразу после удержания: без досылки она бы не вернулась.
 		if pendingWave then
-			WaveReadyRemote:FireClient(player, pendingWave, #activeLevelWaves)
+			WaveReadyRemote:FireClient(player, pendingWave, #activeLevelWaves, countdownLeft())
 		end
 		return
 	end
@@ -401,7 +449,7 @@ Players.PlayerAdded:Connect(function(player)
 	task.wait(1)
 	Matter.SyncTo(player)
 	if pendingWave then
-		WaveReadyRemote:FireClient(player, pendingWave, #activeLevelWaves)
+		WaveReadyRemote:FireClient(player, pendingWave, #activeLevelWaves, countdownLeft())
 	end
 
 	-- Профиль досылается ещё раз, вместе с остальным состоянием. Рассылка по
