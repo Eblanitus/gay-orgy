@@ -713,8 +713,8 @@ return function(deps)
 	end
 
 	-- Торцовочная пила (Пила, задача #436): переделка Бура. Одна машина снизу доверху:
-	--   ловушка — крест (фигура платформы Пилы): лучи — конвейеры к центру, центр — ванна,
-	--     в которую целиком ложится Стандарт;
+	--   ловушка — крест (фигура платформы Пилы): вдоль — сквозной конвейер под пилой,
+	--     поперёк — короткие лучи с толкателями, центр — ванна, в которую ложится Стандарт;
 	--   в углах ванны четыре стойки, на стойках стол-крест — под ним камера высотой ровно в подлаз
 	--     (Towers.Saw.crawlGap): мелкий жук в неё пролезает, крупный нет;
 	--   на столе — маятниковая пила: стойка с шарниром у заднего края, рычаг с диском,
@@ -733,9 +733,11 @@ return function(deps)
 	--     (его локальная X) на атрибут Swing градусов вниз, пока пила режет;
 	--   атрибут Whirl — вращение детали вокруг своей локальной X, градусов в секунду;
 	--     WhirlAxis — имя детали, чья ось берётся вместо своей.
-	--   атрибут Belt — едет по ленте конвейера к центру, студов в секунду; BeltWrap — шаг,
-	--     через который возвращается назад; BeltAxis — барабан ленты (к центру — его +Z).
-	--     Атрибут BeltParts на модели — сколько таких деталей: клиент ждёт их все.
+	--   атрибут Belt — едет по ленте конвейера, студов в секунду; BeltWrap — шаг,
+	--     через который возвращается назад; BeltAxis — барабан ленты (по ходу — его +Z);
+	--   атрибут Pusher — деталь толкателя этой стороны, выдвигается к центру на PushShare
+	--     от хода PushStroke (студов) вдоль +Z детали PushAxis, пока Feed постройки = сторона.
+	--     Атрибуты BeltParts и PusherParts на модели — сколько таких деталей: клиент ждёт все.
 	local function buildSawModel(towerData)
 		local model = Instance.new("Model")
 		model.Name = towerData.name
@@ -771,11 +773,14 @@ return function(deps)
 		-- после растяжки крест выйдет ровно в след, а пила останется своего размера.
 		local SCALE = towerData.modelScale or 1
 		local shape = towerData.footprintShape
-		-- Платформа — крест (у каждой турели своя фигура платформы): центр — ванна под столом,
-		-- лучи — конвейеры к ней. Ванна вмещает Стандарта целиком, с лапами.
-		local EDGE = shape.span / 2 / SCALE -- конец луча: ровно край следа постройки
-		local ARM = shape.arm / 2 / SCALE -- полуширина луча; она же полуширина ванны
-		local DECK_EDGE = ARM + 0.5 -- стол — крест чуть шире ванны: юбки нависают над конвейерами
+		-- Платформа — крест (у каждой турели своя фигура платформы). Вдоль Z — один сквозной
+		-- конвейер: заходит спереди, проходит под пилой и выходит сзади. Поперёк — короткие
+		-- боковые лучи с толкателями: жука, подошедшего сбоку, толкатель задвигает на ленту
+		-- прямо под диск. Центр — ванна под столом, вмещает Стандарта целиком, с лапами.
+		local EDGE = shape.span / 2 / SCALE -- концы конвейера: ровно край следа постройки
+		local SIDE_EDGE = (shape.side or shape.span) / 2 / SCALE -- концы боковых лучей
+		local ARM = shape.arm / 2 / SCALE -- полуширина лучей; она же полуширина ванны
+		local DECK_EDGE = ARM + 0.5 -- стол — крест чуть шире ванны: юбки нависают над лучами
 		-- Камера — тоже не растягивается: её высота в игре ровно подлаз (crawlGap).
 		local DECK_BOTTOM = FLOOR + (towerData.crawlGap + 0.05) / SCALE -- просвет камеры = подлаз
 		local DECK_TOP = DECK_BOTTOM + 0.3
@@ -783,79 +788,142 @@ return function(deps)
 		local SLOT_BACK = 1.1 -- проём от передней кромки до стойки шарнира
 		local SLOT_FRONT = 2.3 -- передняя кромка проёма: дальше вперёд диск не заходит
 
-		-- ===== ЛОВУШКА: ванна в центре =====
-		-- Сюда конвейеры свозят жука, сюда же опускается диск.
-		floorPart(model, "Sump", Vector3.new(2 * ARM, 0.08, 2 * ARM), CFrame.new(0, FLOOR + 0.04, 0), dark, plate)
-		floorPart(model, "SumpKerf", Vector3.new(0.14, 0.02, 1.7), CFrame.new(0, FLOOR + 0.09, -0.2), black, plastic)
-		for i = 1, 4 do
-			floorPart(model, "SumpGrate" .. i, Vector3.new(1.0, 0.02, 0.06),
-				CFrame.new(0, FLOOR + 0.09, -0.9 + i * 0.36), black, plastic)
-		end
-
-		-- ===== КОНВЕЙЕРЫ: лучи креста, лента везёт к ванне =====
-		-- Лента в низкой раме (рама вровень с лентой — бортов нет), на внешнем конце —
-		-- приводной барабан, у ванны — носовой валик. По ленте едут планки и светящиеся
-		-- шевроны острием к центру. Ехать их заставляет клиент (BuildingVisuals.addSaw):
+		-- ===== КОНВЕЙЕР: сквозной, спереди назад =====
+		-- Две ленты рядом, между ними щель: в неё опускается диск. Рамы (вровень с лентой,
+		-- бортов нет) — только на переднем и заднем лучах: в ванне бока открыты, с них
+		-- толкатели и задвигают жука. На концах — барабаны. По лентам едут планки и
+		-- светящиеся шевроны по ходу ленты. Ехать их заставляет клиент (BuildingVisuals.addSaw):
 		-- атрибут Belt — скорость в студах в секунду, BeltWrap — шаг, через который деталь
-		-- возвращается назад, BeltAxis — барабан, вдоль которого лента идёт (к центру — его +Z).
+		-- возвращается назад, BeltAxis — барабан, вдоль которого лента идёт (по ходу — его +Z).
 		local BELT_SPEED = 3 -- студов в секунду: глазу — «везёт», а тянет всё равно вытяжка
-		local beltLength = EDGE - ARM
+		local GAP = 0.12 -- полуширина щели под диск
 		local beltWidth = 2 * ARM - 0.3
+		local halfBelt = beltWidth / 2 - GAP -- ширина одной ленты
 		local rubber = Color3.fromRGB(33, 35, 39)
 		local beltParts = 0
-		for i = 0, 3 do
-			local around = CFrame.Angles(0, math.rad(90 * i), 0)
-			local side = ({ "F", "L", "B", "R" })[i + 1]
-			local function along(distance, y)
-				return around * CFrame.new(0, y, -distance)
-			end
-			floorPart(model, "Belt" .. side, Vector3.new(beltWidth, 0.06, beltLength),
-				along(ARM + beltLength / 2, FLOOR + 0.05), rubber, plastic)
+		local drumTurn = math.deg(BELT_SPEED / (0.09 * SCALE))
+		for s = -1, 1, 2 do
+			local tag = s < 0 and "L" or "R"
+			floorPart(model, "Belt" .. tag, Vector3.new(halfBelt, 0.06, 2 * EDGE - 0.3),
+				CFrame.new(s * (GAP + halfBelt / 2), FLOOR + 0.05, 0), rubber, plastic)
+		end
+		-- Дно щели: тёмный жёлоб во всю длину.
+		floorPart(model, "BeltKerf", Vector3.new(2 * GAP, 0.03, 2 * EDGE - 0.3), CFrame.new(0, FLOOR + 0.015, 0), black, plastic)
+		local frontDrum
+		for z = -1, 1, 2 do
+			local side = z < 0 and "F" or "B"
+			local railLength = EDGE - ARM
 			for s = -1, 1, 2 do
 				local tag = side .. (s < 0 and "L" or "R")
-				floorPart(model, "BeltRail" .. tag, Vector3.new(0.15, 0.12, beltLength),
-					along(ARM + beltLength / 2, FLOOR + 0.06) * CFrame.new(s * (ARM - 0.075), 0, 0), mid, metal)
-				-- Подшипники барабана — на концах рамы.
+				floorPart(model, "BeltRail" .. tag, Vector3.new(0.15, 0.12, railLength),
+					CFrame.new(s * (ARM - 0.075), FLOOR + 0.06, z * (ARM + railLength / 2)), mid, metal)
 				floorPart(model, "BeltBearing" .. tag, Vector3.new(0.17, 0.24, 0.3),
-					along(EDGE - 0.15, FLOOR + 0.12) * CFrame.new(s * (ARM - 0.085), 0, 0), light, metal)
+					CFrame.new(s * (ARM - 0.085), FLOOR + 0.12, z * (EDGE - 0.15)), light, metal)
 			end
+			-- Барабаны без поворота: их +Z — ход ленты (спереди назад), X — ось вращения.
 			local drum = floorPart(model, "BeltDrum" .. side, Vector3.new(beltWidth, 0.18, 0.18),
-				along(EDGE - 0.15, FLOOR + 0.09), steel, metal, cylinder)
-			local drumTurn = math.deg(BELT_SPEED / (0.09 * SCALE))
-			drum:SetAttribute("Whirl", -drumTurn)
-			floorPart(model, "BeltNose" .. side, Vector3.new(beltWidth, 0.1, 0.1),
-				along(ARM + 0.06, FLOOR + 0.05), light, metal, cylinder):SetAttribute("Whirl", -drumTurn * 1.8)
+				CFrame.new(0, FLOOR + 0.09, z * (EDGE - 0.15)), steel, metal, cylinder)
+			drum:SetAttribute("Whirl", drumTurn)
+			frontDrum = frontDrum or drum
+		end
 
-			-- Едущие детали: ставятся с шагом wrap от wrap+запас до конца ленты, чтобы за шаг
-			-- хода ни одна не заезжала ни в ванну, ни за барабан.
-			local function run(name, wrap, half, make)
-				local count = 0
-				local at = ARM + 0.1 + wrap + half
-				while at <= EDGE - 0.32 - half do
-					count += 1
-					for _, part in make(name .. side .. count, along(at, 0)) do
-						part:SetAttribute("Belt", BELT_SPEED)
-						part:SetAttribute("BeltWrap", wrap * SCALE)
-						part:SetAttribute("BeltAxis", drum.Name)
-						beltParts += 1
-					end
-					at += wrap
+		-- Едущие детали: ставятся с шагом wrap так, чтобы за шаг хода ни одна не съехала с ленты.
+		local function run(name, wrap, half, make)
+			local count = 0
+			local at = -EDGE + 0.32 + half
+			while at + wrap <= EDGE - 0.32 - half do
+				count += 1
+				for _, part in make(name .. count, at) do
+					part:SetAttribute("Belt", BELT_SPEED)
+					part:SetAttribute("BeltWrap", wrap * SCALE)
+					part:SetAttribute("BeltAxis", frontDrum.Name)
+					beltParts += 1
+				end
+				at += wrap
+			end
+		end
+		run("BeltCleat", 0.42, 0.035, function(name, z)
+			local cleats = {}
+			for s = -1, 1, 2 do
+				table.insert(cleats, floorPart(model, name .. (s < 0 and "L" or "R"), Vector3.new(halfBelt - 0.1, 0.03, 0.07),
+					CFrame.new(s * (GAP + halfBelt / 2), FLOOR + 0.095, z), mid, metal))
+			end
+			return cleats
+		end)
+		run("BeltChevron", 0.84, 0.25, function(name, z)
+			local bars = {}
+			for s = -1, 1, 2 do
+				for b = -1, 1, 2 do
+					-- Шеврон острием по ходу ленты (+Z) — посередине каждой ленты.
+					table.insert(bars, accent(floorPart(model, name .. (s < 0 and "L" or "R") .. (b < 0 and "a" or "b"),
+						Vector3.new(0.12, 0.04, 0.62),
+						CFrame.new(s * (GAP + halfBelt / 2) + b * 0.2, FLOOR + 0.1, z - 0.02)
+							* CFrame.Angles(0, math.rad(-b * 38), 0), glow, neon)))
 				end
 			end
-			run("BeltCleat", 0.42, 0.035, function(name, at)
-				return { floorPart(model, name, Vector3.new(beltWidth - 0.1, 0.03, 0.07),
-					at * CFrame.new(0, FLOOR + 0.095, 0), mid, metal) }
-			end)
-			run("BeltChevron", 0.84, 0.25, function(name, at)
-				local bars = {}
-				for s = -1, 1, 2 do
-					table.insert(bars, accent(floorPart(model, name .. (s < 0 and "L" or "R"), Vector3.new(0.12, 0.04, 0.62),
-						at * CFrame.new(s * 0.2, FLOOR + 0.1, 0.02) * CFrame.Angles(0, math.rad(-s * 38), 0), glow, neon)))
-				end
-				return bars
-			end)
-		end
+			return bars
+		end)
 		model:SetAttribute("BeltParts", beltParts)
+
+		-- ===== БОКОВЫЕ ЛУЧИ: толкатели =====
+		-- Плита вровень с лентой, на внешнем конце — пневмоцилиндр. Жук подошёл сбоку —
+		-- шток выдвигается и лопатой задвигает его по плите на ленту, под самый диск;
+		-- пока пила режет, лопата отходит назад. Двигает клиент (BuildingVisuals.addSaw)
+		-- по атрибуту Feed постройки ("L"/"R" — с какой стороны подают, ставит сервер):
+		-- атрибут Pusher — сторона детали, PushShare — доля хода (ступени штока выдвигаются
+		-- по очереди, лопата — на весь ход), PushStroke — ход в студах, PushAxis — корпус
+		-- цилиндра (к центру — его +Z).
+		local sideLength = SIDE_EDGE - ARM
+		local PADDLE_HALF = 1.65 -- полуширина лопаты: проходит между стойками стола
+		local PADDLE_STOP = 0.3 -- лопата доходит до края щели: дальше жука к диску дотягивает вытяжка
+		local pushers = 0
+		for i, side in { [1] = "L", [3] = "R" } do
+			local around = CFrame.Angles(0, math.rad(90 * i), 0)
+			local function at(distance, y)
+				return around * CFrame.new(0, y, -distance)
+			end
+			floorPart(model, "SidePlate" .. side, Vector3.new(2 * ARM, 0.08, sideLength),
+				at(ARM + sideLength / 2, FLOOR + 0.04), mid, plate)
+			-- Корпус цилиндра — на опорах у конца луча; цилиндр лежит вдоль луча.
+			-- Корпус длиной в ступень штока: в покое шток весь в нём.
+			local bodyLength = 1.0
+			local bodyAt = SIDE_EDGE - 0.1 - bodyLength / 2
+			floorPart(model, "PusherBody" .. side, Vector3.new(bodyLength, 0.34, 0.34),
+				at(bodyAt, FLOOR + 0.35) * CFrame.Angles(0, math.rad(90), 0), dark, metal, cylinder)
+			-- Ось хода — отдельная невидимая деталь без поворота относительно луча:
+			-- её -Z смотрит наружу, +Z — к центру.
+			local axis = floorPart(model, "PushAxis" .. side, Vector3.new(0.05, 0.05, 0.05), at(bodyAt, FLOOR + 0.35), dark, metal)
+			axis.Transparency = 1
+			for s = -1, 1, 2 do
+				floorPart(model, "PusherMount" .. side .. (s < 0 and "L" or "R"), Vector3.new(0.4, 0.16, 0.12),
+					at(bodyAt + s * 0.3, FLOOR + 0.12), light, metal)
+			end
+			accent(floorPart(model, "PusherLamp" .. side, Vector3.new(0.03, 0.2, 0.2),
+				at(bodyAt + bodyLength / 2 + 0.01, FLOOR + 0.35) * CFrame.Angles(0, math.rad(90), 0), glow, neon, cylinder))
+			local paddleRest = bodyAt - bodyLength / 2 - 0.06 -- лопата в покое — вплотную к торцу цилиндра
+			local stroke = (paddleRest - PADDLE_STOP) * SCALE
+			local function moving(part, share)
+				part:SetAttribute("Pusher", side)
+				part:SetAttribute("PushShare", share)
+				part:SetAttribute("PushStroke", stroke)
+				part:SetAttribute("PushAxis", axis.Name)
+				pushers += 1
+				return part
+			end
+			-- Шток из трёх ступеней, труба в трубе: в покое все в корпусе, на ходу каждая
+			-- выдвигается на свою треть, последняя держит лопату.
+			for k = 1, 3 do
+				local width = 0.26 - k * 0.05
+				moving(floorPart(model, "PusherRod" .. side .. k, Vector3.new(bodyLength - 0.1, width, width),
+					at(bodyAt - 0.05, FLOOR + 0.35) * CFrame.Angles(0, math.rad(90), 0),
+					k == 1 and light or steel, metal, cylinder), k / 3)
+			end
+			moving(floorPart(model, "PusherPaddle" .. side, Vector3.new(2 * PADDLE_HALF, 0.55, 0.12),
+				at(paddleRest, FLOOR + 0.4), dark, metal), 1)
+			moving(accent(floorPart(model, "PusherEdge" .. side, Vector3.new(2 * PADDLE_HALF, 0.06, 0.13),
+				at(paddleRest, FLOOR + 0.66), glow, neon)), 1)
+		end
+		model:SetAttribute("PusherParts", pushers)
 
 		-- ===== СТОЙКИ: на углах ванны =====
 		local legAt = ARM - 0.22

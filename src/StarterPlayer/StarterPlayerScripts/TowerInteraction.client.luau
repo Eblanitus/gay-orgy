@@ -492,9 +492,10 @@ local function rebuildCrossSlices(model, shape, thickness)
 	local rootCFrame = model.PrimaryPart.CFrame
 	local span, arm = shape.span, shape.arm
 	local reach = (span - arm) / 2 -- длина луча от края центра до конца
+	local side = shape.side or span -- поперечный луч может быть короче (у Пилы — толкатели)
 
 	local pieces = {
-		{ Vector3.new(span, thickness, arm), Vector3.zero },
+		{ Vector3.new(side, thickness, arm), Vector3.zero },
 		{ Vector3.new(arm, thickness, reach), Vector3.new(0, 0, (arm + reach) / 2) },
 		{ Vector3.new(arm, thickness, reach), Vector3.new(0, 0, -(arm + reach) / 2) },
 	}
@@ -724,7 +725,7 @@ local function refreshBuildChoice()
 	if shape == "square" then
 		key = ("square:%.2f"):format(footprint)
 	elseif shape and shape.kind == "cross" then
-		key = ("cross:%.2f:%.2f"):format(shape.span, shape.arm)
+		key = ("cross:%.2f:%.2f:%.2f"):format(shape.span, shape.arm, shape.side or shape.span)
 	elseif shape then
 		key = ("trapezoid:%.2f:%.2f:%.2f:%.2f"):format(shape.near, shape.far, shape.depth, shape.offset or 0)
 	else

@@ -616,8 +616,17 @@ return function(deps)
 
 		local nearest, nearestGap = nil, math.huge
 		local pulled = false
+		-- С какой стороны подавать толкателем (атрибут Feed, картинка — BuildingVisuals.addSaw):
+		-- сторона ближайшего жука, который подошёл сбоку, а не по конвейеру.
+		local pivot = tower:GetPivot()
+		local laneHalf = towerData.footprintShape.arm / 2
+		local feed, feedGap = nil, math.huge
 		for _, enemy in Targeting.EnemiesInRange(center, towerData.range, enemiesFolder, aimFilter(towerData, tower)) do
 			if enemy ~= victim and EnemyBody.TopHeight(enemy) <= towerData.crawlGap then
+				local here = pivot:PointToObjectSpace(enemy:GetPivot().Position)
+				if math.abs(here.Z) <= laneHalf and math.abs(here.X) > 1 and math.abs(here.X) < feedGap then
+					feed, feedGap = here.X < 0 and "L" or "R", math.abs(here.X)
+				end
 				-- У самой пилы тянет в полную силу, у края радиуса — вдвое слабее.
 				local distance = flatTo(center, enemy:GetPivot().Position).Magnitude
 				local gap = pullTo(enemy, center, plan.pull * (1 - 0.5 * math.clamp(distance / towerData.range, 0, 1)))
@@ -626,6 +635,10 @@ return function(deps)
 					nearest, nearestGap = enemy, gap
 				end
 			end
+		end
+
+		if tower:GetAttribute("Feed") ~= feed then
+			tower:SetAttribute("Feed", feed)
 		end
 
 		if not victim and nearest then
