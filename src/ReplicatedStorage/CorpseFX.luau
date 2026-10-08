@@ -368,6 +368,21 @@ local function detachPiece(corpse, group, bodyCenter, from, fraction, scale, flo
 	local boxSize = high - low
 	local root = collider(piece, "Hull", Enum.PartType.Block, boxSize:Max(Vector3.one * 0.3), boxFrame)
 	piece.PrimaryPart = root
+	-- Одна коробка на всю лапу сажала согнутую лапу на свою грань, и дальний сустав
+	-- висел в воздухе на высоте коробки (баг «лапа левитирует»). Сама коробка — только
+	-- каркас (масса, ось для LayFlat) и не сталкивается; пола касаются кубики по суставам:
+	-- лапа ложится всеми сегментами на пол.
+	root.CanCollide = false
+	local pad = math.max(thickness * 2, 0.15)
+	for _, point in points do
+		local knee = collider(piece, "LimbHull", Enum.PartType.Block, Vector3.one * pad, CFrame.new(point))
+		knee.Anchored = false
+		knee.Massless = true
+		local joint = Instance.new("WeldConstraint")
+		joint.Part0 = root
+		joint.Part1 = knee
+		joint.Parent = root
+	end
 	table.insert(parts, root)
 
 	for _, part in parts do
