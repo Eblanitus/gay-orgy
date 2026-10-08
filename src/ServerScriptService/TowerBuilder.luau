@@ -298,7 +298,8 @@ function TowerBuilder.Build(cx, cz, towerType, turn)
 	-- Стройка — только между волнами: пока волна идёт, WaveRunner держит WaveState активным.
 	-- BuildFree и BuildBarrier эту проверку намеренно не проходят — первая ставит стартовую
 	-- башню ещё до начала волн, вторая встаёт от смерти жука посреди волны, это не действие игрока.
-	if WaveState.IsActive() then
+	-- Уровень может это разрешить (Levels[n].buildDuringWave, Бункер).
+	if WaveState.IsActive() and not WaveState.buildDuringWave then
 		return false, "во время волны строить нельзя"
 	end
 

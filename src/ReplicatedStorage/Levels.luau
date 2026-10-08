@@ -15,6 +15,7 @@
 -- moths — Моль прилетает сама по одной, вне состава волн: с волны fromWave (с момента,
 --   когда та ждёт старта), паузы между Молями — случайные от gap[1] до gap[2] секунд,
 --   life — через сколько секунд недобитая улетает (исчезает), чтобы не копились.
+-- buildDuringWave = true — строить можно и пока волна идёт (по умолчанию только между волнами).
 local Waves = require(script.Parent:WaitForChild("Waves"))
 local TutorialWaves = require(script.Parent:WaitForChild("TutorialWaves"))
 
@@ -23,6 +24,7 @@ local Levels = {
 	[2] = { number = 2, name = "Бункер", waves = Waves, map = "Arena",
 		rules = { towers = { Ballista = true }, maxTier = 1, roulette = false, upgrader = false },
 		betweenWaves = 25,
+		buildDuringWave = true,
 		moths = { fromWave = 3, gap = { 15, 40 }, life = 90 } },
 }
 
