@@ -93,6 +93,7 @@ local function locate(location)
 	local center = entrance.CFrame.Position:Dot(across)
 	local width = extentAlong(entrance, across) * 2
 	local height, depth = DEFAULT_HEIGHT, DEFAULT_DEPTH
+	local top = nil -- верх стены над проёмом, от верха пола
 
 	-- Настоящий проём — между косяками и под перемычкой, если они на месте.
 	local walls = location:FindFirstChild("Walls")
@@ -102,6 +103,7 @@ local function locate(location)
 	if lintel and lintel:IsA("BasePart") then
 		height = lintel.CFrame.Position.Y - extentAlong(lintel, up) - floorTop
 		depth = extentAlong(lintel, toRoom) * 2
+		top = lintel.CFrame.Position.Y + extentAlong(lintel, up) - floorTop
 		face = lintel.CFrame.Position:Dot(toRoom) + extentAlong(lintel, toRoom)
 	end
 	if jambA and jambB and jambA:IsA("BasePart") and jambB:IsA("BasePart") then
@@ -129,6 +131,7 @@ local function locate(location)
 		frame = CFrame.fromMatrix(origin, across, up, toRoom),
 		width = width,
 		height = height,
+		top = top or height + 9,
 		depth = depth,
 	}
 end
@@ -286,8 +289,76 @@ local function newKit(model, soft)
 	return kit
 end
 
+-- Стена над порталом. Над карнизом до самого верха стены тянулась голая тёмная плита перемычки —
+-- две мёртвые плоскости по бокам от балки. Здесь она закрыта щитом: панели со швами, световые линии
+-- от пилястр, вентрешётки, позывной шлюза и верхний кант. Всё плоское, не толще 0.35: короба и лотки
+-- на стенах по вики запрещены.
+local function upperField(kit, W, H, top)
+	local HW = W / 2
+	local base = H + 2.75 -- верх карниза
+	local EDGE = HW + 9 -- щит шире портала на девять студов с каждой стороны
+	local roof = top - 0.2 -- под верхним кантом
+	if roof - base < 2 then
+		return
+	end
+
+	-- Подложка: тёмная, швы между панелями — это зазоры, в которых видна она.
+	kit.box("FieldBacking", -EDGE, EDGE, base, roof, 0, 0.12, BLACK, METAL)
+
+	local function panelColumn(u0, u1, tag)
+		kit.box("FieldPanel" .. tag, u0, u1, base + 0.3, roof - 0.3, 0.12, 0.28, BODY)
+		-- Вставка: ступенька внутри панели, ниже и выше — прорезь.
+		kit.box("FieldInset" .. tag, u0 + 0.35, u1 - 0.35, base + 0.9, roof - 0.9, 0.28, 0.36, MID)
+	end
+	-- Панели по бокам от портала: три на сторону, ширина панели подогнана под край щита.
+	local gap = 0.35
+	local inner = HW + 1.4 -- внутри от пилястры остаётся место световой линии
+	local count = 3
+	local width = (EDGE - inner - gap * (count - 1)) / count
+	for _, s in { -1, 1 } do
+		for i = 0, count - 1 do
+			local a = inner + i * (width + gap)
+			panelColumn(s * a, s * (a + width), s < 0 and "A" or "B")
+		end
+		-- Вентрешётка в крайней панели: рама и ряд прорезей.
+		local a = inner + (count - 1) * (width + gap)
+		local c = s * (a + width / 2)
+		kit.box("FieldVent", c - 1.3, c + 1.3, base + 1.6, base + 3.6, 0.36, 0.42, BLACK, PLASTIC)
+		for k = 0, 7 do
+			local v = base + 1.75 + k * 0.23
+			kit.box("FieldVentSlat", c - 1.15, c + 1.15, v, v + 0.1, 0.42, 0.55, MID)
+		end
+	end
+
+	-- Центральный щит над проёмом: тёмная плита с позывным шлюза и рамкой.
+	local crest = kit.box("FieldCrest", -4.2, 4.2, base + 0.9, roof - 0.9, 0.12, 0.36, PLATE, PLASTIC)
+	kit.box("FieldCrestFrame", -4.5, 4.5, base + 0.7, roof - 0.7, 0.12, 0.2, MID)
+	kit.glow("FieldCrestLineTop", -4.2, 4.2, roof - 0.9, roof - 0.84, 0.36, 0.4, TEAL)
+	kit.glow("FieldCrestLineBottom", -4.2, 4.2, base + 0.84, base + 0.9, 0.36, 0.4, TEAL)
+	kit.label(crest, {
+		{ text = "01", weight = 3 },
+		{ text = "ПРОХОД ПО ДОПУСКУ", weight = 0.9, color = TEAL },
+	})
+	-- Стойки между центром и панелями.
+	for _, s in { -1, 1 } do
+		kit.box("FieldPost", s * 4.6, s * (HW + 0.35), base + 0.3, roof - 0.3, 0.12, 0.3, MID)
+	end
+
+	-- Световые линии продолжают пилястры вверх, по краю портала.
+	for _, s in { -1, 1 } do
+		local tag = s < 0 and "A" or "B"
+		kit.box("FieldLightSlot" .. tag, s * (HW + 0.55), s * (HW + 1.1), base + 0.3, roof - 0.3, 0.12, 0.2, BLACK, PLASTIC)
+		local line = kit.glow("FieldLight" .. tag, s * (HW + 0.7), s * (HW + 0.95), base + 0.45, roof - 0.45, 0.2, 0.26, TEAL)
+		kit.lamp(line, Enum.NormalId.Back, TEAL, 0.6, 9, 120)
+	end
+
+	-- Верхний кант щита.
+	kit.box("FieldCap", -EDGE - 0.2, EDGE + 0.2, roof, top, 0, 0.35, MID)
+	kit.box("FieldCapLip", -EDGE - 0.2, EDGE + 0.2, roof, roof + 0.08, 0.35, 0.42, BLACK, PLASTIC)
+end
+
 -- Портал со стороны зала: всё стоит на лицевой плоскости стены (w от 0 в зал).
-local function labFace(kit, W, H)
+local function labFace(kit, W, H, top)
 	local HW = W / 2
 	local OUT = 3.4 -- на сколько пилястра уходит вбок от проёма
 
@@ -339,6 +410,7 @@ local function labFace(kit, W, H)
 	-- Карниз над порталом.
 	kit.box("Cornice", -(HW + OUT + 0.3), HW + OUT + 0.3, H + 2.4, H + 2.75, 0, 0.7, MID)
 	kit.box("CorniceLip", -(HW + OUT + 0.3), HW + OUT + 0.3, H + 2.4, H + 2.48, 0.7, 0.78, BLACK, PLASTIC)
+	upperField(kit, W, H, top)
 end
 
 -- Тоннель проёма: облицовка, подсветка потолка и пола. Всё в пределах 0.1 от кромок проёма.
@@ -467,7 +539,7 @@ function EntranceGate.Build(location)
 	local kit = newKit(model, soft)
 
 	kit.frame = info.frame
-	labFace(kit, W, H)
+	labFace(kit, W, H, info.top)
 	tunnel(kit, W, H, D)
 	-- Створка откатана к стене коридора на стороне +u: там труба идёт выше створки, а у противоположной
 	-- стены трубы на высоте створки.
