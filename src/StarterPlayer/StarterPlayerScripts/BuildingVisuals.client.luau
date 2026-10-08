@@ -255,17 +255,17 @@ local function addAntenna(building)
 	return true
 end
 
--- Пила (задача #436): поворотный стол с диском, рычаг и вращение диска и вальцов.
--- Сервер ставит только атрибуты (TowerBuilder.fireSaw): AimAngle — куда развернуть стол
--- (тот же мировой угол, что у антенны), Sawing — пила режет жука. Остальное здесь, тем же
--- доводом, что у створки и антенны: гонять CFrame с сервера — репликация ради картинки.
+-- Пила (задача #436): рычаг с диском, вытяжка и вращение диска. Сервер ставит только
+-- атрибут Sawing (TowerBuilder.fireSaw) — пила режет жука в камере под столом. Рычаг
+-- опускается и диск раскручивается здесь, тем же доводом, что у створки и антенны: гонять
+-- CFrame с сервера — репликация ради картинки.
 --
--- Что крутится, задаёт модель (TowerBuilder.buildSawModel): папка SawHead — стол, SawArm —
--- рычаг на шарнире ArmHinge, атрибут Whirl — вращение детали вокруг своей оси (WhirlAxis —
--- вокруг оси другой детали: вырезы диска ходят вокруг ступицы).
-local SAW_CHOP = math.rad(15) -- на сколько опускается рычаг, когда пила режет
-local SAW_CHOP_TIME = 0.18 -- сек на ход рычага вниз или вверх
-local SAW_SHAKE = math.rad(2.5) -- дрожь рычага, пока диск в жуке
+-- Что двигается, задаёт модель (TowerBuilder.buildSawModel): папка SawArm — рычаг на оси
+-- шарнира ArmHinge (его локальная X), атрибут Swing на шарнире — на сколько градусов
+-- рычаг опускается; атрибут Whirl — вращение детали вокруг своей оси (WhirlAxis — вокруг
+-- оси другой детали: вырезы диска ходят вокруг ступицы, лопасти — вокруг ступицы вытяжки).
+local SAW_DROP_TIME = 0.3 -- сек на ход рычага вниз или вверх
+local SAW_SHAKE = math.rad(1.5) -- дрожь рычага, пока диск в жуке
 local SAW_RUSH = 3 -- во сколько раз быстрее крутится диск, когда режет
 local saws = {}
 local sawConnection = nil
@@ -275,29 +275,25 @@ local function sawStep(dt)
 	for index = #saws, 1, -1 do
 		local entry = saws[index]
 		if entry.model.Parent then
-			local published = entry.model:GetAttribute("AimAngle")
-			local wanted = published and ((published - entry.restYaw) % TAU) or entry.angle
-			entry.angle, entry.velocity = Aiming.Step(entry.angle, entry.velocity, wanted, dt,
-				entry.turnSpeed, entry.turnAccel)
-
 			local sawing = entry.model:GetAttribute("Sawing") == true
-			local step = dt / SAW_CHOP_TIME
-			entry.chop = sawing and math.min(entry.chop + step, 1) or math.max(entry.chop - step, 0)
-			local whirl = dt * (sawing and SAW_RUSH or 1)
-
-			local turn = CFrame.new(entry.axis) * CFrame.Angles(0, entry.angle, 0) * CFrame.new(-entry.axis)
-			local lowered = -(SAW_CHOP * entry.chop + (sawing and SAW_SHAKE * math.sin(now * 40) or 0))
+			local step = dt / SAW_DROP_TIME
+			entry.drop = sawing and math.min(entry.drop + step, 1) or math.max(entry.drop - step, 0)
+			-- Плавный разгон и торможение рычага: тяжёлый рычаг рывком не ходит.
+			local eased = entry.drop * entry.drop * (3 - 2 * entry.drop)
+			local lowered = -(entry.swing * eased + (sawing and entry.drop >= 1 and SAW_SHAKE * math.sin(now * 40) or 0))
 			local arm = entry.hinge * CFrame.Angles(lowered, 0, 0) * entry.hinge:Inverse()
+
 			for _, leaf in entry.parts do
 				local frame = leaf.rest
 				if leaf.whirl then
-					leaf.phase = (leaf.phase + leaf.whirl * whirl) % TAU
+					local rush = (leaf.inArm and sawing) and SAW_RUSH or 1
+					leaf.phase = (leaf.phase + leaf.whirl * dt * rush) % TAU
 					frame = leaf.axis * CFrame.Angles(leaf.phase, 0, 0) * leaf.axis:Inverse() * frame
 				end
 				if leaf.inArm then
 					frame = arm * frame
 				end
-				leaf.part.CFrame = turn * frame
+				leaf.part.CFrame = frame
 			end
 		else
 			table.remove(saws, index) -- пилу снесли
@@ -315,41 +311,37 @@ local function addSaw(building)
 	if towerType and towerType ~= "Saw" then
 		return true -- не пила: ждать нечего
 	end
-	local head = building:FindFirstChild("SawHead")
-	local arm = head and head:FindFirstChild("SawArm")
+	local arm = building:FindFirstChild("SawArm")
 	local hinge = arm and arm:FindFirstChild("ArmHinge")
-	if not (building.PrimaryPart and hinge and towerType) then
+	-- Ждём и диск, и вытяжку: деталь, доехавшая после заводки, так и стояла бы на месте.
+	if not (hinge and towerType and arm:FindFirstChild("BladeSlot4") and building:FindFirstChild("FanBlade4")) then
 		return false -- модель ещё не доехала целиком — повторит watchFor
 	end
 
 	local parts = {}
-	for _, part in head:GetDescendants() do
+	for _, part in building:GetDescendants() do
 		if part:IsA("BasePart") then
+			local inArm = part:IsDescendantOf(arm)
 			local speed = part:GetAttribute("Whirl")
-			local axisPart = speed and head:FindFirstChild(part:GetAttribute("WhirlAxis") or part.Name, true)
-			table.insert(parts, {
-				part = part,
-				rest = part.CFrame,
-				inArm = part:IsDescendantOf(arm),
-				whirl = speed and math.rad(speed),
-				axis = axisPart and axisPart.CFrame,
-				phase = 0,
-			})
+			if inArm or speed then
+				local axisPart = speed and building:FindFirstChild(part:GetAttribute("WhirlAxis") or part.Name, true)
+				table.insert(parts, {
+					part = part,
+					rest = part.CFrame,
+					inArm = inArm,
+					whirl = speed and math.rad(speed),
+					axis = axisPart and axisPart.CFrame,
+					phase = 0,
+				})
+			end
 		end
 	end
 
-	local towerData = Towers[towerType]
-	local look = building:GetPivot().LookVector
 	table.insert(saws, {
 		model = building,
-		axis = building.PrimaryPart.Position,
-		restYaw = math.atan2(-look.X, -look.Z),
-		angle = 0,
-		velocity = 0,
-		turnSpeed = towerData.turnSpeed,
-		turnAccel = towerData.turnAccel,
 		hinge = hinge.CFrame,
-		chop = 0,
+		swing = math.rad(hinge:GetAttribute("Swing") or 0),
+		drop = 0,
 		parts = parts,
 	})
 
