@@ -303,8 +303,11 @@ Targeting.Modes.closestReachable = function(towerPosition, range, enemiesFolder,
 			-- считается по атрибуту Velocity — так же, как упреждение снаряда
 			-- (Projectile.PredictAim), и с той же оговоркой: свернувший за угол посчитан
 			-- прямолинейно.
+			-- В радиусе — тем же телом, что и в enemiesInRange: жук, чей пивот уже за радиусом,
+			-- а брюшко ещё в нём, достижим. Сдвинуть жука на velocity * turn — то же, что
+			-- сдвинуть турель назад на столько же.
 			local velocity = enemy:GetAttribute("Velocity") or Vector3.zero
-			local reachable = ((position + velocity * turn) - towerPosition).Magnitude <= range
+			local reachable = EnemyBody.SurfaceDistance(towerPosition - velocity * turn, enemy) <= range
 
 			local score = turn + distance / flightSpeed + (reachable and 0 or UNREACHABLE_PENALTY)
 			if score < bestScore then
@@ -390,7 +393,8 @@ Targeting.Modes.strongestGroup = function(towerPosition, range, enemiesFolder, f
 		local center = enemy:GetPivot().Position
 		local total = 0
 		for _, other in ipairs(crowd) do
-			if (other:GetPivot().Position - center).Magnitude <= groupRadius then
+			-- До тела соседа, как и сам взрыв (Projectile.burst через EnemiesInRange).
+			if EnemyBody.SurfaceDistance(center, other) <= groupRadius then
 				total += other:GetAttribute("HP") or 0
 			end
 		end

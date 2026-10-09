@@ -238,6 +238,22 @@ function Grid.Footprints()
 	return footprints
 end
 
+-- Плоское расстояние от точки до следа постройки (0 — точка в следе) или nil, если постройки
+-- нет в сетке. Для всего, что бьёт или чинит постройку «в радиусе»: след крупной постройки
+-- (Мортира, Инжектор) — квадрат в двадцать с лишним студов, и по её пивоту взрыв у самого
+-- края следа её не задевал.
+function Grid.DistanceTo(building, point)
+	local at = buildings[building]
+	if not at then
+		return nil
+	end
+	local centre = Arena.ToWorld(at.x, at.z)
+	local span = at.reach * Arena.cellSize + Arena.cellSize / 2
+	local dx = math.max(math.abs(point.X - centre.X) - span, 0)
+	local dz = math.max(math.abs(point.Z - centre.Z) - span, 0)
+	return math.sqrt(dx * dx + dz * dz)
+end
+
 -- Свободно ли место под постройку с центром в этой клетке: весь след должен помещаться
 -- на поле и не пересекать чужие. Проверять одну клетку, как раньше, больше нельзя:
 -- постройка крупнее клетки в пять раз.

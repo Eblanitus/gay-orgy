@@ -21,6 +21,7 @@ return function(deps)
 	local Elements = deps.Elements
 	-- Высота спины жука: по ней Пила решает, пролезет ли он в камеру (см. fireSaw).
 	local EnemyBody = require(game:GetService("ReplicatedStorage"):WaitForChild("EnemyBody"))
+	local Grid = require(script.Parent:WaitForChild("Grid"))
 
 	local function meshMuzzle(tower, gun, aimAngle, aimPitch)
 		local nose = tower:FindFirstChild("MiniBarrelC", true)
@@ -739,6 +740,8 @@ return function(deps)
 	-- Приоритет — доля HP, а не число: стена на 60 из 400 в большей беде, чем колба на 40
 	-- из 60. Себя не лечит — иначе хилер под жуками был бы бессмертным в одиночку; два
 	-- хилера рядом чинят друг друга. Возвращает, состоялось ли лечение, как и fire.
+	-- В радиусе — край следа постройки (Grid.DistanceTo), а не её пивот: Мортира вплотную
+	-- к хилеру по пивоту была за радиусом, и он её не чинил.
 	local function healStructures(tower, towerData, healer)
 		local folder = tower.Parent
 		if not folder then
@@ -752,7 +755,8 @@ return function(deps)
 			-- Стена в хитине Архитектора не чинится: «обычный ремонт невозможен» (по вики).
 			if building ~= tower and hp and maxHp and hp > 0 and hp < maxHp
 				and not building:GetAttribute("Chitin")
-				and (building:GetPivot().Position - origin).Magnitude <= towerData.range then
+				and (Grid.DistanceTo(building, origin) or (building:GetPivot().Position - origin).Magnitude)
+					<= towerData.range then
 				local ratio = hp / maxHp
 				if not bestRatio or ratio < bestRatio then
 					best, bestRatio = building, ratio

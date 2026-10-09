@@ -99,16 +99,25 @@ function LabStations.Bite(name, amount)
 	return dealt
 end
 
+-- Расстояние по полу до габарита станции, а не до её детали-якоря: автомат и доска шире
+-- якоря, и взрыв у их края по якорю был за радиусом.
+local function stationDistance(model, at)
+	local cf, size = model:GetBoundingBox()
+	local p = cf:PointToObjectSpace(Vector3.new(at.X, cf.Position.Y, at.Z))
+	local dx = math.max(math.abs(p.X) - size.X / 2, 0)
+	local dz = math.max(math.abs(p.Z) - size.Z / 2, 0)
+	return math.sqrt(dx * dx + dz * dz)
+end
+
 -- Урон по площади (взрывы Подрывника и Разносчика): бьёт каждую станцию в радиусе.
 -- Жуки станции целью не выбирают, но взрыв рядом задевает их, как и стол.
 -- Возвращает число задетых станций.
 function LabStations.Blast(at, radius, amount)
 	local hits = 0
 	for name in LabStations.MAX_HP do
-		local anchor = LabStations.Anchor(name)
-		if anchor and LabStations.IsAlive(name) then
-			local d = anchor.Position - at
-			if Vector3.new(d.X, 0, d.Z).Magnitude <= radius then
+		local model = LabStations.Model(name)
+		if model and LabStations.Anchor(name) and LabStations.IsAlive(name) then
+			if stationDistance(model, at) <= radius then
 				LabStations.Bite(name, amount)
 				hits += 1
 			end

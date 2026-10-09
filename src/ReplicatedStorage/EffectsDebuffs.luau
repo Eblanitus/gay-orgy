@@ -2,6 +2,8 @@
 -- Вынесено из Effects.luau без изменений кода (задача #240): файл был слишком
 -- велик, чтобы агент читал его целиком. deps — локальные основного файла, которые нужны
 -- этому куску; возвращается то, что основной файл использует дальше.
+local EnemyBody = require(script.Parent:WaitForChild("EnemyBody"))
+
 return function(deps)
 	local Effects = deps.Effects
 	local marks = deps.marks
@@ -175,11 +177,11 @@ return function(deps)
 	-- превращали бы следующую турель в читерскую. Считает, а не чистит: устаревшие зоны
 	-- убирает тик-цикл ниже.
 	function Effects.ZoneMultiplier(target)
-		local position = target:GetPivot().Position
 		local now = os.clock()
 		local best = 1
 		for _, zone in zones do
-			if zone.speedPlan and now < zone.expires and (position - zone.position).Magnitude <= zone.radius then
+			if zone.speedPlan and now < zone.expires
+				and EnemyBody.SurfaceDistance(zone.position, target) <= zone.radius then
 				best = math.max(best, speedScaledValue(target, zone.speedPlan))
 			end
 		end
@@ -659,6 +661,11 @@ return function(deps)
 	-- Живые враги вокруг точки, ближние первыми. Взрыв и цепочка — единственные свойства,
 	-- которым нужна не одна цель, а её окрестность, поэтому папка ищется здесь, а не хранится
 	-- модулем: Apply зовётся только на сервере, а там Workspace.Enemies есть всегда.
+	--
+	-- Расстояние — до тела, а не до пивота (EnemyBody.SurfaceDistance, правило «габариты,
+	-- а не точка»): взрыв, накрывший брюшко крупного жука, задевает его, хотя пивот за радиусом.
+	-- Раньше так мерило только прицеливание (Targeting), а взрывы, цепочки, зоны и заражение
+	-- — по центру, и одна и та же площадь у турели и у элемента била разных жуков.
 	local function enemiesAround(center, radius, exclude)
 		local folder = Workspace:FindFirstChild("Enemies")
 		local found = {}
@@ -668,7 +675,7 @@ return function(deps)
 
 		for _, enemy in folder:GetChildren() do
 			if enemy ~= exclude and enemy:IsA("Model") and enemy.PrimaryPart and (enemy:GetAttribute("HP") or 0) > 0 then
-				local distance = (enemy:GetPivot().Position - center).Magnitude
+				local distance = EnemyBody.SurfaceDistance(center, enemy)
 				if distance <= radius then
 					table.insert(found, { enemy = enemy, distance = distance })
 				end

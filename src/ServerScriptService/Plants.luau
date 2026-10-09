@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
+local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 
 local DamageDealtRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("DamageDealt")
 local enemiesFolder = Workspace:WaitForChild("Enemies")
@@ -162,13 +163,14 @@ end
 
 -- Шипы: раз в interval бьют ближайшего наземного жука в радиусе. Удар идёт через
 -- AfterArmor, как прямое попадание: броня, щит и зоны работают и против растения.
+-- В радиусе — тело, а не пивот (EnemyBody): шипы достают и до брюшка крупного жука.
 local function lash(origin, thorns, damage, elementData)
 	local best, bestDistance
 	for _, enemy in enemiesFolder:GetChildren() do
 		if enemy:IsA("Model") and not enemy:GetAttribute("Flying") and (enemy:GetAttribute("HP") or 0) > 0 then
-			local distance = (enemy:GetPivot().Position - origin) * Vector3.new(1, 0, 1)
-			if distance.Magnitude <= thorns.radius and (not bestDistance or distance.Magnitude < bestDistance) then
-				best, bestDistance = enemy, distance.Magnitude
+			local distance = EnemyBody.SurfaceDistance(origin, enemy, true)
+			if distance <= thorns.radius and (not bestDistance or distance < bestDistance) then
+				best, bestDistance = enemy, distance
 			end
 		end
 	end

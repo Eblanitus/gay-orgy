@@ -184,23 +184,110 @@ function EnemyBody.TopHeight(enemy)
 	return (enemy:GetAttribute("RideHeight") or 0) + EnemyBody.HalfHeight(enemy)
 end
 
+-- Расстояние от точки до капсулы следа (Footprint): ось вдоль хода от брюшка (FootBack) до
+-- головы (FootFront) в осях пивота, радиус — полширины корпуса, по вертикали — панцирь (Shell).
+-- nil — следа не меряли (примитив без атрибутов). pivot передаётся, чтобы не брать его дважды.
+local function capsuleGap(pivot, from, enemy, flat)
+	local radius = enemy:GetAttribute("FootRadius")
+	if not radius then
+		return nil
+	end
+	local p = pivot:PointToObjectSpace(from)
+	local along = math.clamp(p.Z, enemy:GetAttribute("FootBack") or 0, enemy:GetAttribute("FootFront") or 0)
+	local dz = p.Z - along
+	local horizontal = math.max(math.sqrt(p.X * p.X + dz * dz) - radius, 0)
+	if flat then
+		return horizontal
+	end
+	local top, bottom = EnemyBody.Shell(enemy)
+	local vertical = if p.Y >= 0 then math.max(p.Y - top, 0) else math.max(-p.Y - bottom, 0)
+	return math.sqrt(horizontal * horizontal + vertical * vertical)
+end
+
 -- Расстояние от точки до поверхности тела и до его центра — оба сразу, потому что нужны
 -- оба и считаются из одной разности.
 --
--- Поверхность — капсула по габаритам: по горизонтали снимается радиус, по вертикали —
--- полувысота. Точка внутри тела даёт ноль, а не отрицательное число: «внутри» и «ровно
+-- Поверхность — шар по ядру (Radius по горизонтали, HalfHeight по вертикали), объединённый
+-- с капсулой следа. Одного шара мало: он стоит на пивоте, а тело вытянуто вдоль хода и
+-- пивот не посередине — у обычного жука хвост торчит из шара на полмасштаба, у крупных
+-- (масштаб 3–6) на студы, и взрыв, накрывший брюшко, жука «не задевал». Капсула добирает
+-- нос и брюшко; шар остаётся, чтобы бока (с лапами, которых в капсуле нет) не стали уже,
+-- чем были. Точка внутри тела даёт ноль, а не отрицательное число: «внутри» и «ровно
 -- на поверхности» для всех проверок радиуса — одно и то же.
+--
+-- flat — только по горизонтали (зоны на полу, шипы, плита): высота точки не важна.
 --
 -- Центр остаётся нужен для оценок и наведения: доворот ствола и упреждение целятся
 -- в жука, а не в его край.
-function EnemyBody.SurfaceDistance(from, enemy)
-	local center = enemy:GetPivot().Position
+function EnemyBody.SurfaceDistance(from, enemy, flat)
+	local pivot = enemy:GetPivot()
+	local center = pivot.Position
 	local delta = center - from
+	local across = math.sqrt(delta.X * delta.X + delta.Z * delta.Z)
 
-	local horizontal = math.max(math.sqrt(delta.X * delta.X + delta.Z * delta.Z) - EnemyBody.Radius(enemy), 0)
-	local vertical = math.max(math.abs(delta.Y) - EnemyBody.HalfHeight(enemy), 0)
+	local horizontal = math.max(across - EnemyBody.Radius(enemy), 0)
+	local vertical = if flat then 0 else math.max(math.abs(delta.Y) - EnemyBody.HalfHeight(enemy), 0)
+	local surface = math.sqrt(horizontal * horizontal + vertical * vertical)
 
-	return math.sqrt(horizontal * horizontal + vertical * vertical), delta.Magnitude
+	if surface > 0 then
+		local gap = capsuleGap(pivot, from, enemy, flat)
+		if gap and gap < surface then
+			surface = gap
+		end
+	end
+
+	return surface, if flat then across else delta.Magnitude
+end
+
+-- Ближайшие точки двух отрезков [p1, q1] и [p2, q2]: доли s и t вдоль каждого.
+local function closestSegments(p1, q1, p2, q2)
+	local d1, d2, r = q1 - p1, q2 - p2, p1 - p2
+	local a, e, f = d1:Dot(d1), d2:Dot(d2), d2:Dot(r)
+	if a <= 1e-6 then
+		return 0, if e > 1e-6 then math.clamp(f / e, 0, 1) else 0
+	end
+	local c = d1:Dot(r)
+	if e <= 1e-6 then
+		return math.clamp(-c / a, 0, 1), 0
+	end
+	local b = d1:Dot(d2)
+	local denom = a * e - b * b
+	local s = if denom > 1e-6 then math.clamp((b * f - c * e) / denom, 0, 1) else 0
+	local t = (b * s + f) / e
+	if t < 0 then
+		return math.clamp(-c / a, 0, 1), 0
+	elseif t > 1 then
+		return math.clamp((b - c) / a, 0, 1), 1
+	end
+	return s, t
+end
+
+-- Задевает ли отрезок пути снаряда [from, to] (толщиной radius) тело жука. Возвращает долю
+-- отрезка, где снаряд ближе всего к телу (0 — начало, 1 — конец), или nil — мимо.
+-- Тот же шар по ядру, что и раньше, плюс капсула следа: снаряд, прошедший над брюшком
+-- или перед носом длинного жука, раньше пролетал сквозь него.
+function EnemyBody.SegmentHit(from, to, enemy, radius)
+	local pivot = enemy:GetPivot()
+	local center = pivot.Position
+	local best = nil
+
+	local segment = to - from
+	local lengthSquared = segment:Dot(segment)
+	local along = if lengthSquared > 1e-6 then math.clamp((center - from):Dot(segment) / lengthSquared, 0, 1) else 0
+	if (center - from:Lerp(to, along)).Magnitude <= radius + EnemyBody.Radius(enemy) then
+		best = along
+	end
+
+	if enemy:GetAttribute("FootRadius") then
+		local back = Vector3.new(0, 0, enemy:GetAttribute("FootBack") or 0)
+		local front = Vector3.new(0, 0, enemy:GetAttribute("FootFront") or 0)
+		local s = closestSegments(pivot:PointToObjectSpace(from), pivot:PointToObjectSpace(to), back, front)
+		if (not best or s < best) and capsuleGap(pivot, from:Lerp(to, s), enemy) <= radius then
+			best = s
+		end
+	end
+
+	return best
 end
 
 return EnemyBody

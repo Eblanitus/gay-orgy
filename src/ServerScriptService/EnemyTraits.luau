@@ -548,6 +548,13 @@ TRAITS.charge = function(enemy, enemyData, state)
 	end
 end
 
+-- Сколько от точки взрыва до постройки: до края её следа (Grid.DistanceTo), а не до пивота.
+-- След Мортиры — квадрат в 26 студов: заряд, взорванный вплотную к её краю, по пивоту
+-- был за радиусом и не наносил ей ничего. Постройки вне сетки — по пивоту, как раньше.
+local function towerDistance(tower, at)
+	return Grid.DistanceTo(tower, at) or (tower:GetPivot().Position - at).Magnitude
+end
+
 -- Взрыв заряда. Зовётся и по активации у стены, и по смерти, и по попаданию во время
 -- активации — «попадание в заряд — преждевременная детонация». Разница только в том,
 -- где он в этот момент стоит, а это и есть цена раннего выстрела по нему.
@@ -563,7 +570,7 @@ function EnemyTraits.Detonate(enemy, enemyData)
 
 	local hits = 0
 	for _, tower in towersFolder:GetChildren() do
-		if (tower:GetPivot().Position - at).Magnitude <= plan.radius then
+		if towerDistance(tower, at) <= plan.radius then
 			local hp = tower:GetAttribute("HP") or 0
 			tower:SetAttribute("HP", math.max(0, hp - plan.damage))
 			DamageDealtRemote:FireAllClients(tower:GetPivot().Position, math.min(hp, plan.damage), false)
@@ -572,7 +579,7 @@ function EnemyTraits.Detonate(enemy, enemyData)
 	end
 
 	-- Стол тоже в радиусе: для заряда он такое же препятствие, как стена.
-	if (LabTable.Position() - at).Magnitude <= plan.radius then
+	if LabTable.DistanceTo(at) <= plan.radius then
 		LabTable.Bite(plan.damage)
 		hits += 1
 	end
@@ -966,14 +973,14 @@ function EnemyTraits.Burst(enemy, enemyData)
 	end
 
 	for _, tower in towersFolder:GetChildren() do
-		if (tower:GetPivot().Position - at).Magnitude <= plan.radius then
+		if towerDistance(tower, at) <= plan.radius then
 			local hp = tower:GetAttribute("HP") or 0
 			tower:SetAttribute("HP", math.max(0, hp - amount))
 			DamageDealtRemote:FireAllClients(tower:GetPivot().Position, math.min(hp, amount), false)
 		end
 	end
 
-	if (LabTable.Position() - at).Magnitude <= plan.radius then
+	if LabTable.DistanceTo(at) <= plan.radius then
 		LabTable.Bite(amount)
 	end
 	LabStations.Blast(at, plan.radius, amount)

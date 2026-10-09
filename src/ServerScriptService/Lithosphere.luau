@@ -15,6 +15,7 @@ local TweenService = game:GetService("TweenService")
 
 local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
+local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
 local Impulse = require(ServerScriptService:WaitForChild("Impulse"))
 
@@ -45,12 +46,17 @@ local SLAB_REST = 1.2
 
 local live = {} -- активные участки
 
-local function enemiesIn(position, radius)
+-- Кто в участке. body — по телу (EnemyBody), а не по пивоту: плита накрывает и того,
+-- кто стоит под ней одним брюшком. Без body — по пивоту: «в яме набралось» считает тех,
+-- кто в ней стоит, а не задел её край.
+local function enemiesIn(position, radius, body)
 	local found = {}
 	for _, enemy in enemiesFolder:GetChildren() do
 		if enemy:IsA("Model") and (enemy:GetAttribute("HP") or 0) > 0 then
 			local at = enemy:GetPivot().Position
-			if (Vector3.new(at.X, 0, at.Z) - Vector3.new(position.X, 0, position.Z)).Magnitude <= radius
+			local distance = if body then EnemyBody.SurfaceDistance(position, enemy, true)
+				else (Vector3.new(at.X, 0, at.Z) - Vector3.new(position.X, 0, position.Z)).Magnitude
+			if distance <= radius
 				-- Летающие в яме не считаются и под плиту не попадают: они над ней.
 				and not enemy:GetAttribute("Flying") then
 				table.insert(found, enemy)
@@ -81,7 +87,7 @@ end
 
 -- Плита сверху. Появляется над ямой, падает и давит всех, кто в ней стоит.
 local function crush(zone, plan)
-	local caught = enemiesIn(zone.position, zone.radius)
+	local caught = enemiesIn(zone.position, zone.radius, true)
 
 	local slab = Instance.new("Part")
 	slab.Name = "Плита Литосферы"

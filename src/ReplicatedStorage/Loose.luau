@@ -200,7 +200,27 @@ function Loose.Kick(root, velocity, spin)
 	root.AssemblyAngularVelocity += spin or Vector3.zero
 end
 
+-- Полугабарит помеченного по полу: на столько его тело выходит за корень. Меряется один раз —
+-- у модели это обход всех деталей, а труп после смерти размером не меняется.
+local halfSizes = setmetatable({}, { __mode = "k" })
+local function halfSize(tagged)
+	local cached = halfSizes[tagged]
+	if cached then
+		return cached
+	end
+	local size = if tagged:IsA("Model") then tagged:GetExtentsSize()
+		elseif tagged:IsA("BasePart") then tagged.Size
+		else Vector3.zero
+	-- Среднее длины и ширины, а не максимум, как у хитбокса жука (EnemyBody.Radius): по
+	-- длине круг торчал бы из боков трупа на полдлины.
+	local half = (size.X + size.Z) / 4
+	halfSizes[tagged] = half
+	return half
+end
+
 -- Помеченное незакреплённое в радиусе: { root, distance } по одному на сборку.
+-- Расстояние — до края тела (полугабарит), а не до корня: труп Гиганта длиной в двадцать
+-- студов, взорванный у хвоста, по корню был за радиусом и не шевелился.
 function Loose.Around(center, radius)
 	local list, seen = {}, {}
 	for _, tagged in CollectionService:GetTagged(Loose.Tag) do
@@ -208,7 +228,7 @@ function Loose.Around(center, radius)
 		local root = part and part:IsA("BasePart") and part.AssemblyRootPart
 		if root and not root.Anchored and not seen[root] and tagged:IsDescendantOf(Workspace) then
 			seen[root] = true
-			local distance = (root.Position - center).Magnitude
+			local distance = math.max((root.Position - center).Magnitude - halfSize(tagged), 0)
 			if distance <= radius then
 				table.insert(list, { root = root, distance = distance })
 			end

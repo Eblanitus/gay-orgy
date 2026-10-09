@@ -28,6 +28,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
 local Grid = require(ServerScriptService:WaitForChild("Grid"))
+local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 -- Рельеф пола. Всё, что здесь строится, стоит на ФАКТИЧЕСКОМ бетоне и едет вместе
 -- с ним: по номинальному уровню объект либо висит над ямой, либо оказывается целиком
 -- под поднявшимся полом (найдено замером: руина на холме уходила под землю).
@@ -486,12 +487,23 @@ local function damage(record, amount)
 	end
 end
 
+-- Расстояние от точки до коробки детали (0 — внутри). Стена и Пандус в 9 студов длиной:
+-- по центру детали взрыв у их торца был за радиусом и конструкцию не задевал.
+local function boxDistance(part, position)
+	local p = part.CFrame:PointToObjectSpace(position)
+	local half = part.Size / 2
+	local dx = math.max(math.abs(p.X) - half.X, 0)
+	local dy = math.max(math.abs(p.Y) - half.Y, 0)
+	local dz = math.max(math.abs(p.Z) - half.Z, 0)
+	return math.sqrt(dx * dx + dy * dy + dz * dz)
+end
+
 -- Тяжёлый снаряд или взрыв элемента. Огонь (damageType == "overtime") ещё и поджигает.
 function EnemyStructures.Blast(position, radius, amount, elementData)
 	local burns = elementData and elementData.damageType == "overtime"
 	for index = #live, 1, -1 do
 		local record = live[index]
-		if (record.part.Position - position).Magnitude <= radius then
+		if boxDistance(record.part, position) <= radius then
 			if burns then
 				record.burnUntil = os.clock() + BURN_TIME
 			end
@@ -572,8 +584,10 @@ RunService.Heartbeat:Connect(function(dt)
 					end
 					local hp = enemy:GetAttribute("HP")
 					local maxHp = enemy:GetAttribute("MaxHP")
+					-- Рядом — телом (EnemyBody), а не пивотом: крупный жук, улёгшийся брюхом
+					-- к кормушке, ест, даже если пивот за радиусом.
 					if hp and maxHp and hp > 0 and hp < maxHp
-						and (enemy:GetPivot().Position - at).Magnitude <= FEEDER.radius then
+						and EnemyBody.SurfaceDistance(at, enemy, true) <= FEEDER.radius then
 						enemy:SetAttribute("HP", math.min(maxHp, hp + FEEDER.amount))
 						record.meals -= 1
 					end

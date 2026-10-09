@@ -41,6 +41,17 @@ function LabTable.Position()
 	return craftTable:GetPivot().Position
 end
 
+-- Плоское расстояние от точки до края стола (0 — над столешницей). Взрыв у торца стола
+-- задевает стол, хотя до его середины дальше радиуса: стол 7 студов в длину.
+-- Габарит — тот же, о который толкучка упирает тела (Arena.tableHalf, мировые оси).
+function LabTable.DistanceTo(point)
+	local centre = LabTable.Position()
+	local half = Arena.tableHalf or Vector3.zero
+	local dx = math.max(math.abs(point.X - centre.X) - half.X, 0)
+	local dz = math.max(math.abs(point.Z - centre.Z) - half.Z, 0)
+	return math.sqrt(dx * dx + dz * dz)
+end
+
 -- Клетка стола — цель поля волн для всех, у кого goal = "table". Считается каждый раз,
 -- а не кэшируется: стол можно подвинуть в Studio руками, как и весь остальной уровень.
 function LabTable.Cell()

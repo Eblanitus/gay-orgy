@@ -33,7 +33,7 @@ local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
 -- Только за EnemiesInRange для взрыва навесного снаряда: фильтр земля/воздух должен быть
 -- тот же, что у прицеливания. Цикла нет: Targeting никого не требует.
 local Targeting = require(ServerScriptService:WaitForChild("Targeting"))
--- Габариты тела жука: по ним считается хитбокс (см. enemyRadius ниже).
+-- Габариты тела жука: по ним считается хитбокс (см. findHit ниже).
 local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 -- Модель самого дрона (задача #75). Только сборка картинки: чем дрон бьёт и куда летит,
 -- решается здесь, а не там.
@@ -147,25 +147,10 @@ local function projectilesFolder()
 	return folder
 end
 
--- Хитбокс врага — шар по габаритам его тела: жук 2.6 x 1.2 x 3.4 даёт радиус 1.5.
+-- Хитбокс врага — шар по габаритам ядра плюс капсула следа (EnemyBody.SegmentHit и
+-- EnemyBody.SurfaceDistance): теми же габаритами меряет радиус и площадь прицеливание
+-- (Targeting), и две копии разошлись бы при первой же правке размера модели.
 --
--- Формула та же, что была, но переехала в общий EnemyBody: ровно теми же габаритами
--- теперь меряет радиус и площадь прицеливание (Targeting), и две копии разошлись бы
--- при первой же правке размера модели.
-local function enemyRadius(enemy)
-	return EnemyBody.Radius(enemy)
-end
-
--- Доля отрезка [from, to], в которой он ближе всего к точке point (0 — начало, 1 — конец).
-local function closestOnSegment(from, to, point)
-	local segment = to - from
-	local lengthSquared = segment:Dot(segment)
-	if lengthSquared < 1e-6 then
-		return 0
-	end
-	return math.clamp((point - from):Dot(segment) / lengthSquared, 0, 1)
-end
-
 -- Первый враг, которого задевает путь снаряда за этот кадр. Проверяется весь отрезок пути,
 -- а не одна конечная точка: за кадр снаряд пролетает около студа, и проверка «по точкам»
 -- прошивала бы жука насквозь между кадрами тем чаще, чем быстрее снаряд.
@@ -177,10 +162,8 @@ local function findHit(shot, from, to)
 
 	for _, enemy in enemiesFolder:GetChildren() do
 		if enemy:IsA("Model") and enemy.PrimaryPart and (enemy:GetAttribute("HP") or 0) > 0 then
-			local center = enemy:GetPivot().Position
-			local along = closestOnSegment(from, to, center)
-			local nearest = from:Lerp(to, along)
-			if along < bestAlong and (center - nearest).Magnitude <= shot.radius + enemyRadius(enemy) then
+			local along = EnemyBody.SegmentHit(from, to, enemy, shot.radius)
+			if along and along < bestAlong then
 				best, bestAlong = enemy, along
 			end
 		end
@@ -259,8 +242,11 @@ local function burst(shot)
 	-- успеть уйти за время полёта — тогда прямого нет вовсе, а площадь остаётся.
 	local direct, directDistance = nil, math.huge
 	for _, enemy in list do
-		local distance = (enemy:GetPivot().Position - center).Magnitude
-		if distance <= shot.radius + enemyRadius(enemy) and distance < directDistance then
+		-- Шар по ядру, как было, или капсула следа: воронка под брюшком тоже прямое попадание.
+		-- Ближним считается тот, чей центр ближе, как и раньше.
+		local surface, distance = EnemyBody.SurfaceDistance(center, enemy)
+		local covered = surface <= shot.radius or distance <= shot.radius + EnemyBody.Radius(enemy)
+		if covered and distance < directDistance then
 			direct, directDistance = enemy, distance
 		end
 	end
