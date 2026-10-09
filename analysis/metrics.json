@@ -1,0 +1,100 @@
+{
+  "commits_total": 489,
+  "commits_by_author": {
+    "Claude": 305,
+    "Eblanitus": 184
+  },
+  "commits_with_task_number": 268,
+  "tasks_total": 415,
+  "tasks_range": [
+    13,
+    452
+  ],
+  "first_day": "2026-09-24",
+  "last_day": "2026-10-09",
+  "luau_files_now": 148,
+  "luau_bytes_now": 3024259,
+  "loc_luau_total": 60708,
+  "loc_by_folder": {
+    "StarterPlayer/StarterPlayerScripts": 25711,
+    "ServerScriptService": 21556,
+    "ReplicatedStorage": 12860,
+    "ReplicatedFirst": 486,
+    "Workspace/Location": 95
+  },
+  "top_files": [
+    [
+      "ServerScriptService/ProfileStore.luau",
+      2243
+    ],
+    [
+      "ServerScriptService/EnemySpawner.luau",
+      1932
+    ],
+    [
+      "ReplicatedStorage/Effects.luau",
+      1526
+    ],
+    [
+      "ReplicatedStorage/EnemyGait.luau",
+      1490
+    ],
+    [
+      "ServerScriptService/EnemyTraits.luau",
+      1475
+    ],
+    [
+      "ReplicatedStorage/Elements.luau",
+      1399
+    ],
+    [
+      "ServerScriptService/TowerModels.luau",
+      1389
+    ],
+    [
+      "ServerScriptService/Crowd.luau",
+      1274
+    ],
+    [
+      "StarterPlayer/StarterPlayerScripts/BuildingVisuals.client.luau",
+      1206
+    ],
+    [
+      "StarterPlayer/StarterPlayerScripts/TowerInteraction.client.luau",
+      1191
+    ],
+    [
+      "StarterPlayer/StarterPlayerScripts/MainMenu.client.luau",
+      1127
+    ],
+    [
+      "ServerScriptService/Grid.luau",
+      1108
+    ],
+    [
+      "ReplicatedStorage/CorpseRemains.luau",
+      1095
+    ],
+    [
+      "StarterPlayer/StarterPlayerScripts/EnemyVisuals.client.luau",
+      1086
+    ],
+    [
+      "StarterPlayer/StarterPlayerScripts/CombatFX.client.luau",
+      1003
+    ]
+  ],
+  "topics": {
+    "Прочее": 125,
+    "Меню / UI": 75,
+    "Враги / волны": 55,
+    "Вики / дизайн": 52,
+    "Визуал / модели": 43,
+    "Башни / элементы": 31,
+    "Баланс": 18,
+    "Баги и фиксы": 10,
+    "Инфраструктура": 6
+  },
+  "ins_total": 79932,
+  "del_total": 19134
+}
