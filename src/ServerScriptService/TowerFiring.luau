@@ -322,6 +322,7 @@ return function(deps)
 		-- Угол места запоминается: по нему не только качается картинка на клиенте, но и считается
 		-- точка пуска снаряда ниже (meshMuzzle).
 		local aimPitch = nil
+		local yawBlocked = false
 		if aimState then
 			local desired = Aiming.AngleTo(towerPosition, aim)
 			if desired then
@@ -337,27 +338,44 @@ return function(deps)
 				-- (см. AIM_SPAN), а не постоянное число градусов.
 				local tolerance = math.max(Aiming.TOLERANCE, math.atan(AIM_SPAN / math.max(distance, 1)))
 				if math.abs(Aiming.Delta(aimState.angle, desired)) > tolerance then
-					return false -- ещё доворачивается
+					yawBlocked = true -- ещё доворачивается
 				end
 			end
 
 			-- Вертикаль (задача #71): угол места на ту же упреждённую точку aim, что и по
 			-- горизонтали: ствол должен смотреть туда же, куда уйдёт снаряд, а не в тело жука.
-			-- Сам снаряд летит по aim независимо от того, довернулся ли меш по вертикали
-			-- (Projectile.Fire берёт полностью трёхмерное направление), поэтому задержки выстрела
-			-- на этот угол нет — только публикация для картинки.
+			-- Считается и публикуется ДО проверки горизонтали выше: иначе ствол не начинал бы
+			-- подниматься, пока не довернётся по горизонту, и по летящей цели отставал бы вдвое.
 			aimPitch = Aiming.PitchTo(center, aim)
 			-- Пределы хода ствола по вертикали (rig.pitchMin/pitchMax, Инжектор). Подрезается
 			-- ОДИН раз и здесь, до публикации: по этому же числу клиент ставит ствол, а ниже
 			-- считается точка пуска — две подрезки в разных местах разошлись бы.
-			--
-			-- Сам снаряд летит по aim, а не по углу ствола (так же, как у Колбы с её
-			-- подрезанными цапфами): подрезка — это предел картинки, а не правило стрельбы.
 			local rig = geometry.rig
 			if rig and rig.pitchMin and rig.pitchMax then
 				aimPitch = math.clamp(aimPitch, math.rad(rig.pitchMin), math.rad(rig.pitchMax))
 			end
 			publishPitch(tower, aimPitch)
+
+			-- Колба: ствол едет по вертикали с той же скоростью, что и клиентский (Aiming.Step
+			-- на тех же числах), и выстрел ждёт, пока он поднимется на цель, как и по горизонтали.
+			-- Раньше снаряд уходил по aim сразу, а ствол ещё лежал почти горизонтально (или упирался
+			-- в предел хода) — вспышка и полёт расходились. Пределы хода (gun.pitchMin/pitchMax)
+			-- шире не бывает: цель, до которой ствол доехать не может, не запирает стрельбу, потому
+			-- что желаемый угол подрезан теми же пределами, что и у клиента.
+			local gun = towerData.gun
+			if gun then
+				local wanted = math.clamp(aimPitch - math.rad(gun.restPitch),
+					math.rad(gun.pitchMin), math.rad(gun.pitchMax))
+				aimState.desiredPitch = wanted
+				local tolerance = math.max(Aiming.TOLERANCE, math.atan(AIM_SPAN / math.max(distance, 1)))
+				if math.abs(Aiming.Delta(aimState.pitch, wanted)) > tolerance then
+					return false
+				end
+			end
+
+			if yawBlocked then
+				return false
+			end
 		end
 
 		-- Снаряд стартует из НАСТОЯЩЕГО дула меша, а не с оси турели: у Колбы ствол
@@ -368,7 +386,8 @@ return function(deps)
 		-- положении (aimState.angle), а не в желаемом: стрелять она начинает, когда довернулась
 		-- в пределах допуска, и этот остаток допуска точка пуска обязана учитывать.
 		local muzzle = (aimState and geometry.rig and rigMuzzle(tower, geometry.rig, aimState.angle, aimPitch))
-			or (aimState and meshMuzzle(tower, towerData.gun, aimState.angle, aimPitch))
+			or (aimState and meshMuzzle(tower, towerData.gun, aimState.angle,
+				towerData.gun and (Aiming.Delta(0, aimState.pitch) + math.rad(towerData.gun.restPitch)) or aimPitch))
 			or aimBarrel(tower, aim, geometry, towerData)
 		local color = elementData and elementData.color or SHOT_COLOR
 
@@ -792,7 +811,8 @@ return function(deps)
 			local aimState = nil
 			if towerData.turnSpeed then
 				local look = tower:GetPivot().LookVector
-				aimState = { angle = math.atan2(-look.X, -look.Z), velocity = 0, clock = os.clock() }
+				aimState = { angle = math.atan2(-look.X, -look.Z), velocity = 0, clock = os.clock(),
+					pitch = 0, pitchVelocity = 0 } -- pitch: от положения покоя ствола, как у клиента (currentPitch)
 			end
 
 			while tower.Parent do
@@ -802,6 +822,9 @@ return function(deps)
 					local now = os.clock()
 					aimState.angle, aimState.velocity = Aiming.Step(aimState.angle, aimState.velocity,
 						aimState.desired or aimState.angle, now - aimState.clock,
+						towerData.turnSpeed, towerData.turnAccel)
+					aimState.pitch, aimState.pitchVelocity = Aiming.Step(aimState.pitch, aimState.pitchVelocity,
+						aimState.desiredPitch or aimState.pitch, now - aimState.clock,
 						towerData.turnSpeed, towerData.turnAccel)
 					aimState.clock = now
 				end
