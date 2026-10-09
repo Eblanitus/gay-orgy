@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 local EnemyGait = require(ReplicatedStorage:WaitForChild("EnemyGait"))
+local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
 
 local ImpulseFX = {}
 
@@ -26,7 +27,7 @@ local function eachVisual(callback)
 	for _, enemy in enemies:GetChildren() do
 		local visual = enemy:FindFirstChild("Visual")
 		if visual then
-			callback(visual)
+			callback(visual, enemy)
 		end
 	end
 end
@@ -37,8 +38,9 @@ function ImpulseFX.Blast(center, radius, power)
 	Loose.Blast(Loose.Around(center, reach), center, radius, power)
 
 	-- Живые жуки физикой не летают, но ударную волну обязаны почувствовать.
-	eachVisual(function(visual)
-		local distance = (visual:GetPivot().Position - center).Magnitude
+	-- Расстояние — до тела жука (EnemyBody), как у урона: волна, задевшая брюшко, его дёргает.
+	eachVisual(function(visual, enemy)
+		local distance = EnemyBody.SurfaceDistance(center, enemy)
 		if distance < reach then
 			EnemyGait.Flinch(visual, center, 1 - distance / reach)
 		end

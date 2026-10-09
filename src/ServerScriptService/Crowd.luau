@@ -249,6 +249,54 @@ local function offFloor(x, z)
 	return x < MIN_X or x > MAX_X or z < MIN_Z or z > MAX_Z
 end
 
+-- Стены комнаты — по краю пола. clampXZ держит на полу только ЦЕНТР жука, и отдача, взрыв
+-- или толкучка вдавливали тело в стену до полкорпуса (у крупных — на студы). Здесь капсула
+-- тела (ось от брюшка до головы, радиус) не пускается за край пола. Кто уже вылез за
+-- отступ (подброс, появление), того не выталкивают рывком, а только не пускают дальше —
+-- как паника (EnemySpawner.fleeConfine). У проёма двери стены нет: в полосе маркера входа
+-- или выхода край не держит, иначе жук не дошёл бы центром до выхода и не вышел бы в коридор.
+local function inDoor(alongX, edge, along)
+	for _, door in { { Arena.entrance, Arena.entranceHalf }, { Arena.exit, Arena.exitHalf } } do
+		local at, half = door[1], door[2]
+		if at and half then
+			local reach = math.max(half.X, half.Z)
+			if alongX then
+				if math.abs(at.X - edge) <= reach and math.abs(along - at.Z) <= half.Z then
+					return true
+				end
+			elseif math.abs(at.Z - edge) <= reach and math.abs(along - at.X) <= half.X then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function insideWalls(me, x, z, fx, fz)
+	local r = me.radius
+	local ax, bx = fx * me.front, fx * me.back
+	local az, bz = fz * me.front, fz * me.back
+	local loX, hiX = MIN_X + r - math.min(ax, bx), MAX_X - r - math.max(ax, bx)
+	local loZ, hiZ = MIN_Z + r - math.min(az, bz), MAX_Z - r - math.max(az, bz)
+	if loX <= hiX then
+		if not inDoor(true, MIN_X, z) then
+			x = math.max(x, math.min(me.x, loX))
+		end
+		if not inDoor(true, MAX_X, z) then
+			x = math.min(x, math.max(me.x, hiX))
+		end
+	end
+	if loZ <= hiZ then
+		if not inDoor(false, MIN_Z, x) then
+			z = math.max(z, math.min(me.z, loZ))
+		end
+		if not inDoor(false, MAX_Z, x) then
+			z = math.min(z, math.max(me.z, hiZ))
+		end
+	end
+	return x, z
+end
+
 -- Спрашивается карта проходимости для тела жука (Grid.GetBlocker), а не занятость
 -- самой клетки. На крупной сетке разницы не было: клетка была с жука размером,
 -- и его центр у самой границы занятой клетки означал тело вплотную к постройке.
@@ -950,6 +998,10 @@ function Crowd.Resolve(model, desired, dt, facing, bare)
 	local caged = insideBuilding(homeX, homeZ)
 
 	x, z = clampXZ(x, z)
+	-- Телом в стену комнаты — нет (insideWalls). В коридоре за дверью — не здесь: там бока держит clampXZ.
+	if not offFloor(me.x, me.z) and not offFloor(x, z) then
+		x, z = insideWalls(me, x, z, fx, fz)
+	end
 	if not caged and occupied(x, homeZ, me, bare) then
 		x = homeX
 	end

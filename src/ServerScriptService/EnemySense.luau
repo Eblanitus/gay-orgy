@@ -96,11 +96,14 @@ function Sense.turretRange(tower)
 	return data and data.range or 0
 end
 
+-- Ближняя турель и расстояние до неё — до края её следа (Grid.DistanceTo), а не до пивота.
+-- У Мортиры от пивота до края ~13 студов: по пивоту солдат с engage 16 «видел» её только
+-- вплотную, а Бур — за 14 студов, и ближней считалась мелкая дальняя, а не крупная рядом.
 function Sense.nearestTurret(position, filter)
 	local best, bestDistance = nil, math.huge
 	for _, tower in towersFolder:GetChildren() do
 		if Sense.isTurret(tower) and (not filter or filter(tower)) then
-			local distance = flat(tower:GetPivot().Position - position).Magnitude
+			local distance = Grid.DistanceTo(tower, position) or flat(tower:GetPivot().Position - position).Magnitude
 			if distance < bestDistance then
 				best, bestDistance = tower, distance
 			end

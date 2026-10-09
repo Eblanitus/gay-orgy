@@ -198,6 +198,8 @@ end
 -- он стоял на выходе и запрет стройки «на выходе» заодно берёг и его.
 Arena.entrance = Vector3.zero
 Arena.exit = Vector3.zero
+Arena.entranceHalf = nil -- полугабарит проёма входа (мировые оси), только на сервере
+Arena.exitHalf = nil
 -- Где появляются жуки: дальний конец коридора за входом, а не сам вход. От входа до
 -- двери зала идёт прямой коридор, и жуки, рождённые у самой двери, сразу оказывались
 -- среди турелей. Теперь они проходят коридор целиком (см. Arena.lane и Crowd).
@@ -211,6 +213,16 @@ Arena.table = Vector3.zero
 -- Половина габарита стола по мировым X/Z. Запрет стройки на столе (Arena.IsTableCell) раньше
 -- смотрел только на его центральную клетку, и турель вставала в край столешницы.
 Arena.tableHalf = Vector3.zero
+
+-- Полугабарит детали в мировых осях: маркер может стоять повёрнутым.
+local function partHalf(part)
+	local cf, half = part.CFrame, part.Size / 2
+	local function axis(v)
+		return math.abs(cf.RightVector:Dot(v)) * half.X + math.abs(cf.UpVector:Dot(v)) * half.Y
+			+ math.abs(cf.LookVector:Dot(v)) * half.Z
+	end
+	return Vector3.new(axis(Vector3.xAxis), axis(Vector3.yAxis), axis(Vector3.zAxis))
+end
 
 -- Габарит модели в мировых осях: стол может стоять повёрнутым.
 local function worldHalf(model)
@@ -299,6 +311,10 @@ local function bind()
 		location:SetAttribute("FloorSize", floor.Size)
 		location:SetAttribute("Entrance", markers:WaitForChild("Entrance").Position)
 		location:SetAttribute("Exit", markers:WaitForChild("Exit").Position)
+		-- Проёмы дверей (полугабарит маркеров в мировых осях): у них стена кончается, и толкучка
+		-- не держит тело жука в отступе от края пола (Crowd.insideWalls).
+		location:SetAttribute("EntranceHalf", partHalf(markers.Entrance))
+		location:SetAttribute("ExitHalf", partHalf(markers.Exit))
 		local spawn, lane = findSpawn(markers, floor, markers.Entrance)
 		-- Зелёная плашка маркера входа в игре не нужна: жуки теперь идут из конца коридора,
 		-- а она светилась у двери, будто спавн там. Маркер остаётся точкой входа и шириной
@@ -335,6 +351,8 @@ local function bind()
 	Arena.floorY = topY
 	Arena.entrance = location:GetAttribute("Entrance")
 	Arena.exit = location:GetAttribute("Exit")
+	Arena.entranceHalf = location:GetAttribute("EntranceHalf")
+	Arena.exitHalf = location:GetAttribute("ExitHalf")
 	Arena.spawn = location:GetAttribute("Spawn") or Arena.entrance
 	local laneMin, laneMax = location:GetAttribute("LaneMin"), location:GetAttribute("LaneMax")
 	Arena.lane = laneMin and laneMax and {

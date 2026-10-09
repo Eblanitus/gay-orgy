@@ -134,6 +134,52 @@ end
 -- турель не держатся в памяти.
 local shadowSeen = setmetatable({}, { __mode = "k" })
 
+-- Точки тела, которые турель может «увидеть»: центр, нос и брюшко (торцы капсулы следа,
+-- EnemyBody.Footprint). Сектор, стена Строителя и линия огня раньше спрашивали только центр:
+-- жук, у которого из-за угла торчит полкорпуса, был невидим. Целится турель по-прежнему
+-- в центр (Projectile.PredictAim) — снаряды стен не знают и долетают до тела.
+local function bodyPoints(enemy, position)
+	local radius = enemy:GetAttribute("FootRadius")
+	if not radius then
+		return { position }
+	end
+	local pivot = enemy:GetPivot()
+	local front = (enemy:GetAttribute("FootFront") or 0) + radius * 0.5
+	local back = (enemy:GetAttribute("FootBack") or 0) - radius * 0.5
+	return { position, pivot * Vector3.new(0, 0, front), pivot * Vector3.new(0, 0, back) }
+end
+
+-- Видна ли хоть одна точка тела: test(point, a, b, c) -> true, если эта видна. Центр
+-- проверяется первым, остальные точки считаются, только если он не виден: функцию зовут
+-- на каждую цель каждый выбор, и в обычном случае ей хватает одной проверки, как раньше.
+local function anyPoint(enemy, position, test, a, b, c)
+	if test(position, a, b, c) then
+		return true
+	end
+	local points = bodyPoints(enemy, position)
+	for index = 2, #points do
+		if test(points[index], a, b, c) then
+			return true
+		end
+	end
+	return false
+end
+
+local function inArcAt(point, towerPosition, arcCenter, arc)
+	-- Точка ровно над башней (angle — nil) в сектор не попадает: горизонтального
+	-- направления на неё нет вовсе.
+	local angle = Aiming.AngleTo(towerPosition, point)
+	return angle ~= nil and math.abs(Aiming.Delta(arcCenter, angle)) <= arc
+end
+
+local function openAt(point, towerPosition)
+	return not EnemyStructures.BlocksLine(towerPosition, point)
+end
+
+local function sightAt(point, towerPosition, shooter)
+	return Targeting.HasLineOfSight(towerPosition, point, shooter)
+end
+
 local function enemiesInRange(towerPosition, range, enemiesFolder, filter)
 	local targets = filter and filter.targets
 	local minRange = filter and filter.minRange
@@ -162,10 +208,8 @@ local function enemiesInRange(towerPosition, range, enemiesFolder, filter)
 			if surface <= reach and not (minRange and distance < minRange) then
 				local inArc = true
 				if arc and arcCenter then
-					local angle = Aiming.AngleTo(towerPosition, position)
-					-- Цель ровно над башней (angle — nil) в сектор не попадает:
-					-- горизонтального направления на неё нет вовсе.
-					inArc = angle ~= nil and math.abs(Aiming.Delta(arcCenter, angle)) <= arc
+					-- В секторе — хоть краем тела.
+					inArc = anyPoint(enemy, position, inArcAt, towerPosition, arcCenter, arc)
 				end
 				-- Тень: «турели реагируют с задержкой... Пока турель определила цель — он уже
 				-- прошёл». Задержка у КАЖДОЙ турели своя: вторая турель на пути заново тратит
@@ -196,7 +240,7 @@ local function enemiesInRange(towerPosition, range, enemiesFolder, filter)
 				-- Стена Строителя между турелью и жуком: «жуки за ней группируются
 				-- безопасно». Проверка последней: она самая дорогая из всех, и делать её
 				-- для того, кто и так отсеян, незачем.
-				if inArc and EnemyStructures.BlocksLine(towerPosition, position) then
+				if inArc and not anyPoint(enemy, position, openAt, towerPosition) then
 					inArc = false
 				end
 
@@ -205,7 +249,7 @@ local function enemiesInRange(towerPosition, range, enemiesFolder, filter)
 				-- Включается только тем, кто её просит (filter.lineOfSight): взрыв навесного
 				-- снаряда бьёт по площади вокруг воронки, а не «видит» цель откуда-то.
 				if inArc and filter and filter.lineOfSight
-					and not Targeting.HasLineOfSight(towerPosition, position, filter.shooter) then
+					and not anyPoint(enemy, position, sightAt, towerPosition, filter.shooter) then
 					inArc = false
 				end
 
@@ -228,11 +272,12 @@ end
 
 Targeting.Modes = {}
 
--- Ближайший к башне.
+-- Ближайший к башне — телом (EnemyBody), а не пивотом: крупный, подошедший брюшком
+-- вплотную, ближе мелкого, чей пивот на полшага ближе.
 Targeting.Modes.closest = function(towerPosition, range, enemiesFolder)
 	local best, bestValue = nil, math.huge
 	for _, enemy in ipairs(enemiesInRange(towerPosition, range, enemiesFolder)) do
-		local distance = (enemy:GetPivot().Position - towerPosition).Magnitude
+		local distance = EnemyBody.SurfaceDistance(towerPosition, enemy)
 		if distance < bestValue then
 			best, bestValue = enemy, distance
 		end

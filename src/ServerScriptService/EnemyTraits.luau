@@ -57,8 +57,14 @@ local function distance(a, b)
 	return flat(a - b).Magnitude
 end
 
--- Полудлина тела по масштабу — та же 1.7 × масштаб, что и в EnemySpawner (bodyReach).
+-- Полудлина тела — от пивота до кончика морды по замеру тела (EnemyBody.Footprint), а не
+-- «1.7 × масштаб» для всех: у длинных и коротких видов она своя. Без замера — по масштабу.
 local function bodyReach(enemy)
+	local front = enemy:GetAttribute("FootFront")
+	local radius = enemy:GetAttribute("FootRadius")
+	if front and radius then
+		return front + radius
+	end
 	return 1.7 * (enemy:GetAttribute("Scale") or 1)
 end
 
@@ -697,7 +703,7 @@ TRAITS.escort = function(enemy, enemyData, state)
 		-- Вожак дошёл до дела (грызёт преграду, стоит у стола) — свиту больше не держит:
 		-- её заявки истекут сами, и каждый возьмётся за своё, а не будет ждать за спиной.
 		local busy = enemy:GetAttribute("Chewing")
-			or (LabTable.IsAlive() and distance(position, LabTable.Position()) <= LabTable.REACH + bodyReach(enemy) + 2)
+			or (LabTable.IsAlive() and LabTable.BodyGap(enemy) <= LabTable.BITE_GAP + 2)
 
 		for _, other in (busy and {} or Sense.enemiesAround(position, plan.radius, enemy)) do
 			local data = Sense.dataOf(other)
@@ -915,7 +921,7 @@ TRAITS.absorbs = function(enemy, enemyData, state)
 		end
 		local store = absorbed[enemy]
 		if store and store.charge >= plan.atTable and LabTable.IsAlive()
-			and distance(enemy:GetPivot().Position, LabTable.Position()) <= LabTable.REACH + bodyReach(enemy) + 1 then
+			and LabTable.BodyGap(enemy) <= LabTable.BITE_GAP + 1 then
 			print("[Разносчик] дошёл до лаборатории и взрывается впитанным")
 			Effects.MarkHit(enemy, nil)
 			enemy:SetAttribute("HP", 0) -- сам взрыв сделает ветка смерти (Burst)
@@ -1093,7 +1099,8 @@ TRAITS.carries = function(enemy, enemyData, state)
 			return
 		end
 
-		if (enemy:GetPivot().Position - LabTable.Position()).Magnitude <= LabTable.REACH + 4 then
+		-- До края стола телом (LabTable.BodyGap), а не до его середины.
+		if LabTable.BodyGap(enemy) <= LabTable.BITE_GAP + 2 then
 			print("[Носитель] добрался до лаборатории и выпускает жуков внутри обороны")
 			EnemyTraits.Spill(enemy, enemyData, true)
 			return

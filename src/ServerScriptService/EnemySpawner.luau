@@ -382,15 +382,16 @@ local function advanceClimb(climb, dt)
 end
 
 -- Ближайший живой наземный жук из folder, до которого enemy уже дотягивается жвалами.
--- Им очищенный (Мыло) находит, кого кусать, а враги — его самого. Полудлина тела — та же
--- 1.7 × масштаб, что и у bodyReach в moveThroughArena.
-local function rivalInReach(enemy, position, folder, bodyReach)
+-- Им очищенный (Мыло) находит, кого кусать, а враги — его самого. Дотягивается — от своего
+-- пивота на длину морды (FootFront + FootRadius) до ТЕЛА соперника (EnemyBody), а не
+-- «1.7 × масштаб» на двоих: у длинных и коротких видов полудлина не та.
+local function rivalInReach(enemy, position, folder)
+	local reach = (enemy:GetAttribute("FootFront") or 0) + (enemy:GetAttribute("FootRadius") or 1.5) + BITE_MARGIN
 	local best, bestDistance = nil, math.huge
 	for _, other in folder:GetChildren() do
 		if other ~= enemy and other:IsA("Model") and not other:GetAttribute("Flying")
 			and (other:GetAttribute("HP") or 0) > 0 then
-			local distance = flat(other:GetPivot().Position - position).Magnitude
-			local reach = bodyReach + 1.7 * (other:GetAttribute("Scale") or 1) + BITE_MARGIN
+			local distance = EnemyBody.SurfaceDistance(position, other, true)
 			if distance <= reach and distance < bestDistance then
 				best, bestDistance = other, distance
 			end
@@ -454,10 +455,6 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 	-- Куда ведёт текущий маршрут: "table", "exit", "perimeter" или "turret". От этого
 	-- зависит, что случится, когда жук дойдёт до конца (см. EnemyBehavior.Arrived).
 	local goalMode = "exit"
-
-	-- Половина длины тела: на столько жук не доходит до стола, чтобы грызть его край,
-	-- а не стоять в его середине. Гигант берёт стол с большего расстояния, чем Мини.
-	local bodyReach = 1.7 * (enemy:GetAttribute("Scale") or enemyData.scale or 1)
 
 	local scale = enemy:GetAttribute("Scale") or enemyData.scale or 1
 
@@ -712,8 +709,10 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			-- Дошёл ли до стола. Стол не занимает клеток сетки (см. LabTable) — именно
 			-- поэтому «упёрся в него» — это расстояние, а не blocker.
 			-- Хмурый брон стол не ищет, но и не обходит: «стол на пути» — грызёт (tableOnPath).
+			-- Дошёл — значит коснулся телом края стола (LabTable.BodyGap), а не вошёл в круг
+			-- вокруг его середины: с длинной стороны круг ставил жука грызть воздух.
 			local atTable = (goalMode == "table" or enemyData.tableOnPath) and LabTable.IsAlive()
-				and flat(position - LabTable.Position()).Magnitude <= LabTable.REACH + bodyReach
+				and LabTable.BodyGap(enemy, position) <= LabTable.BITE_GAP
 
 			-- Что жук делает по своей касте и трейтам: идёт, отходит или стоит.
 			local behavior = EnemyBehavior.State(enemy, enemyData, state)
@@ -768,9 +767,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			local rival = nil
 			if chewDamage > 0 and not climb then
 				if ally then
-					rival = rivalInReach(enemy, position, enemiesFolder, bodyReach)
+					rival = rivalInReach(enemy, position, enemiesFolder)
 				elseif alliesFolder:FindFirstChildWhichIsA("Model") then
-					rival = rivalInReach(enemy, position, alliesFolder, bodyReach)
+					rival = rivalInReach(enemy, position, alliesFolder)
 				end
 			end
 
@@ -815,7 +814,7 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				-- препятствие: Таран, вылетевший на лабораторию, бьёт её с разбега.
 				local ahead = Grid.GetBlocker(Grid.ToCell(desired))
 				local intoTable = not ahead and LabTable.IsAlive()
-					and flat(desired - LabTable.Position()).Magnitude <= LabTable.REACH + bodyReach
+					and LabTable.BodyGap(enemy, desired) <= LabTable.BITE_GAP
 				if ahead or intoTable then
 					local name
 					if ahead then
@@ -1000,13 +999,16 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				setVelocity(Vector3.zero)
 				pose = "chew"
 
+				-- Жвалы — в ближнюю к телу точку края стола, морда к ней.
+				local _, edge = LabTable.BodyGap(enemy, position)
+				local toEdge = flat(edge - position)
 				local toTable = flat(LabTable.Position() - position)
-				if toTable.Magnitude > 1e-3 then
+				if toEdge.Magnitude > 1e-3 then
+					heading = toEdge.Unit
+				elseif toTable.Magnitude > 1e-3 then
 					heading = toTable.Unit
-					-- Край стола: жук остановился в досягаемости (REACH + полтела) от его середины.
-					local edge = math.max(0, toTable.Magnitude - LabTable.REACH)
-					chewAt = position + heading * edge
 				end
+				chewAt = edge
 
 				if not EnemyBehavior.BiteTable(enemy, enemyData, state) then
 					-- Грызть нечем (chewDamage = 0 у Спринтера, Координатора, Тени): что

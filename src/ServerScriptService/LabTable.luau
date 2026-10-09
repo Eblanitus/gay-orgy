@@ -27,8 +27,8 @@ local LabTable = {}
 -- достаточно долго, чтобы игрок успел их снять, и достаточно быстро, чтобы он это делал.
 LabTable.MAX_HP = 1500
 
--- На каком расстоянии от центра стола жук считается «дошёл и грызёт». Стол — 7 студов
--- в длину, поэтому чуть больше его половины: жук грызёт край, а не влезает в середину.
+-- Запасной радиус стола, пока его габарит (Arena.tableHalf) не мерян. «Дошёл и грызёт»
+-- решает зазор тела до края стола (LabTable.BodyGap), а не этот круг.
 LabTable.REACH = 5
 
 local destroyedListeners = {}
@@ -50,6 +50,47 @@ function LabTable.DistanceTo(point)
 	local dx = math.max(math.abs(point.X - centre.X) - half.X, 0)
 	local dz = math.max(math.abs(point.Z - centre.Z) - half.Z, 0)
 	return math.sqrt(dx * dx + dz * dz)
+end
+
+-- Зазор, на котором жук уже грызёт стол: толкучка держит его тело в BODY_CLEARANCE от
+-- столешницы (Crowd.outOfTable), и вплотную подошедший стоит в ~0.1 от края.
+LabTable.BITE_GAP = 0.6
+
+local BODY_SAMPLES = 5 -- точек вдоль оси тела, от брюшка до головы (как в толкучке)
+
+-- Зазор между телом жука и краем стола (0 — касается) и ближайшая к телу точка края.
+-- position — где стоит пивот (по умолчанию — где он сейчас), ход — по пивоту жука.
+-- Раньше «дошёл до стола» был круг REACH + 1.7 × масштаб от середины стола: стол
+-- 7 × 4, и с длинной стороны жук вставал грызть в трёх студах от столешницы.
+function LabTable.BodyGap(enemy, position)
+	local pivot = enemy:GetPivot()
+	position = position or pivot.Position
+	-- Голова модели по +Z пивота (см. Crowd.Add).
+	local facing = Vector3.new(pivot.ZVector.X, 0, pivot.ZVector.Z)
+	facing = if facing.Magnitude > 1e-3 then facing.Unit else Vector3.zAxis
+	local radius = enemy:GetAttribute("FootRadius") or 1.5
+	local front = enemy:GetAttribute("FootFront") or 0
+	local back = enemy:GetAttribute("FootBack") or 0
+
+	local centre = LabTable.Position()
+	local half = Arena.tableHalf or Vector3.zero
+	if half.X <= 0 and half.Z <= 0 then
+		-- Стол не мерян: круг REACH, как раньше.
+		half = Vector3.new(LabTable.REACH, 0, LabTable.REACH)
+	end
+
+	local best, bestPoint = math.huge, centre
+	for i = 0, BODY_SAMPLES - 1 do
+		local along = back + (front - back) * i / (BODY_SAMPLES - 1)
+		local px, pz = position.X + facing.X * along, position.Z + facing.Z * along
+		local qx = math.clamp(px, centre.X - half.X, centre.X + half.X)
+		local qz = math.clamp(pz, centre.Z - half.Z, centre.Z + half.Z)
+		local gap = math.sqrt((px - qx) ^ 2 + (pz - qz) ^ 2) - radius
+		if gap < best then
+			best, bestPoint = gap, Vector3.new(qx, position.Y, qz)
+		end
+	end
+	return math.max(best, 0), bestPoint
 end
 
 -- Клетка стола — цель поля волн для всех, у кого goal = "table". Считается каждый раз,

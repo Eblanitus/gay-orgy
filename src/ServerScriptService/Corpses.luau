@@ -118,11 +118,16 @@ end
 -- Болотный труп заражает жука, прошедшего по нему, тем же Болотным, что живой (по вики).
 local swamp = Elements.Swamp.contagion
 
+-- swamp.radius — касание жука и трупа обычного размера (масштаб 3). Крупнее тот или другой —
+-- касаются дальше центрами: Гигант, прошедший брюхом по трупу, раньше не заражался, потому что
+-- его центр не подходил к центру трупа на 4 студа. Мельче — ближе. record.scale — доля от 3.
 local function infectAround(enemy, position)
+	local walker = (enemy:GetAttribute("Scale") or 3) / 3
 	for _, record in records do
 		if record.swampy then
 			local delta = record.position - position
-			if delta.X * delta.X + delta.Z * delta.Z <= swamp.radius * swamp.radius then
+			local reach = swamp.radius * (walker + (record.scale or 1)) / 2
+			if delta.X * delta.X + delta.Z * delta.Z <= reach * reach then
 				Effects.InfectFrom(enemy, swamp, Elements.Swamp.name .. " (труп)")
 				return
 			end
