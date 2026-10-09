@@ -109,6 +109,8 @@ function EnemyFlight.FlyStep(enemy, target, speed, dt, arrive, avoid)
 	local delta = target - position
 	local distance = delta.Magnitude
 	if distance <= (arrive or 2) then
+		-- Долетел и висит: упреждение турелей (Velocity) не должно целиться ему вперёд.
+		enemy:SetAttribute("Velocity", Vector3.zero)
 		return true
 	end
 
@@ -488,11 +490,18 @@ local function pelicanLoop(enemy, enemyData, state)
 		end
 	end
 
-	local at = enemy:GetPivot().Position
+	local landing = enemy:GetPivot()
+	local at = landing.Position
+	local floor = ConcreteFloor.HeightAt(at.X, at.Z)
 	enemy:SetAttribute("Flying", nil)
-	enemy:PivotTo(CFrame.new(Vector3.new(at.X, 1.5, at.Z)))
+	enemy:SetAttribute("Velocity", Vector3.zero)
+	-- Встаёт на свою высоту над полом (RideHeight), а не на 1.5: иначе весь бой шёл по пояс
+	-- в бетоне. Курс сохраняется — разворот на месте читался бы рывком.
+	local ride = enemy:GetAttribute("RideHeight") or 1.5
+	local _, yaw = landing:ToEulerAnglesYXZ()
+	enemy:PivotTo(CFrame.new(at.X, floor + ride, at.Z) * CFrame.Angles(0, yaw, 0))
 	if eaten > 0 then
-		EnemyStructures.DropMaterial(Vector3.new(at.X, 1.5, at.Z), plan.material)
+		EnemyStructures.DropMaterial(Vector3.new(at.X, floor + 1.5, at.Z), plan.material)
 		print(("[Пеликан] съел %d трупов, оставил %d обломков и пошёл в бой")
 			:format(eaten, plan.material))
 	end

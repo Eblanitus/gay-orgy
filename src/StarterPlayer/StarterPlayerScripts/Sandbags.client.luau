@@ -224,6 +224,17 @@ end
 local function setHidden(bag, hidden)
 	local value = hidden and 1 or 0
 	bag.part.Transparency = value
+	-- Спрятанный мешок и не твёрдый (сервер делает детали стены твёрдыми, TowerBuilder.solidify):
+	-- иначе копия рождалась внутри невидимого оригинала и вылетала из него рывком, а трупы
+	-- и игрок цеплялись за пустоту на кладке.
+	if hidden then
+		if bag.solid == nil then
+			bag.solid = bag.part.CanCollide
+		end
+		bag.part.CanCollide = false
+	elseif bag.solid ~= nil then
+		bag.part.CanCollide = bag.solid
+	end
 	if bag.ear and bag.ear.part.Parent then
 		bag.ear.part.Transparency = value
 	end

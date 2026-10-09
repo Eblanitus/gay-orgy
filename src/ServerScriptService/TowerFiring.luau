@@ -280,6 +280,10 @@ return function(deps)
 				-- ради одного поворота ствола.
 				local aiming = filter.lineOfSight
 				filter.lineOfSight = false
+				-- И без стрелка: с ним Targeting засекал бы Тень на всей арене, и к входу
+				-- в радиус её задержка распознавания уже истекала бы.
+				local shooter = filter.shooter
+				filter.shooter = nil
 
 				local nearest, nearestDistance = nil, math.huge
 				for _, enemy in Targeting.EnemiesInRange(towerPosition, math.huge, enemiesFolder, filter) do
@@ -290,6 +294,7 @@ return function(deps)
 				end
 
 				filter.lineOfSight = aiming
+				filter.shooter = shooter
 
 				if nearest then
 					local angle = Aiming.AngleTo(towerPosition, nearest:GetPivot().Position)
@@ -456,8 +461,11 @@ return function(deps)
 			-- антенна заранее разворачивается к ближайшему жуку на всей арене, чтобы к моменту
 			-- его входа в радиус тарелка уже смотрела в его сторону, а не начинала доворот
 			-- с нуля. Радиус не ограничен нарочно — тот же довод, что и у Колбы.
+			-- Без стрелка — по той же причине, что у Колбы: иначе пред-наводка засекает Тень заранее.
+			local preFilter = aimFilter(towerData, tower)
+			preFilter.shooter = nil
 			local nearest, nearestDistance = nil, math.huge
-			for _, enemy in Targeting.EnemiesInRange(pivot.Position, math.huge, enemiesFolder, aimFilter(towerData, tower)) do
+			for _, enemy in Targeting.EnemiesInRange(pivot.Position, math.huge, enemiesFolder, preFilter) do
 				local enemyDistance = (enemy:GetPivot().Position - pivot.Position).Magnitude
 				if enemyDistance < nearestDistance then
 					nearest, nearestDistance = enemy, enemyDistance
@@ -486,7 +494,9 @@ return function(deps)
 			publishAim(tower, bearing)
 		end
 
-		local center = (pivot * CFrame.new(0, geometry.height, 0)).Position
+		-- Упреждение — от люка (mount), откуда дрон и вылетает: время полёта в Projectile.Fire
+		-- считается от него, а люк стоит в ~8 studs от оси башни.
+		local center = (pivot * CFrame.new(geometry.mount or Vector3.new(0, geometry.height, 0))).Position
 		local aim = Projectile.PredictAim(center, target, towerData.projectileSpeed)
 		local landing = Vector3.new(aim.X, Arena.floorY, aim.Z)
 		local muzzle = aimBarrel(tower, landing, geometry)
@@ -566,7 +576,7 @@ return function(deps)
 			if enemy.Parent and (enemy:GetAttribute("HP") or 0) > 0 then
 				-- Откуда ударили — для лобового щита Щитоносца, точно так же, как это
 				-- делает снаряд (см. Projectile.dealDamage). У площадной это центр её зоны.
-				enemy:SetAttribute("HitFrom", center)
+				Effects.HitFrom(enemy, center)
 				local dealt = Effects.HitDamage(enemy, elementData, damage)
 				if dealt > 0 then
 					local hp = math.max(0, (enemy:GetAttribute("HP") or 0) - dealt)
@@ -713,7 +723,7 @@ return function(deps)
 		victim:SetAttribute("Stunned", true)
 
 		-- Урон диска — той же моделью, что у площадных: броня, элемент, эффекты.
-		victim:SetAttribute("HitFrom", center)
+		Effects.HitFrom(victim, center)
 		local dealt = Effects.HitDamage(victim, elementData, Effects.ShotDamage(towerData.damage, elementData))
 		if dealt > 0 then
 			local hp = math.max(0, (victim:GetAttribute("HP") or 0) - dealt)

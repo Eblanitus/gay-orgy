@@ -130,6 +130,7 @@ end
 
 -- Снять кусок с поля (из списка и сетки высот). Деталь при этом остаётся — её решает вызвавший.
 local function detach(piece)
+	piece.part:SetAttribute("Rested", nil)
 	local i = table.find(pieces, piece)
 	if i then
 		table.remove(pieces, i)
@@ -266,6 +267,9 @@ local function rest(part, flat, up, a, b, floorY, material)
 		material = material,
 	}
 	part:SetAttribute("Material", material)
+	-- Лежит на поле: на него можно класть кровь и угли (Loose.FloorAt). Летящие, тающие
+	-- и несомые на спине куски этой метки не имеют — иначе пятно повисало бы в воздухе.
+	part:SetAttribute("Rested", true)
 	table.insert(pieces, piece)
 	index(piece)
 

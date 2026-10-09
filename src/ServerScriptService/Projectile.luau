@@ -191,7 +191,7 @@ local function dealDamage(shot, enemy)
 	-- без направления щит закрывал бы со всех сторон, и «перекрёстный огонь обходит
 	-- щит» перестало бы работать вовсе. Атрибутом, а не аргументом — чтобы не тянуть
 	-- точку выстрела сквозь всю цепочку Effects, которой она нигде больше не нужна.
-	enemy:SetAttribute("HitFrom", shot.origin)
+	Effects.HitFrom(enemy, shot.origin)
 
 	local armored = enemy:GetAttribute("Armor")
 	local damage = Effects.HitDamage(enemy, shot.element, shot.damage)
@@ -259,6 +259,9 @@ local function burst(shot)
 		-- Проверка жив ли — не лишняя: прямое попадание выше могло убить не только
 		-- свою цель (цепочка Электричества, детонация Пороха), а список снят до этого.
 		if enemy ~= direct and enemy.Parent and (enemy:GetAttribute("HP") or 0) > 0 then
+			-- Площадь бьёт от воронки, как площадная турель от центра зоны: Щитоносец,
+			-- смотрящий на взрыв, закрывается. Раньше здесь брался HitFrom прошлого удара.
+			Effects.HitFrom(enemy, center)
 			local damage = Effects.HitDamage(enemy, shot.element, shot.splash.damage)
 			if damage > 0 then
 				local hp = math.max(0, (enemy:GetAttribute("HP") or 0) - damage)

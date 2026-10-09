@@ -612,9 +612,17 @@ local function readFeet(model, record)
 	return feet
 end
 
--- Ставит жука в толкучку. Уровень земли берётся из его текущего пивота: высота спавна —
--- забота EnemySpawner, дублировать её здесь константой значит завести второе место,
--- где её надо править.
+-- Высота пивота над полом. Своя у модели (RideHeight, ставит EnemyModel), а не та, на какой
+-- жука выпустили: высыпавшиеся из Носителя, осколки и вылупившиеся появляются на высоте
+-- пивота родителя, севший Пеликан — на 1.5, и lift от этой точки держал их весь бой
+-- в воздухе или по пояс в полу. Нет атрибута — по месту, как раньше.
+local function liftOf(model, position)
+	return model:GetAttribute("RideHeight") or (position.Y - ConcreteFloor.HeightAt(position.X, position.Z))
+end
+
+-- Ставит жука в толкучку. Высота над полом — его собственная (liftOf): высота спавна —
+-- забота EnemySpawner и EnemyModel, дублировать её здесь константой значит завести второе
+-- место, где её надо править.
 function Crowd.Add(model)
 	local pivot = model:GetPivot()
 	local position = pivot.Position
@@ -643,7 +651,7 @@ function Crowd.Add(model)
 		-- На сколько пивот жука выше поверхности под ним. Запоминается один раз в
 		-- момент появления, а не берётся константой из спавнера: так толкучке не надо
 		-- знать про ENEMY_Y, а вылупившийся в яме жук сразу считает свой уровень от дна ямы.
-		lift = position.Y - ConcreteFloor.HeightAt(position.X, position.Z),
+		lift = liftOf(model, position),
 		x = position.X,
 		y = position.Y,
 		z = position.Z,
@@ -882,7 +890,7 @@ local function probe(model, position)
 		bodyHeight = EnemyBody.TopHeight(model), -- высота спины: пролезет ли под постройкой
 		y = position.Y,
 		groundY = position.Y, -- появляются на земле
-		lift = position.Y - ConcreteFloor.HeightAt(position.X, position.Z),
+		lift = liftOf(model, position),
 		fx = fx or 0,
 		fz = fz or 1,
 	}

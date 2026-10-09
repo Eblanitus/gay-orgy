@@ -16,6 +16,7 @@ local Grid = require(ServerScriptService:WaitForChild("Grid"))
 local EnemyFlight = require(ServerScriptService:WaitForChild("EnemyFlight"))
 local Arena = require(ReplicatedStorage:WaitForChild("Arena"))
 local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
+local ConcreteFloor = require(ServerScriptService:WaitForChild("ConcreteFloor"))
 local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
 local EnemyProgress = require(ServerScriptService:WaitForChild("EnemyProgress"))
 local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
@@ -404,12 +405,12 @@ end
 -- и броня укушенного работает против него («броня работает против врагов»).
 local function biteRival(attacker, chewDamage, victim)
 	local weakened = math.clamp(attacker:GetAttribute("Weakened") or 0, 0, 0.9)
+	Effects.HitFrom(victim, attacker:GetPivot().Position) -- до брони: по нему решает щит Щитоносца
 	local bite = Effects.ApplyArmor(victim, chewDamage * (1 - weakened), nil)
 	if bite <= 0 then
 		return
 	end
 	local hp = victim:GetAttribute("HP") or 0
-	victim:SetAttribute("HitFrom", attacker:GetPivot().Position)
 	Effects.MarkHit(victim, nil) -- укус, не элемент: останется тело
 	victim:SetAttribute("HP", math.max(0, hp - bite))
 	DamageDealtRemote:FireAllClients(victim:GetPivot().Position, bite, false)
@@ -605,6 +606,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 	-- сама сила отдачи и притяжения живёт в таблице элементов, а здесь только то, за сколько
 	-- кадров жук её отъезжает. Мгновенный перенос читался бы телепортом и ломал бы толкучку.
 	local PUSH_DECAY = 8
+	-- Больше этого за кадр толчок жука не двигает: Crowd проверяет постройки только в конечной
+	-- точке, и на просадке сервера (dt 0.1+) или под сложенной отдачей кадр перепрыгивал бы стенку.
+	local PUSH_STEP_MAX = 1.5
 
 	while enemy.Parent do
 		local dt = RunService.Heartbeat:Wait()
@@ -632,6 +636,9 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			local t = math.min((now - toss.start) / toss.duration, 1)
 			local position = toss.from:Lerp(toss.to, t) + Vector3.new(0, toss.height * 4 * t * (1 - t), 0)
 			enemy:PivotTo(CFrame.new(position) * enemy:GetPivot().Rotation)
+			-- Соседи должны знать, где он сейчас: без этого в толкучке на точке взлёта стоял
+			-- призрак, а при посадке Crowd откатывал жука туда, откуда его подбросили.
+			Crowd.Park(enemy, position)
 			setVelocity((toss.to - toss.from) / toss.duration)
 			if t >= 1 then
 				state.toss = nil
@@ -842,9 +849,12 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 				-- Копает, маскируется, нацеливается, строит или ждёт группу. Стоит на месте
 				-- и от этого уязвим — ровно то, чего требует документ от Строителя и Тарана.
 				setVelocity(Vector3.zero)
-			elseif behavior == "flee" then
+			elseif behavior == "flee" and not climb then
 				-- Паника: отходит от того, кто в него стреляет. Клетку маршрута не проходит
 				-- и ничего не грызёт — и возвращается, как только срок выйдет.
+				-- Лезущего паника не снимает со стены: перелезание держит его место (desired —
+				-- точка подъёма), и сбежавший со стены после паники прыгал обратно на середину
+				-- подъёма. Долезет — и побежит, если срок ещё не вышел.
 				local slowPercent = enemy:GetAttribute("SlowPercent") or 0
 				-- Испуг движет быстрее спокойного хода, если у вида есть fleeSpeed (см. Enemies).
 				-- Замедление и хитин действуют на него так же, как на обычный ход: ускорение в панике —
@@ -1075,10 +1085,20 @@ local function moveThroughArena(enemy, enemyData, offset, onBreach, state)
 			-- за кадр жук проезжает долю накопленного, остаток остаётся на следующие.
 			-- Смещение идёт через desired, а значит проходит тем же Crowd.Resolve, что и шаг:
 			-- отброшенный жук не пролетает сквозь соседей и не проваливается в постройку.
+			--
+			-- На стене толчок не копится: место жука там задаёт перелезание (desired = точка
+			-- подъёма), и смещение пропадало бы за кадр, оставляя только дёрганье. Как грызущий,
+			-- лезущий держится за преграду.
 			local push = enemy:GetAttribute("Push")
-			if push then
+			if push and climb then
+				enemy:SetAttribute("Push", nil)
+			elseif push then
 				if push.Magnitude > 0.05 then
-					local applied = push * math.min(1, dt * PUSH_DECAY)
+					-- Доля за кадр — через экспоненту: путь и скорость отыгрыша не зависят от FPS.
+					local applied = push * (1 - math.exp(-PUSH_DECAY * dt))
+					if applied.Magnitude > PUSH_STEP_MAX then
+						applied = applied.Unit * PUSH_STEP_MAX
+					end
 					desired += applied
 					enemy:SetAttribute("Push", push - applied)
 				else
@@ -1297,7 +1317,10 @@ local function flyToTurret(enemy, enemyData)
 					end
 					EnemyBehavior.FlyStep(enemy, above, enemyData.speed, dt, 0.2, true)
 				else
-					EnemyBehavior.FlyStep(enemy, targetPosition, enemyData.speed, dt, 0.2, target)
+					-- Отвесно вниз на свою турель — без облёта: раздутый корпус соседней, более
+					-- высокой постройки накрывал точку присоски, облёт не давал снизиться ниже её
+					-- крыши, и Лицехват висел над целью до смерти, держа её занятой (Claimed).
+					EnemyBehavior.FlyStep(enemy, targetPosition, enemyData.speed, dt, 0.2, false)
 				end
 			end
 
@@ -1410,6 +1433,13 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 		-- Личинка Матки, высыпавшиеся из Носителя, вышедший из кокона — все появляются
 		-- там, где их выпустили, а не у пролома.
 		spawnPosition = startPosition + offset
+		if not enemyData.flying then
+			-- Точка выпуска — высота пивота родителя (или 1.5 у личинки Матки), а стоять жук
+			-- должен на своей RideHeight над полом под собой: иначе висит или сидит в бетоне.
+			local ride = enemy:GetAttribute("RideHeight") or enemyData.rideHeight or ENEMY_Y
+			local x, z = spawnPosition.X, spawnPosition.Z
+			spawnPosition = Vector3.new(x, ConcreteFloor.HeightAt(x, z) + ride, z)
+		end
 	else
 		local lift = Vector3.new(0, enemy:GetAttribute("RideHeight") or enemyData.rideHeight or ENEMY_Y, 0)
 		if walksCorridor(enemyData) or (Arena.lane ~= nil and enemyData.flying) then
@@ -1746,6 +1776,13 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 	-- Пеликан сел на землю — теперь он обычное тело в толкучке, в которую летающим
 	-- входа не было. Для всех остальных Crowd.Add уже сработал выше.
 	if enemyData.flying and not enemy:GetAttribute("Flying") then
+		-- Садится он там, где кончил круг, — бывает, над постройкой или в чужой спине.
+		-- Встаёт на ближайшее свободное место, а не внутрь следа.
+		local landed = enemy:GetPivot()
+		local free = Crowd.FindFree(enemy, landed.Position)
+		if free then
+			enemy:PivotTo(CFrame.new(free) * landed.Rotation)
+		end
 		Crowd.Add(enemy)
 	end
 

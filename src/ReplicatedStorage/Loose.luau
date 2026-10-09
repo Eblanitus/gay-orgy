@@ -270,7 +270,9 @@ function Loose.Blast(found, center, radius, power)
 		* (power or 1)
 
 	for _, item in found do
-		local falloff = 1 - item.distance / reach
+		-- AroundInBounds меряет до корня, а находит по габариту: корень крупной сборки бывает
+		-- дальше reach, и без пола у нуля её тянуло бы обратно к центру и вниз.
+		local falloff = math.max(0, 1 - item.distance / reach)
 		local away = item.root.Position - center
 		away = Vector3.new(away.X, 0, away.Z)
 		if away.Magnitude < 1e-3 then
@@ -293,7 +295,7 @@ function Loose.Push(found, offset)
 	local speed = math.min(amount * plan.speedPerStud, plan.speedMax)
 	local direction = (flat.Unit + Vector3.yAxis * plan.lift).Unit
 	for _, item in found do
-		local falloff = 1 - item.distance / plan.radius
+		local falloff = math.max(0, 1 - item.distance / plan.radius) -- см. Loose.Blast
 		Loose.Kick(item.root, direction * speed * falloff, Loose.RandomSpin(speed * 0.2 * falloff))
 	end
 end
@@ -320,9 +322,25 @@ function Loose.FloorAt(x, z, fallback)
 		return fallback
 	end
 	floorParams.FilterDescendantsInstances = include
-	local from = Vector3.new(x, Arena.floorY + FLOOR_PROBE, z)
-	local hit = Workspace:Raycast(from, Vector3.new(0, -FLOOR_PROBE * 2, 0), floorParams)
-	return hit and hit.Position.Y or fallback
+	local debris = Workspace:FindFirstChild("TowerDebris")
+	local top = Arena.floorY + FLOOR_PROBE
+	local bottom = Arena.floorY - FLOOR_PROBE
+	-- Обломок считается полом, только если лёг (метка Rested, ставит TowerDebris): летящий,
+	-- тающий или несомый Работягой кусок пропускается, луч идёт ниже него.
+	for _ = 1, 4 do
+		local hit = Workspace:Raycast(Vector3.new(x, top, z), Vector3.new(0, bottom - top, 0), floorParams)
+		if not hit then
+			return fallback
+		end
+		if not (debris and hit.Instance:IsDescendantOf(debris)) or hit.Instance:GetAttribute("Rested") then
+			return hit.Position.Y
+		end
+		top = hit.Position.Y - 0.05
+		if top <= bottom then
+			return fallback
+		end
+	end
+	return fallback
 end
 
 -- Укладка плашмя: деталь, которая замерла стоймя (длинная сторона смотрит вверх), получает

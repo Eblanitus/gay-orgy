@@ -646,6 +646,9 @@ return function(deps)
 					local out = part.Position - center
 					out = Vector3.new(out.X, 0, out.Z)
 					out = out.Magnitude > 1e-3 and out.Unit or Vector3.new(math.random() - 0.5, 0, math.random() - 0.5).Unit
+					-- bodyClone снял коллизию со всего: без неё осколок проваливался под пол
+					-- за пару десятых секунды, не долетев и не дотаяв.
+					part.CanCollide = true
 					Loose.Spawn(part, {
 						group = "Corpses",
 						tag = false, -- метка — на всём разлёте ниже, не на каждом осколке
@@ -811,6 +814,9 @@ return function(deps)
 			center += part.Position
 		end
 		center /= #parts
+		-- Пол — под лапой сейчас, а не в момент смерти: за секунды тления труп могло
+		-- отбросить взрывом в яму Строителя или на холм Литосферы.
+		floorY = Loose.FloorAt(center.X, center.Z, floorY)
 		local drop = math.max(low - floorY, 0)
 		local tilt = CFrame.Angles((math.random() - 0.5) * 0.8, 0, (math.random() - 0.5) * 0.8)
 		local fall = TweenInfo.new(p.fallTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
@@ -850,6 +856,7 @@ return function(deps)
 			return
 		end
 		local center = corpse:GetBoundingBox().Position
+		floorY = Loose.FloorAt(center.X, center.Z, floorY) -- см. dropLimb
 
 		-- Проседает: всё ближе к полу, брюхо садится.
 		local sink = TweenInfo.new(p.sinkTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
@@ -935,7 +942,9 @@ return function(deps)
 		local p = PhysicsFX.brittle
 		local box, size = corpse:GetBoundingBox()
 		local center = box.Position
-		local floorY = center.Y - size.Y / 2
+		-- Низ коробки — пол, только если туша лежит на брюхе: коробка повёрнута по корню,
+		-- и у трупа на боку её «низ» уходит под бетон или висит над ним.
+		local floorY = Loose.FloorAt(center.X, center.Z, center.Y - size.Y / 2)
 		local folder = container("Debris")
 		local melt = TweenInfo.new(p.meltTime, Enum.EasingStyle.Linear)
 

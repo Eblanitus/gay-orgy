@@ -751,7 +751,8 @@ ArcadeSquashRemote.OnServerEvent:Connect(function(player, model, carPos, carry)
 		return
 	end
 	local flat = Vector3.new(carPos.X - session.pos.X, 0, carPos.Z - session.pos.Z)
-	if flat.Magnitude > SQUASH_TRUST or carry.Magnitude ~= carry.Magnitude then
+	-- «not <=», а не «>»: NaN в carPos проходил сравнение и уходил трупу направлением разлёта.
+	if not (flat.Magnitude <= SQUASH_TRUST) or carry.Magnitude ~= carry.Magnitude then
 		return
 	end
 	if carry.Magnitude > MAX_CARRY then
@@ -759,6 +760,12 @@ ArcadeSquashRemote.OnServerEvent:Connect(function(player, model, carPos, carry)
 	end
 	for _, slot in bugs do
 		if slot.model == model then
+			-- Сам жук тоже должен быть у машины, а не на другом краю поля: иначе клиент
+			-- «давил» бы всех жуков подряд, не сдвинувшись, — и это шло в рекорд профиля.
+			local gap = Vector3.new(slot.pos.X - session.pos.X, 0, slot.pos.Z - session.pos.Z)
+			if gap.Magnitude > SQUASH_TRUST then
+				return
+			end
 			local now = os.clock()
 			session.combo = now <= session.comboUntil and session.combo + 1 or 1
 			session.comboUntil = now + COMBO.window

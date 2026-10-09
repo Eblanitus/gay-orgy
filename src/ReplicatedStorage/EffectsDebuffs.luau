@@ -349,7 +349,9 @@ return function(deps)
 			percent = math.max(percent, drying.percent)
 		end
 
-		target:SetAttribute("SlowPercent", percent)
+		-- Больше 100% не бывает: Песок растёт без потолка, и с 21-го попадания множитель
+		-- скорости (1 - SlowPercent) уходил в минус — жук шёл назад, разгон Тарана не кончался.
+		target:SetAttribute("SlowPercent", math.clamp(percent, 0, 1))
 		target:SetAttribute("AttackSlowPercent", attackPercent)
 	end
 
@@ -726,6 +728,11 @@ return function(deps)
 	-- Само смещение выполняет EnemySpawner (атрибут Push) — по той же причине, по которой
 	-- здесь же только ставится срок стана: жука ведёт каждый кадр тот, кто его двигает.
 	local function addPush(target, offset)
+		-- Летящего Push никто не тратит (его ведёт EnemyFlight): копилось бы до посадки
+		-- и выстрелило рывком на земле, а трупы под ним разлетались бы зря.
+		if target:GetAttribute("Flying") then
+			return
+		end
 		local current = target:GetAttribute("Push") or Vector3.zero
 		target:SetAttribute("Push", current + Vector3.new(offset.X, 0, offset.Z))
 		-- Любая отдача толкает и то, что лежит рядом и имеет физику (см. ServerScriptService.Impulse).
@@ -783,13 +790,34 @@ return function(deps)
 	-- Круговая отдача (Взрыв, Звук): расталкивает от точки попадания всех, кого задело,
 	-- а не одну цель назад по пути. Сама цель тоже в радиусе: она в эпицентре,
 	-- и направление ей берётся по её же пути, иначе вектор вышел бы нулевой.
+	--
+	-- Один удар — один толчок каждому. Площадь (навес, дрон, площадная турель) зовёт Apply
+	-- на каждого в радиусе, и каждый вызов снова расталкивал всех соседей: в куче из 15 жуков
+	-- крайний получал 14 толчков разом. Кого уже толкнуло этим элементом за текущий удар,
+	-- помнит radialPushed; чистится он, когда удар (синхронный проход по целям) закончился.
+	local radialPushed = {}
+	local radialClearing = false
 	local function applyRadialKnockback(target, elementData)
 		local plan = elementData.knockback
 		local center = target:GetPivot().Position
 
+		local pushed = radialPushed[elementData]
+		if not pushed then
+			pushed = {}
+			radialPushed[elementData] = pushed
+		end
+		if not radialClearing then
+			radialClearing = true
+			task.defer(function()
+				table.clear(radialPushed)
+				radialClearing = false
+			end)
+		end
+
 		for _, found in enemiesAround(center, plan.radius or 8, nil) do
 			local enemy = found.enemy
-			if not enemy:GetAttribute("Chewing") then
+			if not enemy:GetAttribute("Chewing") and not pushed[enemy] then
+				pushed[enemy] = true
 				local away = enemy:GetPivot().Position - center
 				away = Vector3.new(away.X, 0, away.Z)
 				if away.Magnitude < 1e-3 then

@@ -315,14 +315,35 @@ Effects.OnCleanse = nil -- function(target): boolean
 -- Сколько урона срезают свойства самого жука до того, как считается броня
 -- (касты 2 и 3). Три источника, все читаются атрибутами:
 --
---   Щит Щитоносца — только в лоб. Откуда ударили, говорит атрибут HitFrom, который
---   ставит тот, кто наносит урон (снаряд, площадная турель). Именно поэтому
+--   Щит Щитоносца — только в лоб. Откуда ударили, говорит Effects.HitFrom, который
+--   зовёт тот, кто наносит урон (снаряд, площадная турель). Именно поэтому
 --   «перекрёстный огонь обходит щит» сам собой: вторая турель стоит под другим углом.
---   Нет HitFrom — щит не срабатывает вовсе (горение, яд, зоны — щитом не закрыть).
+--   Нет свежего HitFrom — щит не срабатывает вовсе (горение, яд, зоны — щитом не закрыть).
 --   Прикрытие за чужим щитом — CoveredUntil/CoverReduction, ставит сам Щитоносец.
 --   Привычка Эволюционера — ResistElement/ResistShare.
 --   Впитывание Разносчика — атрибут Absorbs: часть удара элементом уходит в его заряд
 --   (Effects.OnAbsorb) и до тела не доходит. Тоже свойство жука, поэтому тоже до брони.
+--
+-- Атрибут HitFrom живёт дольше удара (по нему клиент рисует вздрагивание, сервер — брызги
+-- крови), поэтому щит читает не его, а свежую отметку Effects.HitFrom: она действует только
+-- до конца текущего удара. Иначе тик горения через секунду после выстрела в лоб срезался бы
+-- щитом по старому направлению.
+local freshFrom = {}
+local freshClearing = false
+
+-- Откуда сейчас бьют target. Звать прямо перед уроном (HitDamage, AfterArmor, ApplyArmor).
+function Effects.HitFrom(target, position)
+	target:SetAttribute("HitFrom", position)
+	freshFrom[target] = position
+	if not freshClearing then
+		freshClearing = true
+		task.defer(function()
+			table.clear(freshFrom)
+			freshClearing = false
+		end)
+	end
+end
+
 local function mitigate(target, damage, elementData)
 	local now = os.clock()
 
@@ -337,7 +358,7 @@ local function mitigate(target, damage, elementData)
 
 	local shieldArc = target:GetAttribute("ShieldArc")
 	if shieldArc then
-		local from = target:GetAttribute("HitFrom")
+		local from = freshFrom[target]
 		if from then
 			local pivot = target:GetPivot()
 			-- Голова модели смотрит по -LookVector: кадр жука довёрнут на 180°

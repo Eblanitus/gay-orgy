@@ -177,11 +177,11 @@ local function lash(origin, thorns, damage, elementData)
 	if not best then
 		return
 	end
+	Effects.HitFrom(best, origin) -- до брони: по нему решает щит Щитоносца
 	local dealt = Effects.AfterArmor(best, damage, elementData)
 	if dealt <= 0 then
 		return
 	end
-	best:SetAttribute("HitFrom", origin)
 	best:SetAttribute("HP", math.max(0, (best:GetAttribute("HP") or 0) - dealt))
 	DamageDealtRemote:FireAllClients(best:GetPivot().Position, dealt, true)
 end

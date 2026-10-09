@@ -299,6 +299,9 @@ local function groundFilter(underTower)
 	local location = Workspace:FindFirstChild("Location")
 	for _, node in {
 		location and location:FindFirstChild("ArenaFloor"),
+		-- Видимый бетон с рельефом (холмы Литосферы, ямы Строителя): тело толкучка ставит
+		-- по нему (ConcreteFloor.HeightAt), и лапы без него проходили сквозь холм к плоскому полу.
+		Workspace:FindFirstChild("ConcreteFloor"),
 		not underTower and Workspace:FindFirstChild("Towers") or nil,
 		location and location:FindFirstChild("Walls"),
 		Workspace:FindFirstChild("TowerDebris"),
