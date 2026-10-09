@@ -639,17 +639,31 @@ return function(deps)
 			local reach = math.max(EnemyBody.Radius(enemy), (EnemyBody.Footprint(enemy))) + STICK_LEG_MARGIN
 			local outX = math.max(math.abs(here.X) - beltHalfX, 0)
 			local outZ = math.max(math.abs(here.Z) - beltHalfZ, 0)
-			if enemy ~= victim and top <= stickTop and outX * outX + outZ * outZ <= reach * reach then
+			local onBelt = outX * outX + outZ * outZ <= reach * reach
+			-- Выход: центр жука уже за пилой (по ходу ленты, +Z модели). Лента его выносит,
+			-- не держит и не тянет назад к диску — иначе пила затягивала бы уходящих обратно.
+			local exiting = here.Z > plan.grab
+			if enemy ~= victim and top <= stickTop and onBelt and not exiting then
 				enemy:SetAttribute("StunnedUntil", math.max(enemy:GetAttribute("StunnedUntil") or 0, now + plan.hold))
 				enemy:SetAttribute("Stunned", true)
 			end
-			if enemy ~= victim and top <= towerData.crawlGap then
+			if enemy ~= victim and top <= towerData.crawlGap and not (onBelt and exiting) then
 				if math.abs(here.Z) <= laneHalf and math.abs(here.X) > 1 and math.abs(here.X) < feedGap then
 					feed, feedGap = here.X < 0 and "L" or "R", math.abs(here.X)
 				end
-				-- У самой пилы тянет в полную силу, у края радиуса — вдвое слабее.
 				local distance = flatTo(center, enemy:GetPivot().Position).Magnitude
-				local gap = pullTo(enemy, center, plan.pull * (1 - 0.5 * math.clamp(distance / towerData.range, 0, 1)))
+				local strength = plan.pull * (1 - 0.5 * math.clamp(distance / towerData.range, 0, 1))
+				local gap
+				if onBelt and here.Z < -plan.grab then
+					-- Лента везёт по стрелкам (+Z модели) к пиле, а не по прямой к центру;
+					-- вбок только выравнивает на ось, чтобы въехал под диск.
+					local lane = -math.clamp(here.X, -strength, strength)
+					enemy:SetAttribute("Push", (enemy:GetAttribute("Push") or Vector3.zero)
+						+ pivot:VectorToWorldSpace(Vector3.new(lane, 0, strength)))
+					gap = flatTo(center, enemy:GetPivot().Position).Magnitude
+				else
+					gap = pullTo(enemy, center, strength)
+				end
 				pulled = true
 				if not victim and gap <= plan.grab and gap < nearestGap then
 					nearest, nearestGap = enemy, gap
