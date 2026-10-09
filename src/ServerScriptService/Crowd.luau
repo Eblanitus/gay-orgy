@@ -249,50 +249,128 @@ local function offFloor(x, z)
 	return x < MIN_X or x > MAX_X or z < MIN_Z or z > MAX_Z
 end
 
--- Стены комнаты — по краю пола. clampXZ держит на полу только ЦЕНТР жука, и отдача, взрыв
--- или толкучка вдавливали тело в стену до полкорпуса (у крупных — на студы). Здесь капсула
--- тела (ось от брюшка до головы, радиус) не пускается за край пола. Кто уже вылез за
--- отступ (подброс, появление), того не выталкивают рывком, а только не пускают дальше —
--- как паника (EnemySpawner.fleeConfine). У проёма двери стены нет: в полосе маркера входа
--- или выхода край не держит, иначе жук не дошёл бы центром до выхода и не вышел бы в коридор.
-local function inDoor(alongX, edge, along)
-	for _, door in { { Arena.entrance, Arena.entranceHalf }, { Arena.exit, Arena.exitHalf } } do
-		local at, half = door[1], door[2]
-		if at and half then
-			local reach = math.max(half.X, half.Z)
-			if alongX then
-				if math.abs(at.X - edge) <= reach and math.abs(along - at.Z) <= half.Z then
-					return true
+-- Стены и мебель у края пола. clampXZ держит на полу только ЦЕНТР жука, а тело свисает за
+-- край. Где за краем вплотную стоит что-то твёрдое (западная стена, шкафы и стеллажи лаборатории),
+-- отдача, взрыв или толкучка вдавливали жука в него до полкорпуса. Капсула тела не пускается
+-- за ближнюю грань такой преграды — НАСТОЯЩЕЙ, а не за край пола: мебель стоит в 1–6 студах
+-- за краем, и держать тело у края пола значило поставить невидимый барьер (так и было в e8feb21).
+-- Где преграды нет (проём двери, пустой угол), край тела не держится — только центр, как раньше.
+-- Кто уже вылез за грань (подброс, появление), того не выталкивают рывком, а только не пускают
+-- дальше — как паника (EnemySpawner.fleeConfine).
+--
+-- Грани меряются один раз на локацию по габаритам деталей (их коробкам в мировых осях),
+-- полосами по EDGE_STEP вдоль каждого края пола.
+local EDGE_STEP = 2 -- studs: ширина полосы вдоль края
+local EDGE_SEEK = 16 -- studs за краем пола, где ещё ищется преграда (полкорпуса Гиганта меньше)
+local EDGE_INSET = 1 -- studs: грань может заходить на пол на столько (плинтус, стена ровно по краю)
+local EDGE_FOLDERS = { "Walls", "Lab", "Service", "Corridor", "ElementProducer", "ReferenceBoard" }
+
+-- side -> { [номер полосы] = координата ближней грани }; nil — преграды нет.
+local edgeLimits = { minX = {}, maxX = {}, minZ = {}, maxZ = {} }
+
+local function bindEdges()
+	for _, limits in edgeLimits do
+		table.clear(limits)
+	end
+	local location = Arena.Location()
+	local floorY = Arena.floorY or 0
+	for _, name in EDGE_FOLDERS do
+		local folder = location:FindFirstChild(name)
+		if folder then
+			for _, part in folder:GetDescendants() do
+				if part:IsA("BasePart") and part.Transparency < 1 then
+					local cf, half = part.CFrame, part.Size / 2
+					local function axis(v)
+						return math.abs(cf.RightVector:Dot(v)) * half.X + math.abs(cf.UpVector:Dot(v)) * half.Y
+							+ math.abs(cf.LookVector:Dot(v)) * half.Z
+					end
+					local c = cf.Position
+					local hx, hy, hz = axis(Vector3.xAxis), axis(Vector3.yAxis), axis(Vector3.zAxis)
+					-- Только то, что стоит на уровне тела: не потолок и не плитка пола.
+					if c.Y - hy < floorY + 3 and c.Y + hy > floorY + 0.3 then
+						local function mark(side, face, lo, hi, closer)
+							local limits = edgeLimits[side]
+							local minA = if side == "minX" or side == "maxX" then MIN_Z else MIN_X
+							for band = math.floor((lo - minA) / EDGE_STEP), math.floor((hi - minA) / EDGE_STEP) do
+								local current = limits[band]
+								if current == nil or closer(face, current) then
+									limits[band] = face
+								end
+							end
+						end
+						local function less(a, b)
+							return a < b
+						end
+						local function more(a, b)
+							return a > b
+						end
+						local minX, maxX, minZ, maxZ = c.X - hx, c.X + hx, c.Z - hz, c.Z + hz
+						if minX >= MAX_X - EDGE_INSET and minX <= MAX_X + EDGE_SEEK then
+							mark("maxX", minX, minZ, maxZ, less)
+						end
+						if maxX <= MIN_X + EDGE_INSET and maxX >= MIN_X - EDGE_SEEK then
+							mark("minX", maxX, minZ, maxZ, more)
+						end
+						if minZ >= MAX_Z - EDGE_INSET and minZ <= MAX_Z + EDGE_SEEK then
+							mark("maxZ", minZ, minX, maxX, less)
+						end
+						if maxZ <= MIN_Z + EDGE_INSET and maxZ >= MIN_Z - EDGE_SEEK then
+							mark("minZ", maxZ, minX, maxX, more)
+						end
+					end
 				end
-			elseif math.abs(at.Z - edge) <= reach and math.abs(along - at.X) <= half.X then
-				return true
 			end
 		end
 	end
-	return false
+end
+bindEdges()
+Arena.OnChanged(bindEdges)
+
+-- Самая строгая грань преграды вдоль отрезка [lo, hi] края side, или nil.
+local function edgeLimit(side, lo, hi, closer)
+	local limits = edgeLimits[side]
+	local minA = if side == "minX" or side == "maxX" then MIN_Z else MIN_X
+	local best = nil
+	for band = math.floor((lo - minA) / EDGE_STEP), math.floor((hi - minA) / EDGE_STEP) do
+		local face = limits[band]
+		if face and (best == nil or closer(face, best)) then
+			best = face
+		end
+	end
+	return best
+end
+
+local function isLess(a, b)
+	return a < b
+end
+
+local function isMore(a, b)
+	return a > b
 end
 
 local function insideWalls(me, x, z, fx, fz)
 	local r = me.radius
 	local ax, bx = fx * me.front, fx * me.back
 	local az, bz = fz * me.front, fz * me.back
-	local loX, hiX = MIN_X + r - math.min(ax, bx), MAX_X - r - math.max(ax, bx)
-	local loZ, hiZ = MIN_Z + r - math.min(az, bz), MAX_Z - r - math.max(az, bz)
-	if loX <= hiX then
-		if not inDoor(true, MIN_X, z) then
-			x = math.max(x, math.min(me.x, loX))
-		end
-		if not inDoor(true, MAX_X, z) then
-			x = math.min(x, math.max(me.x, hiX))
-		end
+	-- Габарит тела в мировых осях при центре (x, z).
+	local loX, hiX = math.min(ax, bx) - r, math.max(ax, bx) + r
+	local loZ, hiZ = math.min(az, bz) - r, math.max(az, bz) + r
+
+	local wall = edgeLimit("maxX", z + loZ, z + hiZ, isLess)
+	if wall then
+		x = math.min(x, math.max(me.x, wall - hiX))
 	end
-	if loZ <= hiZ then
-		if not inDoor(false, MIN_Z, x) then
-			z = math.max(z, math.min(me.z, loZ))
-		end
-		if not inDoor(false, MAX_Z, x) then
-			z = math.min(z, math.max(me.z, hiZ))
-		end
+	wall = edgeLimit("minX", z + loZ, z + hiZ, isMore)
+	if wall then
+		x = math.max(x, math.min(me.x, wall - loX))
+	end
+	wall = edgeLimit("maxZ", x + loX, x + hiX, isLess)
+	if wall then
+		z = math.min(z, math.max(me.z, wall - hiZ))
+	end
+	wall = edgeLimit("minZ", x + loX, x + hiX, isMore)
+	if wall then
+		z = math.max(z, math.min(me.z, wall - loZ))
 	end
 	return x, z
 end
@@ -998,7 +1076,8 @@ function Crowd.Resolve(model, desired, dt, facing, bare)
 	local caged = insideBuilding(homeX, homeZ)
 
 	x, z = clampXZ(x, z)
-	-- Телом в стену комнаты — нет (insideWalls). В коридоре за дверью — не здесь: там бока держит clampXZ.
+	-- Телом в стену и мебель за краем пола — нет (insideWalls). В коридоре за дверью — не здесь:
+	-- там бока держит clampXZ.
 	if not offFloor(me.x, me.z) and not offFloor(x, z) then
 		x, z = insideWalls(me, x, z, fx, fz)
 	end
