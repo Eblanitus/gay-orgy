@@ -581,6 +581,7 @@ return function(deps)
 	-- сил. Сила — размер: спина выше saw.stickTop (Гигант и прочие крупные) — вырывается и идёт
 	-- дальше, ниже — стоит, пока не отпустит лента, а вытяжка тянет его по ленте под диск.
 	-- Держит тем же станом: его срок обновляется каждый тик, пока жук на ленте.
+	local STICK_LEG_MARGIN = 0.5
 	local sawVictims = setmetatable({}, { __mode = "k" })
 
 	local function flatTo(from, to)
@@ -633,8 +634,12 @@ return function(deps)
 		for _, enemy in Targeting.EnemiesInRange(center, towerData.range, enemiesFolder, aimFilter(towerData, tower)) do
 			local top = EnemyBody.TopHeight(enemy)
 			local here = pivot:PointToObjectSpace(enemy:GetPivot().Position)
-			if enemy ~= victim and top <= stickTop
-				and math.abs(here.X) <= beltHalfX and math.abs(here.Z) <= beltHalfZ then
+			-- Цепляет не центр, а тело: расстояние от прямоугольника ленты до пивота жука не больше
+			-- радиуса его тела (плюс запас на лапы, они из замера исключены).
+			local reach = math.max(EnemyBody.Radius(enemy), (EnemyBody.Footprint(enemy))) + STICK_LEG_MARGIN
+			local outX = math.max(math.abs(here.X) - beltHalfX, 0)
+			local outZ = math.max(math.abs(here.Z) - beltHalfZ, 0)
+			if enemy ~= victim and top <= stickTop and outX * outX + outZ * outZ <= reach * reach then
 				enemy:SetAttribute("StunnedUntil", math.max(enemy:GetAttribute("StunnedUntil") or 0, now + plan.hold))
 				enemy:SetAttribute("Stunned", true)
 			end
