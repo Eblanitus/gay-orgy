@@ -1,0 +1,832 @@
+[
+  {
+    "key": "Fire",
+    "name": "Огонь",
+    "color": [
+      255,
+      140,
+      0
+    ],
+    "mode": "char",
+    "flags": []
+  },
+  {
+    "key": "Water",
+    "name": "Вода",
+    "color": [
+      40,
+      110,
+      255
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Earth",
+    "name": "Земля",
+    "color": [
+      139,
+      90,
+      43
+    ],
+    "mode": "crush",
+    "flags": []
+  },
+  {
+    "key": "Air",
+    "name": "Воздух",
+    "color": [
+      255,
+      255,
+      255
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Energy",
+    "name": "Энергия",
+    "color": [
+      255,
+      215,
+      40
+    ],
+    "mode": "char",
+    "flags": []
+  },
+  {
+    "key": "Puddle",
+    "name": "Лужа",
+    "color": [
+      110,
+      140,
+      155
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Soil",
+    "name": "Грунт",
+    "color": [
+      120,
+      105,
+      75
+    ],
+    "mode": "crush",
+    "flags": []
+  },
+  {
+    "key": "Pressure",
+    "name": "Давление",
+    "color": [
+      170,
+      160,
+      215
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Steam",
+    "name": "Пар",
+    "color": [
+      215,
+      225,
+      235
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Lava",
+    "name": "Лава",
+    "color": [
+      230,
+      85,
+      20
+    ],
+    "mode": "melt",
+    "flags": []
+  },
+  {
+    "key": "Smoke",
+    "name": "Дым",
+    "color": [
+      105,
+      105,
+      110
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Mud",
+    "name": "Грязь",
+    "color": [
+      95,
+      70,
+      45
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Mist",
+    "name": "Туман",
+    "color": [
+      200,
+      215,
+      225
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Dust",
+    "name": "Пыль",
+    "color": [
+      180,
+      165,
+      140
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Flare",
+    "name": "Вспышка",
+    "color": [
+      255,
+      228,
+      150
+    ],
+    "mode": "char",
+    "flags": []
+  },
+  {
+    "key": "Land",
+    "name": "Суша",
+    "color": [
+      150,
+      130,
+      90
+    ],
+    "mode": "crush",
+    "flags": []
+  },
+  {
+    "key": "Cloud",
+    "name": "Облако",
+    "color": [
+      225,
+      232,
+      240
+    ],
+    "mode": "body",
+    "flags": [
+      "killDamage",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Smog",
+    "name": "Смог",
+    "color": [
+      140,
+      135,
+      70
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Swamp",
+    "name": "Болото",
+    "color": [
+      75,
+      95,
+      55
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Plant",
+    "name": "Растение",
+    "color": [
+      95,
+      175,
+      70
+    ],
+    "mode": "body",
+    "flags": [
+      "killHeal",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Stone",
+    "name": "Камень",
+    "color": [
+      130,
+      130,
+      130
+    ],
+    "mode": "crush",
+    "flags": []
+  },
+  {
+    "key": "Earthquake",
+    "name": "Землетрясение",
+    "color": [
+      120,
+      112,
+      104
+    ],
+    "mode": "body",
+    "flags": [
+      "killZone",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Volcano",
+    "name": "Вулкан",
+    "color": [
+      150,
+      55,
+      30
+    ],
+    "mode": "melt",
+    "flags": []
+  },
+  {
+    "key": "Geyser",
+    "name": "Гейзер",
+    "color": [
+      140,
+      190,
+      210
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Wind",
+    "name": "Ветер",
+    "color": [
+      215,
+      235,
+      240
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Heat",
+    "name": "Жар",
+    "color": [
+      225,
+      62,
+      40
+    ],
+    "mode": "char",
+    "flags": []
+  },
+  {
+    "key": "Obsidian",
+    "name": "Обсидиан",
+    "color": [
+      35,
+      30,
+      40
+    ],
+    "mode": "crush",
+    "flags": []
+  },
+  {
+    "key": "Cold",
+    "name": "Холод",
+    "color": [
+      160,
+      210,
+      240
+    ],
+    "mode": "brittle",
+    "flags": []
+  },
+  {
+    "key": "Acid",
+    "name": "Кислота",
+    "color": [
+      150,
+      220,
+      60
+    ],
+    "mode": "dissolve",
+    "flags": []
+  },
+  {
+    "key": "Gunpowder",
+    "name": "Порох",
+    "color": [
+      70,
+      70,
+      75
+    ],
+    "mode": "gib",
+    "flags": []
+  },
+  {
+    "key": "Brick",
+    "name": "Кирпич",
+    "color": [
+      170,
+      80,
+      60
+    ],
+    "mode": "crush",
+    "flags": []
+  },
+  {
+    "key": "Pond",
+    "name": "Пруд",
+    "color": [
+      60,
+      120,
+      160
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Continent",
+    "name": "Континент",
+    "color": [
+      140,
+      125,
+      90
+    ],
+    "mode": "crush",
+    "flags": [
+      "killDamage"
+    ]
+  },
+  {
+    "key": "Lightning",
+    "name": "Молния",
+    "color": [
+      70,
+      55,
+      170
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Ocean",
+    "name": "Океан",
+    "color": [
+      0,
+      165,
+      155
+    ],
+    "mode": "body",
+    "flags": [
+      "killDamage"
+    ]
+  },
+  {
+    "key": "Hurricane",
+    "name": "Ураган",
+    "color": [
+      100,
+      140,
+      165
+    ],
+    "mode": "body",
+    "flags": [
+      "killZone",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Tree",
+    "name": "Дерево",
+    "color": [
+      70,
+      130,
+      60
+    ],
+    "mode": "body",
+    "flags": [
+      "killHeal",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Oxygen",
+    "name": "Кислород",
+    "color": [
+      180,
+      230,
+      255
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Ash",
+    "name": "Пепел",
+    "color": [
+      120,
+      115,
+      110
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Coal",
+    "name": "Уголь",
+    "color": [
+      55,
+      50,
+      50
+    ],
+    "mode": "body",
+    "flags": [
+      "killZone",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Life",
+    "name": "Жизнь",
+    "color": [
+      255,
+      55,
+      115
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Poison",
+    "name": "Яд",
+    "color": [
+      100,
+      255,
+      20
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Rust",
+    "name": "Ржавчина",
+    "color": [
+      160,
+      85,
+      45
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Rain",
+    "name": "Дождь",
+    "color": [
+      90,
+      140,
+      190
+    ],
+    "mode": "body",
+    "flags": [
+      "killDamage",
+      "killZone",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Snow",
+    "name": "Снег",
+    "color": [
+      235,
+      245,
+      255
+    ],
+    "mode": "body",
+    "flags": [
+      "killDamage",
+      "killZone",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Frost",
+    "name": "Иней",
+    "color": [
+      200,
+      230,
+      245
+    ],
+    "mode": "brittle",
+    "flags": []
+  },
+  {
+    "key": "AcidRain",
+    "name": "Кислотный дождь",
+    "color": [
+      160,
+      200,
+      90
+    ],
+    "mode": "body",
+    "flags": [
+      "killZone",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Drought",
+    "name": "Засуха",
+    "color": [
+      215,
+      170,
+      80
+    ],
+    "mode": "body",
+    "flags": [
+      "killZone",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Blizzard",
+    "name": "Метель",
+    "color": [
+      215,
+      235,
+      250
+    ],
+    "mode": "body",
+    "flags": [
+      "killZone",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "Metal",
+    "name": "Металл",
+    "color": [
+      175,
+      180,
+      190
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Sand",
+    "name": "Песок",
+    "color": [
+      225,
+      205,
+      150
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Explosion",
+    "name": "Взрыв",
+    "color": [
+      255,
+      120,
+      40
+    ],
+    "mode": "gib",
+    "flags": []
+  },
+  {
+    "key": "Plasma",
+    "name": "Плазма",
+    "color": [
+      140,
+      70,
+      200
+    ],
+    "mode": "melt",
+    "flags": []
+  },
+  {
+    "key": "Tornado",
+    "name": "Торнадо",
+    "color": [
+      150,
+      165,
+      180
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Eruption",
+    "name": "Извержение",
+    "color": [
+      200,
+      70,
+      25
+    ],
+    "mode": "melt",
+    "flags": []
+  },
+  {
+    "key": "Ice",
+    "name": "Лёд",
+    "color": [
+      90,
+      200,
+      255
+    ],
+    "mode": "brittle",
+    "flags": []
+  },
+  {
+    "key": "Clay",
+    "name": "Глина",
+    "color": [
+      160,
+      110,
+      85
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Mountain",
+    "name": "Гора",
+    "color": [
+      110,
+      115,
+      120
+    ],
+    "mode": "body",
+    "flags": [
+      "killBarrier",
+      "deathMark"
+    ]
+  },
+  {
+    "key": "BrickWall",
+    "name": "Стена",
+    "color": [
+      115,
+      60,
+      50
+    ],
+    "mode": "crush",
+    "flags": []
+  },
+  {
+    "key": "Star",
+    "name": "Звезда",
+    "color": [
+      255,
+      250,
+      210
+    ],
+    "mode": "destroy",
+    "flags": [
+      "killZone"
+    ]
+  },
+  {
+    "key": "Lithosphere",
+    "name": "Литосфера",
+    "color": [
+      150,
+      75,
+      45
+    ],
+    "mode": "crush",
+    "flags": [
+      "killDamage",
+      "terrain"
+    ]
+  },
+  {
+    "key": "Hydrosphere",
+    "name": "Гидросфера",
+    "color": [
+      30,
+      100,
+      190
+    ],
+    "mode": "body",
+    "flags": [
+      "killZone"
+    ]
+  },
+  {
+    "key": "Atmosphere",
+    "name": "Атмосфера",
+    "color": [
+      110,
+      170,
+      240
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Island",
+    "name": "Остров",
+    "color": [
+      90,
+      160,
+      120
+    ],
+    "mode": "crush",
+    "flags": []
+  },
+  {
+    "key": "Sound",
+    "name": "Звук",
+    "color": [
+      150,
+      120,
+      255
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Soap",
+    "name": "Мыло",
+    "color": [
+      240,
+      190,
+      230
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Diamond",
+    "name": "Алмаз",
+    "color": [
+      190,
+      240,
+      250
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Steel",
+    "name": "Сталь",
+    "color": [
+      105,
+      125,
+      155
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Antimatter",
+    "name": "Антиматерия",
+    "color": [
+      35,
+      20,
+      60
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Glass",
+    "name": "Стекло",
+    "color": [
+      210,
+      240,
+      245
+    ],
+    "mode": "body",
+    "flags": []
+  },
+  {
+    "key": "Electricity",
+    "name": "Электричество",
+    "color": [
+      120,
+      200,
+      255
+    ],
+    "mode": "body",
+    "flags": []
+  }
+]

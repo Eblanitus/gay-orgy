@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 Паттерны/patterns_preview.png
 tools/roblox_key.txt
+
+# Browser 3D preview build artifacts
+tools/preview/node_modules/
+tools/preview/dist/

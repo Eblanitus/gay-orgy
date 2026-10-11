@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070c0f" />
+    <title>Alchemy / 3D Death Lab</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark"><span>λ</span></div>
+          <div>
+            <div class="brand-title">ALCHEMY <i>/</i> 3D DEATH LAB</div>
+            <div class="brand-subtitle">БРАУЗЕРНЫЙ ПРОСМОТРЩИК · WEBGL</div>
+          </div>
+        </div>
+        <div class="top-meta">
+          <span class="live-state"><i></i> THREE.JS · GLB</span>
+          <span class="meta-divider"></span>
+          <span>71 ЭЛЕМЕНТ</span>
+          <span>8 ПРОФИЛЕЙ</span>
+        </div>
+        <button class="quiet-button" id="reset-camera" title="Вернуть начальный ракурс">СБРОСИТЬ КАМЕРУ <span>↻</span></button>
+      </header>
+
+      <main class="layout">
+        <aside class="panel catalog-panel">
+          <div class="panel-heading">
+            <div class="eyebrow">01 / КАТАЛОГ</div>
+            <h1>Выбери элемент</h1>
+            <p>Снаряд окрашен по данным элемента, останки — по одному из игровых профилей.</p>
+          </div>
+          <div class="mode-switch" role="tablist" aria-label="Режим каталога">
+            <button id="all-mode" class="mode-tab active" role="tab">Все <b>71</b></button>
+            <button id="unique-mode" class="mode-tab" role="tab">Уникальные <b>8</b></button>
+          </div>
+          <label class="search-box">
+            <span aria-hidden="true">⌕</span>
+            <input id="search" type="search" placeholder="Найти элемент…" autocomplete="off" />
+            <kbd>/</kbd>
+          </label>
+          <div class="list-meta"><span id="list-count">71 элементов</span><span>ПО ИМЕНИ</span></div>
+          <div class="element-list" id="element-list" role="listbox" aria-label="Элементы"></div>
+          <div class="catalog-foot"><span class="keycap">←</span><span class="keycap">→</span> СМЕНИТЬ ЭЛЕМЕНТ <span class="foot-dot"></span> <span class="keycap">SPACE</span> ПОВТОР</div>
+        </aside>
+
+        <section class="stage-column">
+          <div class="stage-toolbar panel">
+            <div class="stage-title">
+              <span class="stage-index">02</span>
+              <span>ПРОЕКЦИОННАЯ СЦЕНА</span>
+              <span class="stage-chip"><i></i> 3D LIVE</span>
+            </div>
+            <div class="stage-tools">
+              <span class="control-hint"><b>ЛКМ</b> вращение <b>колесо</b> масштаб</span>
+              <button class="icon-button" id="fullscreen" title="Полный экран">⛶</button>
+            </div>
+          </div>
+          <div class="stage-frame" id="stage-frame">
+            <canvas id="scene-canvas" aria-label="3D-сцена смерти жука"></canvas>
+            <div class="scene-vignette"></div>
+            <div class="scene-caption">
+              <div class="scene-kicker"><span class="status-pulse"></span><span id="scene-status">ЗАГРУЗКА МОДЕЛИ</span></div>
+              <div class="scene-element"><span id="scene-element-name">—</span><small id="scene-element-key">—</small></div>
+            </div>
+            <div class="scene-coordinates"><span>LOCAL SCENE</span><span>GLB / STANDARD BEETLE</span></div>
+            <div class="loader-overlay" id="loader-overlay">
+              <div class="loader-orbit"><i></i><b></b></div>
+              <strong>Загружаю 3D-модель</strong>
+              <span>standard_beetle.glb</span>
+            </div>
+            <div class="scene-warning" id="scene-warning" hidden></div>
+            <div class="hint-pill" id="scene-hint">Перетащи мышь, чтобы осмотреть модель</div>
+          </div>
+          <div class="playback panel">
+            <div class="playback-controls">
+              <button class="control-button arrow-button" id="previous" title="Предыдущий элемент">‹</button>
+              <button class="control-button play-button" id="play">▶ <span>СМОТРЕТЬ СМЕРТЬ</span></button>
+              <button class="control-button arrow-button" id="next" title="Следующий элемент">›</button>
+              <button class="control-button shatter-button" id="shatter" hidden>✦ <span>РАСКОЛОТЬ</span></button>
+            </div>
+            <div class="timeline-wrap">
+              <div class="timeline-labels"><span id="playback-status">ГОТОВ К ДЕМОНСТРАЦИИ</span><span id="progress-label">0%</span></div>
+              <div class="timeline"><span id="progress-bar"></span></div>
+            </div>
+            <label class="speed-control">СКОРОСТЬ
+              <select id="speed">
+                <option value="0.75">0.75×</option>
+                <option value="1" selected>1×</option>
+                <option value="1.35">1.35×</option>
+              </select>
+            </label>
+          </div>
+          <div class="disclaimer"><span>ⓘ</span> В браузере проигрывается 3D-сцена на основе модели жука; анимации останков — визуальная симуляция, не исполнение Roblox/Luau.</div>
+        </section>
+
+        <aside class="panel inspector-panel">
+          <div class="panel-heading inspector-heading">
+            <div class="eyebrow">03 / ПРОФИЛЬ</div>
+            <div class="selected-color"><i id="element-swatch"></i><span id="element-hex">#64DCC2</span></div>
+            <h2 id="element-name">Огонь</h2>
+            <div class="element-key" id="element-key">Fire</div>
+          </div>
+          <div class="profile-card">
+            <div class="profile-top"><span>ПРОФИЛЬ ОСТАНКОВ</span><i id="profile-dot"></i></div>
+            <div class="profile-name" id="profile-name">ОБУГЛИВАЕТСЯ</div>
+            <div class="profile-code" id="profile-code">CHAR</div>
+          </div>
+          <p class="profile-description" id="profile-description">Обугленный труп, дым и осыпание.</p>
+          <div class="inspector-divider"></div>
+          <div class="section-label">ЧТО ПОКАЗЫВАЕТ СЦЕНА</div>
+          <div class="feature-list" id="feature-list"></div>
+          <div class="element-special" id="element-special" hidden></div>
+          <div class="inspector-note">
+            <span class="note-icon">◈</span>
+            <div><b>Браузерный режим</b><br />Модель — настоящий GLB из проекта. Визуальные эффекты в WebGL — отдельная приближённая анимация.</div>
+          </div>
+        </aside>
+      </main>
+      <footer class="app-footer"><span>ALCHEMY / DEATH LAB</span><span>ОРБИТА: МЫШЬ · ПОВТОР: SPACE · НАВИГАЦИЯ: ← →</span><span>MODELS / STANDARD BEETLE</span></footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
