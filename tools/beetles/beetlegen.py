@@ -426,12 +426,26 @@ def add_legs(m, legs, femur_r, tibia_r, leg_mat, coxa_mat, coxa_r=(0.14, 0.12, 0
             root_i += 1
 
 
+def fit_eye(sections, c, r):
+    """Сажает глаз на поверхность головы: торчит наружу не больше трети радиуса, не выше макушки
+    и не пересекает середину — иначе он просвечивает сквозь голову или торчит над ней."""
+    zs, ws, tops, bots = (np.array(v, float) for v in zip(*sections))
+    z = float(np.clip(c[2], zs[0], zs[-1]))
+    w, top, bot = (float(np.interp(z, zs, v)) for v in (ws, tops, bots))
+    rx, ry, rz = r
+    ry = min(ry, (top - bot) * 0.42)
+    rx = min(rx, w * 0.45)
+    cx = w - rx * 0.7
+    cy = min(max((top + bot) / 2 + 0.05, bot + ry + 0.02), top - ry - 0.03)
+    return (cx, cy, z), (rx, ry, rz)
+
+
 def add_head(m, sections, mat, eyes=None, eye_mat=None, extra=()):
     """eyes: (центр левого глаза, радиусы). extra: [(имя, Mesh, мат)] — тоже в группу головы."""
     g = m.group("head001")
     m.part("HeadBase001", loft(section_rings(sections, headshape)[::-1]), mat, parent=g)
     if eyes:
-        c, r = eyes
+        c, r = fit_eye(sections, *eyes)
         for s, name in ((1, "EyeLeft001"), (-1, "EyeRight001")):
             m.part(name, blob((c[0] * s, c[1], c[2]), r, n=6, rows=4), eye_mat, parent=g)
     for name, mesh, mt in extra:
