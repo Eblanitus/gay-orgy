@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Recipes = require(ReplicatedStorage:WaitForChild("Recipes"))
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
+local Economy = require(ReplicatedStorage:WaitForChild("Economy"))
 
 local EntityInfo = {}
 
@@ -529,30 +530,54 @@ EntityInfo.TRANSFORM_WORDS = {
 	Tree = "из трупа вырастает растение",
 }
 
+-- Сколько материи даст труп в Биореакторе (экономика по вики: материя только из трупов) —
+-- словом по доле от целого трупа (Economy.integrity). Пороги — сверху вниз, первый подошедший.
+EntityInfo.MATTER_WORDS = {
+	{ from = 0.95, word = "материи: вся" },
+	{ from = 0.6, word = "материи: почти вся" },
+	{ from = 0.35, word = "материи: меньше половины" },
+	{ from = 0.01, word = "материи: мало" },
+	{ from = 0, word = "материи: нет" },
+}
+
+local function matterWord(kind)
+	local share = kind and Economy.integrity[kind] or 0
+	for _, step in EntityInfo.MATTER_WORDS do
+		if share >= step.from then
+			return step.word
+		end
+	end
+	return nil
+end
+
 -- Строка «останки» карточки элемента; у загадки (Антиматерия) — nil, строки нет.
+-- После «·» — сколько материи останется в трупе.
 function EntityInfo.ElementRemains(key, element)
 	if EntityInfo.MYSTERY[key] then
 		return nil
 	end
 	local words = EntityInfo.REMAINS_WORDS
+	local text, kind
 	if element.deathMark then
-		return EntityInfo.TRANSFORM_WORDS[key] or "труп превращается в эффект"
+		text = EntityInfo.TRANSFORM_WORDS[key] or "труп превращается в эффект"
 	elseif key == "Clay" then
-		return words.statue
+		text = words.statue
 	elseif element.remains then
-		return words[element.remains]
+		text, kind = words[element.remains], element.remains
 	elseif element.wet then
-		return words.wet
+		text, kind = words.wet, "body"
 	elseif element.burning or BURNS[key] then
-		return words.char
+		text, kind = words.char, "char"
+	else
+		text, kind = words.body, "body"
 	end
-	return words.body
+	return ("%s · %s"):format(text, matterWord(kind))
 end
 
 
 -- ============ Характеристики жука словами ============
 -- Как у элементов: оценка словом, а не число. Точка отсчёта — Стандарт (30 HP, скорость 10,
--- грызёт на 5). Материя за убийство — числом: это деньги, как стоимость элемента.
+-- грызёт на 5). Материя целого трупа — числом: это деньги, как стоимость элемента.
 EntityInfo.HP_WORDS = {
 	{ upTo = 15, word = "очень мало" },
 	{ upTo = 25, word = "мало" },
@@ -601,7 +626,7 @@ function EntityInfo.EnemyStats(enemy)
 	add("урон по постройкам", word(EntityInfo.CHEW_WORDS, enemy.chewDamage or 0), true)
 	-- Материя даёт не убийство, а переработка трупа (по вики): число — для целого трупа,
 	-- клочья и угли дают меньше (ReplicatedStorage.Economy).
-	local matter = enemy.matter or 0
+	local matter = math.floor((enemy.matter or 0) * Economy.valueScale + 0.5)
 	add("целый труп", ("%d %s"):format(matter, plural(matter, "материя", "материи", "материи")), true)
 	if (enemy.armor or 0) > 0 then
 		add("броня", word(EntityInfo.ARMOR_WORDS, enemy.armor))
