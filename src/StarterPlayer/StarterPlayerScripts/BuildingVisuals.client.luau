@@ -19,6 +19,51 @@ local Theme = require(script.Parent:WaitForChild("UITheme"))
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local ShotFiredRemote = Remotes:WaitForChild("ShotFired") -- отдача турели: см. recoilFrame ниже
 
+-- Все циклы ниже ставят детали не поштучной записью CFrame, а копят кадры в списки и
+-- отдают их одним workspace:BulkMoveTo: на десятках турелей по 40–70 деталей поштучная
+-- запись съедала ~3.5 мс кадра (замер MicroProfiler в бою). Списки живут между кадрами
+-- (table.clear вместо новых таблиц): BulkMoveTo копирует их сразу.
+local moveParts, moveFrames = {}, {}
+
+local function moveFlush()
+	if #moveParts > 0 then
+		-- Деталь, которую стриминг уже выгрузил (у пилы, люка и антенны Parent не
+		-- проверяется), не должна сорвать кадр всем турелям: тогда — поштучно, как раньше.
+		if not pcall(Workspace.BulkMoveTo, Workspace, moveParts, moveFrames, Enum.BulkMoveMode.FireCFrameChanged) then
+			for index, part in moveParts do
+				part.CFrame = moveFrames[index]
+			end
+		end
+		table.clear(moveParts)
+		table.clear(moveFrames)
+	end
+end
+
+local function move(part, frame)
+	table.insert(moveParts, part)
+	table.insert(moveFrames, frame)
+end
+
+-- Тени мелочи. Каждую движущуюся деталь с тенью движок пересчитывает в карте теней
+-- каждый кадр (свет и тени ~8 мс в бою). У мелких деталей (болты, катушки, лопасти,
+-- звенья ленты) тень на полу почти не читается, у крупных (ствол, корпус) — остаётся.
+-- Мелкая — меньше SHADOW_SMALL от габарита постройки. Только у этого клиента.
+local SHADOW_SMALL = 0.1
+local shadowLimit = setmetatable({}, { __mode = "k" })
+
+local function dropSmallShadow(building, part)
+	local limit = shadowLimit[building]
+	if not limit then
+		local size = building:GetExtentsSize()
+		limit = math.max(size.X, size.Y, size.Z) * SHADOW_SMALL
+		shadowLimit[building] = limit
+	end
+	local size = part.Size
+	if math.max(size.X, size.Y, size.Z) < limit then
+		part.CastShadow = false
+	end
+end
+
 -- Вращающиеся детали турелей (задача #53): лопасти Испарителя, сверло Бура, головка
 -- Центрифуги с форсунками. Атрибут Spin на детали — сколько градусов в секунду; ставит его
 -- сервер при сборке модели (см. TowerBuilder), а крутит клиент: деталь анкорнута, и гонять её
@@ -37,11 +82,12 @@ local function spinStep()
 	for index = #spinning, 1, -1 do
 		local entry = spinning[index]
 		if entry.part.Parent then
-			entry.part.CFrame = entry.pivot * CFrame.Angles(0, (now * entry.speed) % (2 * math.pi), 0) * entry.origin
+			move(entry.part, entry.pivot * CFrame.Angles(0, (now * entry.speed) % (2 * math.pi), 0) * entry.origin)
 		else
 			table.remove(spinning, index) -- постройку снесли
 		end
 	end
+	moveFlush()
 
 	-- На арене нет ни одной вращающейся турели — цикл не крутится вхолостую
 	-- (тот же приём, что у Projectile на сервере).
@@ -51,7 +97,7 @@ local function spinStep()
 	end
 end
 
-local function addSpinner(anchor, part)
+local function addSpinner(building, anchor, part)
 	local speed = part:IsA("BasePart") and part:GetAttribute("Spin")
 	if not speed then
 		return
@@ -64,6 +110,7 @@ local function addSpinner(anchor, part)
 	-- «то крутится, то нет» из задачи #71, только для лопастей/сверла/форсунок, а не
 	-- для ствола.
 	local pivot = anchor.CFrame
+	dropSmallShadow(building, part)
 	table.insert(spinning, {
 		part = part,
 		pivot = pivot,
@@ -109,13 +156,14 @@ local function hatchStep(dt)
 					* CFrame.fromAxisAngle(entry.axis, HATCH_ANGLE * eased)
 					* CFrame.new(-entry.hinge)
 				for _, leaf in entry.leaves do
-					leaf.part.CFrame = turn * leaf.closed
+					move(leaf.part, turn * leaf.closed)
 				end
 			end
 		else
 			table.remove(hatches, index) -- станцию снесли
 		end
 	end
+	moveFlush()
 
 	-- На арене нет ни одной станции — цикл не крутится вхолостую, как и у вращения выше.
 	if #hatches == 0 and hatchConnection then
@@ -205,13 +253,14 @@ local function antennaStep(dt)
 					* CFrame.Angles(0, entry.angle, 0)
 					* CFrame.new(-entry.axis)
 				for _, leaf in entry.parts do
-					leaf.part.CFrame = turn * leaf.rest
+					move(leaf.part, turn * leaf.rest)
 				end
 			end
 		else
 			table.remove(antennas, index) -- станцию снесли
 		end
 	end
+	moveFlush()
 
 	if #antennas == 0 and antennaConnection then
 		antennaConnection:Disconnect()
@@ -311,12 +360,13 @@ local function sawStep(dt)
 				if leaf.inArm then
 					frame = arm * frame
 				end
-				leaf.part.CFrame = frame
+				move(leaf.part, frame)
 			end
 		else
 			table.remove(saws, index) -- пилу снесли
 		end
 	end
+	moveFlush()
 
 	if #saws == 0 and sawConnection then
 		sawConnection:Disconnect()
@@ -360,6 +410,7 @@ local function addSaw(building)
 			local belt = part:GetAttribute("Belt")
 			local pusher = part:GetAttribute("Pusher")
 			if inArm or speed or belt or pusher then
+				dropSmallShadow(building, part)
 				local axisPart = speed and building:FindFirstChild(part:GetAttribute("WhirlAxis") or part.Name, true)
 				local drum = belt and building:FindFirstChild(part:GetAttribute("BeltAxis") or "", true)
 				local pushAxis = pusher and building:FindFirstChild(part:GetAttribute("PushAxis") or "", true)
@@ -470,6 +521,8 @@ local CRADLE_NODES = {
 local COIL_COUNT = 6
 local COIL_FLASH = 0.16 -- сек: сколько горит одна катушка
 local COIL_STEP = 0.025 -- сек: задержка между соседними катушками
+-- Когда после выстрела гаснет последняя катушка (Coil1 зажигается последней).
+local PULSE_END = (COIL_COUNT - 1) * COIL_STEP + COIL_FLASH
 
 -- Форма отдачи: короткий рывок назад и плавный возврат. Перелёта вперёд нет намеренно —
 -- пружина, выбрасывающая ствол дальше исходного, читалась бы как удар ПО башне, а не как
@@ -563,26 +616,44 @@ local function trackStep(dt)
 			local recoil = recoilFrame(elapsed)
 			local kicked = recoil and (pitched * recoil) or pitched
 
-			for _, partInfo in entry.parts do
-				if partInfo.part.Parent then
-					local frame = aimed
-					if partInfo.recoils then
-						frame = kicked
-					elseif partInfo.inGun then
-						frame = pitched
+			-- Стоит, не целится, выстрел отыгран, жидкость на месте — не переписываем семьдесят
+			-- CFrame каждый кадр ни за чем (тот же приём, что у Инжектора и антенны).
+			-- Катушки после выстрела гаснут в pulseStep — пока хоть одна горит, кадр идёт.
+			local still = entry.posed
+				and entry.currentAngle == entry.lastAngle
+				and entry.currentPitch == entry.lastPitch
+				and entry.fillLevel == entry.lastFill
+				and pivot.Position == entry.lastPosition
+				and recoil == nil and elapsed >= PULSE_END and not entry.lit
+			if not still then
+				entry.posed = true
+				entry.lastAngle, entry.lastPitch = entry.currentAngle, entry.currentPitch
+				entry.lastFill, entry.lastPosition = entry.fillLevel, pivot.Position
+				local lit = false
+				for _, partInfo in entry.parts do
+					if partInfo.part.Parent then
+						local frame = aimed
+						if partInfo.recoils then
+							frame = kicked
+						elseif partInfo.inGun then
+							frame = pitched
+						end
+						if partInfo.isLiquid then
+							local height = math.max(partInfo.fullSize.Y * entry.fillLevel, 0.02)
+							partInfo.part.Size = Vector3.new(partInfo.fullSize.X, height, partInfo.fullSize.Z)
+							move(partInfo.part, frame * partInfo.origin * CFrame.new(0, -(partInfo.fullSize.Y - height) / 2, 0))
+						else
+							move(partInfo.part, frame * partInfo.origin)
+						end
+						pulseStep(partInfo, elapsed)
+						lit = lit or partInfo.lit
 					end
-					if partInfo.isLiquid then
-						local height = math.max(partInfo.fullSize.Y * entry.fillLevel, 0.02)
-						partInfo.part.Size = Vector3.new(partInfo.fullSize.X, height, partInfo.fullSize.Z)
-						partInfo.part.CFrame = frame * partInfo.origin * CFrame.new(0, -(partInfo.fullSize.Y - height) / 2, 0)
-					else
-						partInfo.part.CFrame = frame * partInfo.origin
-					end
-					pulseStep(partInfo, elapsed)
 				end
+				entry.lit = lit
 			end
 		end
 	end
+	moveFlush()
 
 	if #tracking == 0 and trackConnection then
 		trackConnection:Disconnect()
@@ -623,6 +694,7 @@ local function addTracker(building)
 	-- Наведение этот поворот ЗАМЕНЯЕТ, а не дополняет (угол с сервера мировой, см. trackStep).
 	local pivot = building:GetPivot()
 	local parts = {}
+	local entry
 
 	-- Узел самой пушки в меше Колбы. У остальных турелей его нет вовсе — тогда отдачи
 	-- просто не будет, а наведение работает как работало.
@@ -668,6 +740,12 @@ local function addTracker(building)
 				material = part.Material, -- куда вернуть деталь после вспышки
 				lit = false,
 			})
+			dropSmallShadow(building, part)
+			if entry then
+				-- Стоящую турель trackStep не перерисовывает: опоздавшая деталь встанет
+				-- со следующим кадром, а не останется в позе покоя.
+				entry.posed = false
+			end
 		end
 	end
 
@@ -679,7 +757,7 @@ local function addTracker(building)
 	end
 	headFolder.DescendantAdded:Connect(addPart)
 
-	table.insert(tracking, {
+	entry = {
 		model = building,
 		parts = parts,
 		-- Скорость доворота — из таблицы башни, а не из константы здесь: по ним же
@@ -697,7 +775,9 @@ local function addTracker(building)
 		fillLevel = building:GetAttribute("Element") == nil and 0 or 1,
 		-- Выстрела ещё не было: любое elapsed отсюда заведомо больше RECOIL_TIME.
 		shotClock = -math.huge,
-	})
+		posed = false, -- первый кадр ставит башню всегда
+	}
+	table.insert(tracking, entry)
 
 	if not trackConnection then
 		trackConnection = RunService.RenderStepped:Connect(trackStep)
@@ -853,12 +933,13 @@ local function rigStep(dt)
 						elseif info.drums then
 							frame = spun
 						end
-						info.part.CFrame = frame * info.origin
+						move(info.part, frame * info.origin)
 					end
 				end
 			end
 		end
 	end
+	moveFlush()
 
 	if #rigs == 0 and rigConnection then
 		rigConnection:Disconnect()
@@ -941,6 +1022,7 @@ local function addRigTracker(building)
 			rams = under(part, rig.rammerNode),
 			drums = under(part, rig.drumNode),
 		})
+		dropSmallShadow(building, part)
 		if entry then
 			-- Стоящую турель rigStep не перерисовывает: без этого опоздавшая деталь
 			-- осталась бы в позе покоя до следующего доворота или выстрела.
@@ -1139,10 +1221,10 @@ local function attachVisuals(building)
 	-- DescendantAdded: детали вполне могут доехать после самой модели. Заведён после
 	-- waitForAnchor, а не до него: без готового anchor пивот считать не от чего.
 	for _, part in building:GetDescendants() do
-		addSpinner(anchor, part)
+		addSpinner(building, anchor, part)
 	end
 	building.DescendantAdded:Connect(function(part)
-		addSpinner(anchor, part)
+		addSpinner(building, anchor, part)
 	end)
 
 	addHealthBar(building, anchor)

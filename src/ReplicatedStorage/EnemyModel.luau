@@ -76,6 +76,26 @@ local function roleByName(name)
 	return nil
 end
 
+-- Тени мелочи. Жук двигается каждый кадр, и тень каждой его детали движок пересчитывает
+-- заново; на толпе это заметная доля кадра (замер MicroProfiler: свет и тени ~8 мс в бою).
+-- Лапы, усики и жвалы тонкие, их тень на полу почти не читается — тень корпуса остаётся.
+-- То же у любой детали мельче SHADOW_SMALL от габарита жука (глаза, зубцы, жилки).
+local SHADOWLESS_GROUPS = { "^leg_", "^antenna_", "^mandible_" }
+local SHADOW_SMALL = 0.12
+
+local function inShadowlessGroup(part, model)
+	local node = part.Parent
+	while node and node ~= model do
+		for _, pattern in SHADOWLESS_GROUPS do
+			if node.Name:match(pattern) then
+				return true
+			end
+		end
+		node = node.Parent
+	end
+	return false
+end
+
 -- Где стоят ступни в покое (в осях модели: X — вбок, Z — вдоль, голова по +Z) и группа шага
 -- каждой лапы. Толкучка (Crowd) ставит по ним лапы на сервере, где ног у модели уже нет
 -- (EnemyModel.Strip). Формат: "x,z,группа;...".
@@ -107,6 +127,8 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 	local elytra = template:GetAttribute("ColorElytra")
 	local head = template:GetAttribute("ColorHead")
 	local color, legColor, elytraColor, headColor
+	local extents = model:GetExtentsSize()
+	local small = math.max(extents.X, extents.Y, extents.Z) * SHADOW_SMALL
 	if recolor then
 		color = recolor.color or Color3.fromRGB(55, 80, 45)
 		legColor = recolor.legColor or Color3.fromRGB(30, 25, 20)
@@ -119,6 +141,10 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 			part.Anchored = true
 			part.CanCollide = false
 			part.CanTouch = false
+			local size = part.Size
+			if math.max(size.X, size.Y, size.Z) < small or inShadowlessGroup(part, model) then
+				part.CastShadow = false
+			end
 			if recolor then
 				local role
 				if chitin then
@@ -235,6 +261,7 @@ local function buildPrimitive(enemyData, scale)
 		leg.CanTouch = false
 		leg.Color = legColor
 		leg.Material = material
+		leg.CastShadow = false -- тонкая лапа: см. SHADOWLESS_GROUPS
 		leg.CFrame = CFrame.lookAt(pair.hip:Lerp(pair.foot, 0.5), pair.foot) * CFrame.Angles(0, math.rad(90), 0)
 		leg.Parent = model
 		table.insert(legs, { part = leg, hip = pair.hip, foot = pair.foot })

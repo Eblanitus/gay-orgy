@@ -364,19 +364,30 @@ local function boneFrame(a, b, pole)
 	return CFrame.fromMatrix((a + b) * 0.5, axis, up)
 end
 
+-- Кадры деталей за шаг копятся в списки и уходят одним workspace:BulkMoveTo, а не
+-- поштучной записью CFrame: на толпе это сотни записей в кадр, и каждая по одной дороже.
+local function put(out, part, frame)
+	table.insert(out.parts, part)
+	table.insert(out.frames, frame)
+end
+
 -- Ставит сегмент по его кости: сохранённый сдвиг покоя переносит меш ровно туда, где
 -- он стоял у скульптора, но уже относительно новой позы кости.
-local function placeSegment(part, frame, offset)
+local function placeSegment(out, part, frame, offset)
 	if part and frame then
-		part.CFrame = offset and (frame * offset) or frame
+		put(out, part, offset and (frame * offset) or frame)
 	end
 end
 
-local function placeModelLeg(leg, hip, foot, bodyCF)
+-- Детали лапы, которые ставит походка (остальное в модели лапы — тазик — едет с телом).
+local LEG_SEGMENTS = { "femur", "knee", "tibia", "ankle", "tarsus1", "tarsus" }
+
+-- Возвращает false, если лапу поставить нечем (ступня в бедре): тогда её держит тело.
+local function placeModelLeg(leg, hip, foot, bodyCF, out)
 	local toFoot = foot - hip
 	local dist = toFoot.Magnitude
 	if dist < 1e-3 then
-		return
+		return false
 	end
 	local dir = toFoot / dist
 	-- Анатомический предел: дальше вытянутой лапы (бедро + голень) кончик не уедет.
@@ -399,23 +410,27 @@ local function placeModelLeg(leg, hip, foot, bodyCF)
 	local femurBone = boneFrame(hip, knee, pole)
 	local tibiaBone = boneFrame(knee, target, pole)
 	local rest = leg.rest0
-	placeSegment(leg.femur, femurBone, rest and rest.femur)
-	placeSegment(leg.knee, femurBone, rest and rest.knee)
+	placeSegment(out, leg.femur, femurBone, rest and rest.femur)
+	if rest then
+		placeSegment(out, leg.knee, femurBone, rest.knee)
+	end
 	-- Голень, лодыжка и лапка — одно жёсткое звено от колена до кончика: инверсия и так
 	-- считает его одной длиной l2t. Раньше лапка ставилась своим кадром от лодыжки,
 	-- пересчитанной на прямую колено–кончик, а в покое лодыжка лежит не на этой прямой
 	-- (голень идёт круто вниз, лапка — по полу). Кадр лапки на ходу расходился с кадром
 	-- покоя, и она отрывалась от голени и торчала отдельной палочкой (жалоба автора).
-	placeSegment(leg.tibia, tibiaBone, rest and rest.tibia)
-	placeSegment(leg.ankle, tibiaBone, rest and rest.ankle)
-	placeSegment(leg.tarsus1, tibiaBone, rest and rest.tarsus1)
-	placeSegment(leg.tarsus, tibiaBone, rest and rest.tarsus)
-	if not rest then
+	placeSegment(out, leg.tibia, tibiaBone, rest and rest.tibia)
+	placeSegment(out, leg.tarsus1, tibiaBone, rest and rest.tarsus1)
+	if rest then
+		placeSegment(out, leg.ankle, tibiaBone, rest.ankle)
+		placeSegment(out, leg.tarsus, tibiaBone, rest.tarsus)
+	else
 		-- Лапа из примитивов: суставы — шарики, им кадр кости не нужен.
-		leg.knee.CFrame = CFrame.new(knee)
-		leg.ankle.CFrame = CFrame.new(knee + (target - knee) * (leg.l2 / leg.l2t))
-		leg.tarsus.CFrame = CFrame.new(target)
+		put(out, leg.knee, CFrame.new(knee))
+		put(out, leg.ankle, CFrame.new(knee + (target - knee) * (leg.l2 / leg.l2t)))
+		put(out, leg.tarsus, CFrame.new(target))
 	end
+	return true
 end
 
 -- Ставит часть-ногу от бедра к ступне. Цилиндр вытянут вдоль локальной X, поэтому
@@ -425,11 +440,11 @@ end
 -- номинальной — иначе на ступеньке ступня висела бы в воздухе. Переписывается только
 -- по заметному изменению: Size — реплицируемое свойство, и дёргать его на сотые доли
 -- каждый кадр — трафик ни за что.
-local function placeLeg(leg, hip, foot, bodyCF)
+local function placeLeg(leg, hip, foot, bodyCF, out)
 	local delta = foot - hip
 	local length = delta.Magnitude
 	if length < 1e-3 then
-		return
+		return false
 	end
 
 	-- Нога не резиновая: дальше своей длины с небольшим запасом она не тянется,
@@ -443,14 +458,14 @@ local function placeLeg(leg, hip, foot, bodyCF)
 
 	-- Нога-модель не ресайзится (у Model нет Size): работает инверсия суставов.
 	if leg.isModel then
-		placeModelLeg(leg, hip, foot, bodyCF)
-		return
+		return placeModelLeg(leg, hip, foot, bodyCF, out)
 	end
 
-	leg.part.CFrame = CFrame.lookAt(hip:Lerp(foot, 0.5), foot) * CFrame.Angles(0, math.rad(90), 0)
+	put(out, leg.part, CFrame.lookAt(hip:Lerp(foot, 0.5), foot) * CFrame.Angles(0, math.rad(90), 0))
 	if math.abs(leg.part.Size.X - length) > 0.05 then
 		leg.part.Size = Vector3.new(length, leg.thickness, leg.thickness)
 	end
+	return true
 end
 
 -- Точка постановки ступни впереди по ходу (см. MODEL_STEP_PLANT). От номинальной стойки
@@ -546,7 +561,8 @@ local function around(point, rotation)
 	return CFrame.new(point) * rotation * CFrame.new(-point)
 end
 
-local function poseHead(state, body, dt, turnRate, headLead)
+-- Кадры кладёт в out (см. put): ставит их Step вместе с телом, одним BulkMoveTo.
+local function poseHead(state, body, dt, turnRate, headLead, out)
 	local rig = state.head
 	local t = state.clock + rig.phase
 	local scale = state.gaitScale or 1
@@ -587,10 +603,8 @@ local function poseHead(state, body, dt, turnRate, headLead)
 	state.lastForward = forward
 	state.antennaAccel = (state.antennaAccel or 0) + (accel - (state.antennaAccel or 0)) * math.clamp(dt * 6, 0, 1)
 
-	local parts, frames = {}, {}
 	local function place(entry, local_)
-		table.insert(parts, entry.part)
-		table.insert(frames, body * local_ * entry.rest)
+		put(out, entry.part, body * local_ * entry.rest)
 	end
 
 	for _, entry in rig.head.parts do
@@ -631,8 +645,6 @@ local function poseHead(state, body, dt, turnRate, headLead)
 			end
 		end
 	end
-
-	workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
 end
 
 -- Крылья: детали групп wing_L / wing_R в кадре тела и шарнир — точка у внутреннего края
@@ -690,20 +702,25 @@ end
 -- openOverride/freqMul — обмахивание стоящего жука на земле (см. rig.idle): размах не
 -- тот, с которым он летит, и частота своя. lift — крылья просто приподняты на эту долю
 -- размаха, без взмаха (замах грызни, см. BITE_WING_FLARE).
-local function poseWings(rig, body, openOverride, freqMul, lift)
-	local open = openOverride or rig.open
-	local amount = open * rig.angle * math.sin(rig.clock * rig.freq * (freqMul or 1) * math.pi * 2 + rig.phase)
-		+ (lift or 0) * rig.angle
-	local parts, frames = {}, {}
+--
+-- Последний взмах запоминается (rig.amount): в кадр, где крыльям махать не надо, они
+-- едут с телом в той же позе (placeWings) — так же, как их раньше нёс PivotTo тела.
+local function placeWings(rig, body, amount, out)
 	for _, wing in rig.wings do
 		-- Поворот вокруг оси нос–хвост: крыло слева и справа поднимаются вместе.
 		local joint = around(wing.hinge, CFrame.Angles(0, 0, amount * wing.side))
 		for _, entry in wing.parts do
-			table.insert(parts, entry.part)
-			table.insert(frames, body * joint * entry.rest)
+			put(out, entry.part, body * joint * entry.rest)
 		end
 	end
-	workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
+end
+
+local function poseWings(rig, body, openOverride, freqMul, lift, out)
+	local open = openOverride or rig.open
+	local amount = open * rig.angle * math.sin(rig.clock * rig.freq * (freqMul or 1) * math.pi * 2 + rig.phase)
+		+ (lift or 0) * rig.angle
+	rig.amount = amount
+	placeWings(rig, body, amount, out)
 end
 
 -- Вздрагивание от попадания поверх ровного тела. Крена в повороте нет: живой жук
@@ -782,7 +799,7 @@ end
 -- Удар грызни поверх тела (см. «Грызня: удар по цели»). Считает позу укуса в state.bite
 -- (её же читает голова в poseHead) и возвращает два кадра: стойку (жук потянулся к цели —
 -- по ней ставят ноги) и тело в ударе (стойка плюс бросок — его видно). Ничего не
--- двигает сам — ни одной лишней детали: корпус и так ставится одним PivotTo, голова
+-- двигает сам — ни одной лишней детали: корпус и так ставится одним BulkMoveTo, голова
 -- и жвалы и так ставятся каждый кадр.
 --
 -- chewAt — точка на поверхности цели (атрибут ChewAt), может не прийти — тогда жук бьёт
@@ -986,6 +1003,70 @@ local function findSupport(nominal, up, gaitScale, underTower, selfModel)
 	return foot
 end
 
+-- Корпус: все детали модели, которых походка не ставит сама (тело, панцирь, тазики лап,
+-- усики без шарнира, глаза…). Они жёстко сидят на пивоте, и в кадре их ставит один
+-- BulkMoveTo по сдвигу от пивота. Раньше тут был PivotTo, который двигал ВСЕ детали жука,
+-- после чего лапы, голову и крылья ставили второй раз — половина записей уходила впустую.
+-- limbs — то, что походка ставит сама, кроме крыльев (голова, усики, жвалы, лапы): по ним
+-- жук едет целиком в кадрах без шага (см. Follow).
+--
+-- Список собирается лениво и заново, если в модели появилась или пропала деталь
+-- (см. Attach): сдвиг от пивота у корпуса один и тот же в любой момент, снять его можно когда угодно.
+local function collectBody(model, state)
+	local placed = {}
+	local limbs = {}
+	local function limb(part)
+		if part and not placed[part] then
+			placed[part] = true
+			table.insert(limbs, part)
+		end
+	end
+	for _, leg in state.legs do
+		if leg.isModel then
+			for _, key in LEG_SEGMENTS do
+				limb(leg[key])
+			end
+		else
+			limb(leg.part)
+		end
+	end
+	local rig = state.head
+	if rig then
+		for _, entry in rig.head.parts do
+			limb(entry.part)
+		end
+		for _, list in { rig.antennae, rig.mandibles } do
+			for _, group in list do
+				-- Без шарнира poseHead их не трогает — едут с корпусом.
+				if group.joint then
+					for _, entry in group.parts do
+						limb(entry.part)
+					end
+				end
+			end
+		end
+	end
+	if state.wings then
+		for _, wing in state.wings.wings do
+			for _, entry in wing.parts do
+				placed[entry.part] = true
+			end
+		end
+	end
+
+	local pivot = model:GetPivot()
+	local body = { parts = {}, rest = {} }
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") and not placed[part] then
+			table.insert(body.parts, part)
+			table.insert(body.rest, pivot:ToObjectSpace(part.CFrame))
+		end
+	end
+	state.body = body
+	state.limbs = limbs
+	return body
+end
+
 -- Заводит походку для модели. legs — тот же список, по которому собрана модель
 -- (см. EnemySpawner.buildEnemyModel): анатомия остаётся там, где строится тело, а не
 -- восстанавливается здесь обратным счётом по CFrame готовых частей.
@@ -1119,12 +1200,21 @@ function EnemyGait.Attach(model, legs, styleKey)
 	state.head = captureHead(model)
 	state.wings = captureWings(model, state.style)
 
+	-- Деталь появилась или пропала — список корпуса (collectBody) собрать заново.
+	local function changed(item)
+		if item:IsA("BasePart") then
+			state.body = nil
+		end
+	end
+	model.DescendantAdded:Connect(changed)
+	model.DescendantRemoving:Connect(changed)
+
 	states[model] = state
 	return state
 end
 
--- Летун в воздухе: ноги не переставляет (их ведёт EnemyRender простым PivotTo), а крылья
--- машут. Зовётся каждый кадр после PivotTo. Без крыльев — ничего.
+-- Летун в воздухе: ноги не переставляет (тело ведёт EnemyRender, см. Follow), а крылья
+-- машут. Без крыльев — ничего. EnemyRender машет через Follow(flapDt) — тут для прочих.
 function EnemyGait.Flap(model, dt)
 	local state = states[model]
 	local wings = state and state.wings
@@ -1133,7 +1223,73 @@ function EnemyGait.Flap(model, dt)
 	end
 	wings.open = math.min(1, wings.open + dt * WING_FOLD)
 	wings.clock += dt
-	poseWings(wings, model:GetPivot())
+	local out = { parts = {}, frames = {} }
+	poseWings(wings, model:GetPivot(), nil, nil, nil, out)
+	workspace:BulkMoveTo(out.parts, out.frames, Enum.BulkMoveMode.FireCFrameChanged)
+end
+
+-- Кадр без шага походки (дальний жук между шагами, см. LOD в EnemyRender; летун в воздухе):
+-- жук целиком, жёстко, переезжает так, чтобы его пивот встал в pivot. Раньше это был
+-- PivotTo; теперь одним BulkMoveTo: корпус — по сдвигам от пивота, голова и лапы — в позе
+-- последнего шага, крылья — в позе последнего взмаха. Картинка та же, что у PivotTo.
+-- flapDt — летун ещё и машет крыльями (то, что делал Flap после PivotTo), без второй записи.
+function EnemyGait.Follow(model, pivot, flapDt)
+	local state = states[model]
+	if not state then
+		model:PivotTo(pivot)
+		return
+	end
+	local rigid = state.body or collectBody(model, state)
+	local posed = state.posed
+	if not posed then
+		-- Шага ещё не было (летун с рождения): поза лап и головы — та, в которой они стоят.
+		local current = model:GetPivot()
+		local rel = {}
+		for index, part in state.limbs do
+			rel[index] = current:ToObjectSpace(part.CFrame)
+		end
+		posed = { parts = state.limbs, rel = rel }
+		state.posed = posed
+	elseif not posed.rel then
+		-- Первый такой кадр после шага: поза конечностей относительно тела того шага.
+		local inverse = posed.body:Inverse()
+		local parts, rel = {}, {}
+		for _, list in { posed.head, posed.legs } do
+			for index, part in list.parts do
+				table.insert(parts, part)
+				table.insert(rel, inverse * list.frames[index])
+			end
+		end
+		posed.parts, posed.rel = parts, rel
+	end
+
+	-- Списки свои у жука и живут между кадрами: BulkMoveTo копирует их сразу, а новые
+	-- таблицы на каждого жука каждый кадр — лишний мусор для сборщика.
+	local out = state.followOut
+	if out then
+		table.clear(out.parts)
+		table.clear(out.frames)
+	else
+		out = { parts = {}, frames = {} }
+		state.followOut = out
+	end
+	for index, part in rigid.parts do
+		put(out, part, pivot * rigid.rest[index])
+	end
+	for index, part in posed.parts do
+		put(out, part, pivot * posed.rel[index])
+	end
+	local wings = state.wings
+	if wings then
+		if flapDt then
+			wings.open = math.min(1, wings.open + flapDt * WING_FOLD)
+			wings.clock += flapDt
+			poseWings(wings, pivot, nil, nil, nil, out)
+		else
+			placeWings(wings, pivot, wings.amount or 0, out)
+		end
+	end
+	workspace:BulkMoveTo(out.parts, out.frames, Enum.BulkMoveMode.FireCFrameChanged)
 end
 
 -- Отскок живого жука от попадания. from — откуда прилетело, strength — доля макс. HP
@@ -1219,8 +1375,9 @@ end
 -- уезжает от ступней, и порог шага не берётся сам собой.
 --
 -- pathCF — МАРШРУТНЫЙ кадр от спавнера: где жук находится для сетки, толкучки и прицела.
--- Передан — походка сама ставит модель (PivotTo): тело ровно в нём, плюс доворот,
--- вздрагивание и дыхание. Не передан — тело ведёт вызывающий.
+-- Передан — походка сама ставит модель (корпус одним BulkMoveTo, см. collectBody): тело
+-- ровно в нём, плюс доворот, вздрагивание и дыхание. Не передан — тело ведёт вызывающий.
+-- Возвращает кадр, в котором встало тело (пивот модели после шага).
 -- На какой угол тело успевает довернуть за кадр при рассогласовании angle (рад).
 -- Этим же доворотом пользуется толкучка (Crowd.Resolve): капсула, сквозь которую жуки
 -- не проходят, обязана смотреть туда же, куда видимое тело, — иначе на повороте тело
@@ -1276,7 +1433,7 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower, chewAt)
 		if pathCF then
 			model:PivotTo(pathCF)
 		end
-		return
+		return pathCF
 	end
 
 	local now = os.clock()
@@ -1287,12 +1444,21 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower, chewAt)
 	-- Кадр, по которому решают ноги: без удара грызни. Бросок подаёт корпус к цели,
 	-- но ступни остаются на месте — лапы сгибаются, а не переступают вслед за броском.
 	local stance = path
+	-- Корпус, крылья и голова встают одним BulkMoveTo до лап, лапы — вторым после них.
+	-- Каждая деталь пишется за шаг ровно один раз (см. collectBody).
+	local out = { parts = {}, frames = {} }
+	local before = nil -- где тело стояло до шага; nil — тело ведёт вызывающий
 	if pathCF then
 		stance, body = biteStep(state, flourish(state, react(state, body, dt)), dt, mode == "chew", chewAt, now)
-		model:PivotTo(body)
+		before = model:GetPivot()
+		local rigid = state.body or collectBody(model, state)
+		for index, part in rigid.parts do
+			put(out, part, body * rigid.rest[index])
+		end
 	end
+	local head = { parts = {}, frames = {} }
 	if state.head then
-		poseHead(state, body, dt, turnRate, headLead)
+		poseHead(state, body, dt, turnRate, headLead, head)
 	end
 	-- На земле крылья складываются (Пеликан сел, наевшись). А у видов с wingIdle
 	-- сложенные крылья ещё и обмахивают — но только пока жук стоит: на марше это
@@ -1308,14 +1474,36 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower, chewAt)
 		if wings.open > 0 then
 			wings.open = math.max(0, wings.open - dt * WING_FOLD)
 			wings.clock += dt
-			poseWings(wings, body, math.max(wings.open, idleFlap))
+			poseWings(wings, body, math.max(wings.open, idleFlap), nil, nil, out)
 		elseif idleFlap > 0.001 then
 			wings.clock += dt
-			poseWings(wings, body, idleFlap, wings.idle.freq / math.max(wings.freq, 0.1), flare)
+			poseWings(wings, body, idleFlap, wings.idle.freq / math.max(wings.freq, 0.1), flare, out)
 		elseif bite and bite.blend > 0.001 then
 			-- Грызёт (крылья сложены, обмахивания нет): позу крыльев держит корпус удара,
 			-- даже когда приподнимать нечего — иначе они остались бы в кадре прошлого броска.
-			poseWings(wings, body, 0, 0, flare)
+			poseWings(wings, body, 0, 0, flare, out)
+		elseif before then
+			-- Махать нечем — крылья едут с телом в позе последнего взмаха.
+			placeWings(wings, body, wings.amount or 0, out)
+		end
+	end
+	table.move(head.parts, 1, #head.parts, #out.parts + 1, out.parts)
+	table.move(head.frames, 1, #head.frames, #out.frames + 1, out.frames)
+	if #out.parts > 0 then
+		workspace:BulkMoveTo(out.parts, out.frames, Enum.BulkMoveMode.FireCFrameChanged)
+	end
+	-- Лапы копятся в свой список: опора под ними ищется лучами по ходу цикла.
+	local legs = { parts = {}, frames = {} }
+	local function setLeg(leg, hip, foot)
+		if not placeLeg(leg, hip, foot, body, legs) and before then
+			-- Ставить нечем (ступня в бедре) — лапа едет с телом как есть.
+			if leg.isModel then
+				for _, key in LEG_SEGMENTS do
+					put(legs, leg[key], body * before:ToObjectSpace(leg[key].CFrame))
+				end
+			else
+				put(legs, leg.part, body * before:ToObjectSpace(leg.part.CFrame))
+			end
 		end
 	end
 	local up = body.UpVector
@@ -1380,7 +1568,7 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower, chewAt)
 			-- Нога в переносе: дуга от старой точки к новой.
 			local t = math.clamp(1 - (leg.stepUntil - now) / stepTime, 0, 1)
 			local foot = leg.stepFrom:Lerp(leg.stepTo, t) + up * math.sin(t * math.pi) * stepLift
-			placeLeg(leg, hipWorld, foot, body)
+			setLeg(leg, hipWorld, foot)
 		else
 			local planted = leg.planted
 			-- Второй повод переступить — лапа вот-вот вытянется до предела (см. MODEL_STEP_REACH).
@@ -1410,12 +1598,18 @@ function EnemyGait.Step(model, dt, mode, pathCF, wantLook, underTower, chewAt)
 					state.turn = 3 - leg.group
 				end
 				stepping = leg.group
-				placeLeg(leg, hipWorld, leg.stepFrom, body)
+				setLeg(leg, hipWorld, leg.stepFrom)
 			else
-				placeLeg(leg, hipWorld, planted or nominal, body)
+				setLeg(leg, hipWorld, planted or nominal)
 			end
 		end
 	end
+	if #legs.parts > 0 then
+		workspace:BulkMoveTo(legs.parts, legs.frames, Enum.BulkMoveMode.FireCFrameChanged)
+	end
+	-- Поза этого шага: по ней Follow ведёт жука до следующего шага.
+	state.posed = { body = body, head = head, legs = legs }
+	return body
 end
 
 -- Поза смерти: ноги подламываются наружу и вверх, к брюху — жук оседает на брюхо,
