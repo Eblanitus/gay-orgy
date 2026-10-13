@@ -35,8 +35,8 @@ local tracked = {} -- [server model] = { visual, smooth, hp, gaitless, primed, c
 -- ============ Экономия кадра на толпе ============
 -- Полный шаг походки (лучи опоры, инверсия лап, голова, крылья) у ближних жуков — каждый
 -- кадр, как раньше. Дальний жук считает его раз в несколько кадров, а между ними тело
--- целиком (с ногами) просто едет за якорем — на таком расстоянии разница не видна, а
--- лучей и записей CFrame в кадре в разы меньше. Расстояние — от камеры, в долях размера
+-- целиком (с ногами) просто едет за якорем (EnemyGait.Follow — одним BulkMoveTo, без
+-- PivotTo) — на таком расстоянии разница не видна, а лучей и записей CFrame в кадре в разы меньше. Расстояние — от камеры, в долях размера
 -- жука (гигант читается дальше Мини) и с поправкой на угол обзора (зум Аркады).
 local LOD_NEAR = 50 -- studs у жука Scale 3.0: ближе — каждый кадр
 local LOD_FAR = 110 -- дальше — раз в LOD_EVERY_FAR кадров, между — раз в LOD_EVERY_MID
@@ -454,24 +454,22 @@ RunService.RenderStepped:Connect(function(dt)
 			local gait = model:GetAttribute("Gait") or (entry.arcade and "walk") or nil
 			if gait then
 				if full or not entry.offset then
-					EnemyGait.Step(entry.visual, stepDt, gait, entry.smooth, model:GetAttribute("Look"),
+					local body = EnemyGait.Step(entry.visual, stepDt, gait, entry.smooth, model:GetAttribute("Look"),
 						model:GetAttribute("Crawling"), gait == "chew" and model:GetAttribute("ChewAt") or nil)
 					entry.gaitDt = 0
 					-- Где тело стоит относительно якоря после шага (доворот, вздрагивание):
 					-- до следующего шага оно едет за якорем с этим же сдвигом.
-					entry.offset = entry.smooth:ToObjectSpace(entry.visual:GetPivot())
+					entry.offset = entry.smooth:ToObjectSpace(body or entry.visual:GetPivot())
 				else
-					entry.visual:PivotTo(entry.smooth * entry.offset)
+					EnemyGait.Follow(entry.visual, entry.smooth * entry.offset)
 				end
 			else
 				-- Летуны и жуки со своим циклом (Лицехват, Моль, Пеликан в воздухе): ног не
 				-- переставляют, тело просто идёт за якорем. Крылья в воздухе машут.
 				entry.offset = nil
-				entry.visual:PivotTo(entry.smooth)
+				local flap = full and model:GetAttribute("Flying") and stepDt or nil
+				EnemyGait.Follow(entry.visual, entry.smooth, flap)
 				if full then
-					if model:GetAttribute("Flying") then
-						EnemyGait.Flap(entry.visual, stepDt)
-					end
 					entry.gaitDt = 0
 				end
 			end

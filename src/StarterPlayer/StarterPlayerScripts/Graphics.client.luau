@@ -8,6 +8,7 @@
 -- именами (Bloom, SunRays, Atmosphere, DepthOfField). Нет нужного — создаётся свой
 -- (ColorCorrection в месте нет). Атмосферу нельзя выключить свойством Enabled, поэтому у
 -- неё уровень меняет только плотность и дымку.
+local CollectionService = game:GetService("CollectionService")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
@@ -55,6 +56,7 @@ local mapShadows = setmetatable({}, { __mode = "k" })
 local mapBrightness = setmetatable({}, { __mode = "k" })
 local mapGlow = setmetatable({}, { __mode = "k" })
 local lampMode = "map"
+local smallShadows = false
 local lampLight = 1
 local lampGlow = 1
 
@@ -141,7 +143,17 @@ local function apply()
 	lampLight = p.lampLight
 	lampGlow = p.lampGlow
 	eachLamp(applyLamp)
+
+	smallShadows = p.smallShadows
+	for _, part in CollectionService:GetTagged(GraphicsPresets.SMALL_SHADOW_TAG) do
+		part.CastShadow = smallShadows
+	end
 end
+
+-- Мелкие детали жуков и турелей появляются весь забег — каждую по текущему уровню.
+CollectionService:GetInstanceAddedSignal(GraphicsPresets.SMALL_SHADOW_TAG):Connect(function(part)
+	part.CastShadow = smallShadows
+end)
 
 -- StreamingEnabled: лампы карты приезжают позже, чем стартует скрипт, — каждую новую
 -- выставляем по текущему уровню.

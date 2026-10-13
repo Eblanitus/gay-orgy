@@ -24,6 +24,9 @@
 --     (автор, #414), а с 0,75/0,45 стали тусклыми (автор, #415) — теперь 0,9/0,7; 1 — как в месте;
 --   ambient — множитель к общей заливке места (Lighting.Ambient, OutdoorAmbient, Brightness):
 --     без него всё, что не под лампой, светилось чуть лишнее (автор, #415);
+--   smallShadows — тени мелких движущихся деталей (лапы, усики, жвалы жуков, мелочь турелей,
+--     метка SMALL_SHADOW_TAG): каждую движущуюся деталь с тенью движок пересчитывает каждый
+--     кадр, на толпе это заметная доля кадра (#458), а на полу их почти не видно. Только «Ультра»;
 --   bloom, sunRays, depthOfField, atmosphere, colorCorrection — таблица свойств эффекта
 --     или false (эффект выключен). Bloom даёт свечение Neon (у жуков
 --     материалы *_glow — Neon): Neon в Future много ярче освещённых деталей, и порог между ними — ореол только вокруг Neon.
@@ -37,6 +40,7 @@ GraphicsPresets.Levels = {
 		specular = 0,
 		diffuse = 0.5,
 		lampShadows = false,
+		smallShadows = false,
 		ambient = 0.8,
 		lampLight = 0.9,
 		lampGlow = 0.7,
@@ -53,6 +57,7 @@ GraphicsPresets.Levels = {
 		specular = 0.5,
 		diffuse = 1,
 		lampShadows = false,
+		smallShadows = false,
 		ambient = 0.8,
 		lampLight = 0.9,
 		lampGlow = 0.7,
@@ -69,6 +74,7 @@ GraphicsPresets.Levels = {
 		specular = 1,
 		diffuse = 1,
 		lampShadows = "map",
+		smallShadows = false,
 		ambient = 0.8,
 		lampLight = 0.9,
 		lampGlow = 0.7,
@@ -85,6 +91,7 @@ GraphicsPresets.Levels = {
 		specular = 1,
 		diffuse = 1,
 		lampShadows = true,
+		smallShadows = true,
 		ambient = 0.8,
 		lampLight = 0.9,
 		lampGlow = 0.7,
@@ -112,5 +119,9 @@ GraphicsPresets.AutoByQuality = {
 }
 GraphicsPresets.AUTO_TOUCH = "medium"
 GraphicsPresets.AUTO_DESKTOP = "high"
+
+-- Метка CollectionService у мелких движущихся деталей (ставят EnemyModel и BuildingVisuals):
+-- их CastShadow включает и выключает Graphics.client по smallShadows уровня.
+GraphicsPresets.SMALL_SHADOW_TAG = "SmallShadow"
 
 return GraphicsPresets
