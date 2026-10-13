@@ -765,6 +765,53 @@ function Corpses.Eat(id)
 	dissolve(corpse)
 end
 
+-- Носильщик подобрал труп (решает сервер, Corpses.Take): туша уходит с поля, а с ней всё
+-- лежащее в радиусе radius от точки смерти — оторванные куски, пятна останков без туши
+-- (лепёшка, клочья, лужица, угли). Чужие туши в радиусе не трогаются, кровь остаётся.
+-- Убирается только своё клиентское (папки Corpses и Debris): обломки построек — серверные.
+function Corpses.Collect(id, position, radius)
+	local corpse = byId[id]
+	byId[id] = nil
+	if corpse then
+		local index = table.find(corpses, corpse)
+		if index then
+			table.remove(corpses, index)
+		end
+		dissolve(corpse)
+	end
+	if typeof(position) ~= "Vector3" or type(radius) ~= "number" then
+		return
+	end
+	local function near(instance)
+		local delta = instance:GetPivot().Position - position
+		return delta.X * delta.X + delta.Z * delta.Z <= radius * radius
+	end
+	for index = #stains, 1, -1 do
+		local stain = stains[index]
+		if not stain.Parent then
+			table.remove(stains, index)
+		elseif near(stain) then
+			table.remove(stains, index)
+			dissolve(stain)
+		end
+	end
+	local owned = {}
+	for _, other in byId do
+		owned[other] = true
+	end
+	for _, folderName in { "Corpses", "Debris" } do
+		for _, item in container(folderName):GetChildren() do
+			if not owned[item] and (item:IsA("Model") or item:IsA("BasePart")) and near(item) then
+				local index = table.find(corpses, item)
+				if index then
+					table.remove(corpses, index)
+				end
+				dissolve(item)
+			end
+		end
+	end
+end
+
 -- Досадка на брюхо. Коробка Hull устойчива на любой грани, и убитый на стене (носом
 -- вверх или вниз ровно на 90°) так и оставался стоять торчком — замерено стендом. Балласта
 -- для идеального равновесия мало: замершую не на брюхе тушу доворачиваем верхом к небу.

@@ -599,8 +599,10 @@ function EntityInfo.EnemyStats(enemy)
 	add("здоровье", word(EntityInfo.HP_WORDS, enemy.hp or 0), true)
 	add("скорость", word(EntityInfo.SPEED_WORDS, enemy.speed or 0), true)
 	add("урон по постройкам", word(EntityInfo.CHEW_WORDS, enemy.chewDamage or 0), true)
+	-- Материя даёт не убийство, а переработка трупа (по вики): число — для целого трупа,
+	-- клочья и угли дают меньше (ReplicatedStorage.Economy).
 	local matter = enemy.matter or 0
-	add("награда", ("%d %s"):format(matter, plural(matter, "материя", "материи", "материи")), true)
+	add("целый труп", ("%d %s"):format(matter, plural(matter, "материя", "материи", "материи")), true)
 	if (enemy.armor or 0) > 0 then
 		add("броня", word(EntityInfo.ARMOR_WORDS, enemy.armor))
 	end

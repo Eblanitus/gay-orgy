@@ -8,7 +8,9 @@
 --
 -- Здесь остаётся то, что нужно логике:
 --   * группы столкновений Enemies/Corpses (их читает и клиент — группы реплицируются);
---   * логические записи трупов { id, position, alive } — их ест Пеликан (EnemyBehavior).
+--   * логические записи трупов { id, position, alive } — их ест Пеликан (EnemyBehavior);
+--   * ценность трупа в материи (экономика по вики: материя только из трупов) — её увозят
+--     носильщики в Биореактор (Carriers, Bioreactor). Числа — ReplicatedStorage.Economy.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -17,6 +19,7 @@ local PhysicsFX = require(ReplicatedStorage:WaitForChild("PhysicsFX"))
 local Loose = require(ReplicatedStorage:WaitForChild("Loose"))
 local Effects = require(ReplicatedStorage:WaitForChild("Effects"))
 local Elements = require(ReplicatedStorage:WaitForChild("Elements"))
+local Economy = require(ReplicatedStorage:WaitForChild("Economy"))
 
 local EnemyFX = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("EnemyFX")
 
@@ -53,13 +56,42 @@ end
 local char = PhysicsFX.char
 local CRUMBLE_TIME = char.smokeTime + char.limbsTime + char.sinkTime + char.crackTime
 
+-- Обугленный осыпался: есть Пеликану больше нечего, а носильщики ещё могут собрать угли
+-- (Economy.integrity.ash). Без ценности — запись снимается, как раньше.
+local function crumble(record)
+	if not record.alive then
+		return
+	end
+	local ash = Economy.integrity.ash or 0
+	if ash <= 0 or (record.value or 0) <= 0 then
+		forget(record)
+		return
+	end
+	record.value *= ash / math.max(record.integrity, 1e-6)
+	record.integrity = ash
+	record.remains = "ash"
+	record.edible = false
+	record.crew = 1
+end
+
 -- Виды останков, после которых тела нет (по вики): давит, плавит, растворяет, рвёт,
--- уничтожает. Записи у них не заводится — Пеликану нечего есть.
+-- уничтожает. Пеликану есть нечего — запись у них «несъедобная» (edible = false) и заводится,
+-- только если носильщикам есть что увезти (Economy.integrity: лепёшка, клочья, лужица).
 local BODYLESS = { crush = true, melt = true, dissolve = true, gib = true, destroy = true }
+
+-- Сколько носильщиков нужно на тушу (Economy.crewArea): по площади тела, лёгким останкам — один.
+local function crewFor(remains, scale)
+	if Economy.lightRemains[remains] then
+		return 1
+	end
+	local crew = math.floor(scale * scale + 0.5)
+	return math.clamp(crew, 1, Economy.crewMax)
+end
 
 -- Жук умер. Зовётся ДО enemy:Destroy(): клиент по этому событию забирает видимое тело жука
 -- и делает из него тушу. hit — как в CorpseFX.Leave: { fraction, from, floorY, carry, remains }.
--- remains — вид останков (Effects.RemainsOf); без него — тело.
+-- remains — вид останков (Effects.RemainsOf); без него — тело. hit.value — материя целого
+-- трупа (Enemies[вид].matter); без неё труп ничего не стоит (Аркада, очищенные).
 function Corpses.Leave(enemy, hit)
 	local root = enemy.PrimaryPart
 	if not root then
@@ -72,25 +104,38 @@ function Corpses.Leave(enemy, hit)
 	hit.scorched = hit.remains == "char"
 	hit.scale = enemy:GetAttribute("Scale") or 3
 
-	if BODYLESS[hit.remains] then
+	local edible = not BODYLESS[hit.remains]
+	local integrity = Economy.integrity[hit.remains] or 0
+	local value = (hit.value or 0) * integrity * Economy.valueScale
+	hit.value = nil -- клиенту не нужна
+
+	if not edible and value <= 0 then
 		EnemyFX:FireAllClients("death", enemy, nil, hit)
 		return nil
 	end
 
 	nextId += 1
+	local scale = hit.scale / 3
 	local record = {
 		id = nextId,
 		position = root.Position,
 		alive = true,
 		remains = hit.remains,
-		scale = hit.scale / 3,
+		scale = scale,
 		bornAt = os.clock(),
 		swampy = hit.swampy == true,
+		edible = edible,
+		-- Экономика: сколько материи выйдет из трупа в Биореакторе и сколько носильщиков
+		-- нужно, чтобы его увезти. claimed — кто из носильщиков за ним уже едет (Carriers).
+		value = value,
+		integrity = integrity,
+		crew = crewFor(hit.remains, scale),
+		enemyType = enemy:GetAttribute("Type"),
 	}
 	remember(record)
 	EnemyFX:FireAllClients("death", enemy, nextId, hit)
 	if hit.remains == "char" then
-		task.delay(CRUMBLE_TIME, forget, record)
+		task.delay(CRUMBLE_TIME, crumble, record)
 	end
 	return record
 end
@@ -197,11 +242,11 @@ function Corpses.Clear()
 	EnemyFX:FireAllClients("clear")
 end
 
--- Ближайший лежащий труп (для Пеликана) или nil.
+-- Ближайший лежащий труп с телом (для Пеликана) или nil.
 function Corpses.Nearest(at)
 	local best, bestDistance = nil, math.huge
 	for _, record in records do
-		local distance = (record.position - at).Magnitude
+		local distance = record.edible and (record.position - at).Magnitude or math.huge
 		if distance < bestDistance then
 			best, bestDistance = record, distance
 		end
@@ -216,6 +261,33 @@ function Corpses.Eat(record)
 	end
 	record.alive = false
 	EnemyFX:FireAllClients("eat", record.id)
+end
+
+-- ===== Экономика: сбор трупов (носильщики, Carriers) =====
+
+-- Живые записи, у которых есть ценность, — в порядке смерти. Копия списка: носильщик
+-- может забрать запись, пока по нему идут.
+function Corpses.Valuable()
+	local list = {}
+	for _, record in records do
+		if record.alive and (record.value or 0) > 0 then
+			table.insert(list, record)
+		end
+	end
+	return list
+end
+
+-- Труп подобран и увезён: записи больше нет, клиенты убирают тушу (или лежащие останки
+-- без туши — по точке и радиусу). Возвращает материю, которую он даст в Биореакторе, или 0,
+-- если его уже нет (съел Пеликан, осыпался, лопнул, вытеснен по лимиту).
+function Corpses.Take(record)
+	if not record.alive then
+		return 0
+	end
+	forget(record)
+	local radius = Economy.scrapRadius * (record.scale or 1)
+	EnemyFX:FireAllClients("collect", record.id, record.position, radius)
+	return record.value or 0
 end
 
 return Corpses

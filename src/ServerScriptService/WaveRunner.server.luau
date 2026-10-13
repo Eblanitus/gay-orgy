@@ -23,6 +23,8 @@ local Projectile = require(ServerScriptService:WaitForChild("Projectile"))
 local Grid = require(ServerScriptService:WaitForChild("Grid"))
 local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
+-- Переработка трупов в материю (экономика по вики): сбрасывается вместе с забегом.
+local Bioreactor = require(ServerScriptService:WaitForChild("Bioreactor"))
 local WaveState = require(ServerScriptService:WaitForChild("WaveState"))
 local Plutonium = require(ServerScriptService:WaitForChild("Plutonium"))
 -- Профиль игрока: проверка открытости уровня при входе в него (прибор лобби ниже)
@@ -280,6 +282,7 @@ local function clearArena()
 	-- Трупы и кровь живут до конца ЗАБЕГА: поле зарастает останками
 	-- всю его длину и чистится ровно здесь, вместе со всей остальной ареной.
 	Corpses.Clear()
+	Bioreactor.Reset()
 
 	-- Стены, пандусы, кормушки, окопы, коконы и хитин. Именно здесь снимается хитин
 	-- Архитектора, который «меняет карту навсегда»: навсегда — это до конца забега,

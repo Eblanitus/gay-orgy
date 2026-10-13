@@ -5,7 +5,6 @@ local RunService = game:GetService("RunService")
 
 local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
 local Towers = require(ReplicatedStorage:WaitForChild("Towers")) -- только для flyToTurret: отличить турели от Стены/Горы по fireRate
-local Matter = require(ServerScriptService:WaitForChild("Matter"))
 local Plutonium = require(ServerScriptService:WaitForChild("Plutonium"))
 local ProfileStats = require(ServerScriptService:WaitForChild("ProfileStats"))
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -1587,10 +1586,11 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 				local dieMax = math.max(enemy:GetAttribute("MaxHP") or 1, 1)
 				EnemyDiedRemote:FireAllClients(enemy:GetPivot().Position, math.max(previousHp - currentHp, 0) / dieMax)
 			end
-			-- Погибший очищенный — потеря игрока, а не его добыча: ни материи, ни плутония,
-			-- ни строки в журнале убийств.
+			-- Погибший очищенный — потеря игрока, а не его добыча: ни плутония, ни строки
+			-- в журнале убийств, и труп ничего не стоит (ниже, Corpses.Leave).
+			-- Само убийство материи не даёт (экономика по вики): материя выходит из трупа,
+			-- когда носильщики довезут его до Биореактора (Corpses, Carriers).
 			if not enemy:GetAttribute("Ally") then
-				Matter.Add(enemyData.matter or 0)
 				Plutonium.AwardEnemyKill(enemyType)
 				ProfileStats.Kill(enemyType, enemy:GetAttribute("LastElement"))
 			end
@@ -1676,6 +1676,8 @@ local function spawnEnemy(enemyType, offset, hpOverride, startPosition, setup)
 					throw = remains == "crush" and Effects.ThrowOf(enemy) or nil,
 					-- Умер Болотным — труп тоже болотный и заражает прошедших по нему (по вики).
 					swampy = enemy:GetAttribute("Infected") == true,
+					-- Материя целого трупа; сколько из неё выйдет, решает вид останков (Economy).
+					value = not enemy:GetAttribute("Ally") and (enemyData.matter or 0) or 0,
 				})
 			end
 
