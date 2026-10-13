@@ -54,4 +54,41 @@ function TowerBootstrap.PlaceStartingTower()
 	return tower
 end
 
+-- Стартовый Биореактор (экономика по вики): без него в забеге нет дохода с трупов, а на
+-- обучении стартовых 10 материи не хватило бы его построить. Ставится сам и бесплатно —
+-- у стола, со стороны, противоположной входу жуков («разумно ставить за турелями»).
+-- Перебираются точки на кольцах вокруг стола; первой пробуется самая дальняя от входа.
+local REACTOR_RINGS = { 9, 13, 17, 22 }
+local REACTOR_STEPS = 16
+
+function TowerBootstrap.PlaceStartingReactor()
+	local center = LabTable.Position()
+	local away = center - Arena.entrance
+	away = Vector3.new(away.X, 0, away.Z)
+	away = away.Magnitude > 1e-3 and away.Unit or Vector3.xAxis
+
+	local spots = {}
+	for _, radius in REACTOR_RINGS do
+		for i = 0, REACTOR_STEPS - 1 do
+			local angle = i / REACTOR_STEPS * math.pi * 2
+			local dir = Vector3.new(math.cos(angle), 0, math.sin(angle))
+			-- Сзади стола лучше, ближе к столу лучше: кольцо важнее направления.
+			table.insert(spots, { at = center + dir * radius, score = dir:Dot(away) - radius * 0.1 })
+		end
+	end
+	table.sort(spots, function(a, b)
+		return a.score > b.score
+	end)
+
+	for _, spot in spots do
+		local cx, cz = Arena.ToCell(spot.at)
+		local ok, reactor = TowerBuilder.BuildFree(cx, cz, "Bioreactor")
+		if ok then
+			return reactor
+		end
+	end
+	warn("[TowerBootstrap] не нашлось места для стартового Биореактора")
+	return nil
+end
+
 return TowerBootstrap

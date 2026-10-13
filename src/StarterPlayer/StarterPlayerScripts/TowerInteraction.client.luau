@@ -617,10 +617,12 @@ buildHintPad.Parent = buildHint
 -- из стройки. Сама турель цела и рабочая (Towers.Drill, модель и режим стрельбы на месте) —
 -- вернуть её игроку значит дописать "Drill" в эту строку, больше ничего не нужно.
 -- Пила (Saw, задача #436) — седьмая, на последней цифровой клавише.
-local ALL_TOWERS_ORDER = { "Ballista", "Wall", "Mortar", "Injector", "Vaporizer", "Centrifuge", "Saw" }
+-- Биореактор и Станция носильщиков (экономика) — последние: реактор стоит с начала забега
+-- сам и строится заново, только если его снесли.
+local ALL_TOWERS_ORDER = { "Ballista", "Wall", "Mortar", "Injector", "Vaporizer", "Centrifuge", "Saw", "Bioreactor", "CarrierStation" }
 local NUMBER_KEYS = {
 	Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four,
-	Enum.KeyCode.Five, Enum.KeyCode.Six, Enum.KeyCode.Seven,
+	Enum.KeyCode.Five, Enum.KeyCode.Six, Enum.KeyCode.Seven, Enum.KeyCode.Eight, Enum.KeyCode.Nine,
 }
 local selected = 1
 
@@ -666,7 +668,7 @@ local function rebuildOrder()
 	local tutorialTowers = ReplicatedStorage:GetAttribute("TutorialTowers") or ""
 	for _, key in ALL_TOWERS_ORDER do
 		local tutorialOk = tutorialTowers == "" or table.find(string.split(tutorialTowers, ","), key) ~= nil
-		if (not Towers[key].locked or turretsUnlocked) and tutorialOk then
+		if Towers[key] and (not Towers[key].locked or turretsUnlocked) and tutorialOk then
 			table.insert(BUILD_ORDER, key)
 		end
 	end

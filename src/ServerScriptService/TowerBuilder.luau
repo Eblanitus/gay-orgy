@@ -185,6 +185,11 @@ local TowerBuilder = {}
 local TowerModelsExports = require(script.Parent:WaitForChild("TowerModels"))({Elements = Elements, SPHERE_HEIGHT = SPHERE_HEIGHT, STAND_UP = STAND_UP, BARREL_LENGTH = BARREL_LENGTH, BARREL_REACH = BARREL_REACH, colbaMeshTemplate = colbaMeshTemplate, ACCENT_NEUTRAL_COLOR = ACCENT_NEUTRAL_COLOR, Grid = Grid, WALL_HEIGHT = WALL_HEIGHT, WALL_ROWS = WALL_ROWS, SANDBAG_COLOR = SANDBAG_COLOR, MOUNTAIN_HEIGHT = MOUNTAIN_HEIGHT, TOWER_Y = TOWER_Y, BARRELS = BARRELS, droneStationTemplate = droneStationTemplate, injectorTemplate = injectorTemplate})
 local MUZZLE_LEAD = TowerModelsExports.MUZZLE_LEAD
 local MODELS = TowerModelsExports.MODELS
+-- Хозяйственные постройки экономики (Биореактор, Станция носильщиков): пока заглушки,
+-- настоящие модели подключаются заменой функций в EconomyModels.
+local EconomyModels = require(script.Parent:WaitForChild("EconomyModels"))
+MODELS.Bioreactor = EconomyModels.Bioreactor
+MODELS.CarrierStation = EconomyModels.CarrierStation
 local buildTowerModel = TowerModelsExports.buildTowerModel
 local buildWallModel = TowerModelsExports.buildWallModel
 local buildMountainBarrierModel = TowerModelsExports.buildMountainBarrierModel
@@ -322,6 +327,10 @@ function TowerBuilder.Build(cx, cz, towerType, turn)
 	if not Grid.IsFree(cx, cz, reach, true) then
 		return false, "клетка занята"
 	end
+	-- Сколько таких построек может стоять разом (Биореактор — один на поле).
+	if towerData.limit and TowerBuilder.Count(towerType) >= towerData.limit then
+		return false, ("%s уже стоит на поле"):format(towerData.name)
+	end
 	if not Matter.Spend(towerData.cost) then
 		return false, ("не хватает материи (нужно %d, есть %d)"):format(towerData.cost, Matter.Get())
 	end
@@ -331,6 +340,17 @@ function TowerBuilder.Build(cx, cz, towerType, turn)
 	print(("[Постройка] %s поставлена в клетку (%d, %d) за %d материи, поворот %d°")
 		:format(tower.Name, cx, cz, towerData.cost, 90 * ((turn or 0) % 4)))
 	return true, tower
+end
+
+-- Сколько построек типа towerType сейчас стоит на поле (целых, не разрушенных).
+function TowerBuilder.Count(towerType)
+	local count = 0
+	for _, tower in towersFolder:GetChildren() do
+		if tower:GetAttribute("Type") == towerType and (tower:GetAttribute("HP") or 0) > 0 then
+			count += 1
+		end
+	end
+	return count
 end
 
 -- То же самое, но бесплатно — для стартовой башни (см. TowerBootstrap). Отдельная функция,

@@ -25,6 +25,7 @@ local Crowd = require(ServerScriptService:WaitForChild("Crowd"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 -- Переработка трупов в материю (экономика по вики): сбрасывается вместе с забегом.
 local Bioreactor = require(ServerScriptService:WaitForChild("Bioreactor"))
+local Carriers = require(ServerScriptService:WaitForChild("Carriers"))
 local WaveState = require(ServerScriptService:WaitForChild("WaveState"))
 local Plutonium = require(ServerScriptService:WaitForChild("Plutonium"))
 -- Профиль игрока: проверка открытости уровня при входе в него (прибор лобби ниже)
@@ -283,6 +284,7 @@ local function clearArena()
 	-- всю его длину и чистится ровно здесь, вместе со всей остальной ареной.
 	Corpses.Clear()
 	Bioreactor.Reset()
+	Carriers.Reset()
 
 	-- Стены, пандусы, кормушки, окопы, коконы и хитин. Именно здесь снимается хитин
 	-- Архитектора, который «меняет карту навсегда»: навсегда — это до конца забега,
@@ -518,6 +520,7 @@ local function startRun(levelNumber)
 	-- После Tutorial.Start: у обучения свой стартовый запас материи.
 	Matter.Reset(Tutorial.StartMatter())
 	TowerBootstrap.PlaceStartingTower()
+	TowerBootstrap.PlaceStartingReactor()
 
 	for _, player in Players:GetPlayers() do
 		teleportToArena(player)
