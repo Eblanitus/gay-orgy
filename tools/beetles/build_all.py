@@ -18,7 +18,7 @@ for name, fn in SPECIES.items():
     parts = sum(1 for n in model.nodes if n["mesh"] is not None)
     print(f"{name}: {model.tris()} треугольников, {parts} деталей")
 
-# Все виды одним файлом: один Import 3D вместо двадцати шести (prepare_beetles находит виды по имени).
+# Все виды одним файлом: один Import 3D вместо двадцати семи (prepare_beetles находит виды по имени).
 models = []
 for name, fn in SPECIES.items():
     model = fn()

@@ -167,6 +167,9 @@ Remotes:WaitForChild("EnemyFX").OnClientEvent:Connect(function(kind, a, b, c)
 	elseif kind == "shatter" then
 		-- По id трупа точки нет; звучит у камеры, чуть тише.
 		play("Shatter", nil, 0.7)
+	elseif kind == "lob" then
+		-- Кислота Бичехвоста шлёпается на турель в конце полёта (c — время полёта).
+		task.delay(c or 1, play, "Splat", b)
 	end
 end)
 

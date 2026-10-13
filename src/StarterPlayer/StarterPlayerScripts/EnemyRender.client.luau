@@ -18,6 +18,7 @@ local EnemyModel = require(ReplicatedStorage:WaitForChild("EnemyModel"))
 local EnemyGait = require(ReplicatedStorage:WaitForChild("EnemyGait"))
 local CorpseFX = require(ReplicatedStorage:WaitForChild("CorpseFX"))
 local ImpulseFX = require(ReplicatedStorage:WaitForChild("ImpulseFX"))
+local WhiptailFX = require(ReplicatedStorage:WaitForChild("WhiptailFX"))
 
 local EnemyFX = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("EnemyFX")
 
@@ -479,7 +480,7 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 end)
 
--- ============ События сервера (Corpses, Impulse) ============
+-- ============ События сервера (Corpses, Impulse, Бичехвост) ============
 
 EnemyFX.OnClientEvent:Connect(function(kind, a, b, c, d, e)
 	if kind == "death" then
@@ -541,5 +542,9 @@ EnemyFX.OnClientEvent:Connect(function(kind, a, b, c, d, e)
 		ImpulseFX.Blast(a, b, c)
 	elseif kind == "push" then
 		ImpulseFX.Push(a, b)
+	elseif kind == "lob" then
+		WhiptailFX.Lob(a, b, c, d, e)
+	elseif kind == "lash" then
+		WhiptailFX.Lash(a, b, c, d, e)
 	end
 end)

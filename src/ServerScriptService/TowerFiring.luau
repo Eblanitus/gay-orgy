@@ -864,8 +864,11 @@ return function(deps)
 				-- Лицехват присосался (Enemies.Facehugger, см. EnemySpawner.flyToTurret): турель вообще не ищет
 				-- и не бьёт цель, пока висит атрибут Suppressed — его ставит и снимает сам Лицехват.
 				-- Площадных это касается так же: глушится любая турель, а не только стреляющая снарядом.
+				-- Бичехвост сбил турель бичом (StaggerUntil, см. EnemyTraits.whip): на миг молчит,
+				-- как под Лицехватом, но сама — ставить и снимать флаг ему не нужно.
+				local staggered = os.clock() < (tower:GetAttribute("StaggerUntil") or 0)
 				local fired = false
-				if not tower:GetAttribute("Suppressed") then
+				if not tower:GetAttribute("Suppressed") and not staggered then
 					-- Жизнь превращает любую турель в хилер: ни цели, ни снаряда, ни площади.
 					if elementData and elementData.healer then
 						fired = healStructures(tower, towerData, elementData.healer)
@@ -915,6 +918,11 @@ return function(deps)
 					-- элементы стартуют с собственного темпа турели.
 					fireRate = towerData.fireRate
 						* math.min((ramp.base or 1) + ramp.step * rampStreak ^ (ramp.exponent or 1), ramp.max)
+				end
+				-- Залита кислотой Бичехвоста (EnemyTraits.acidLob): стреляет реже, пока не высохнет.
+				local acid = tower:GetAttribute("AcidSlow")
+				if acid and os.clock() < (tower:GetAttribute("AcidUntil") or 0) then
+					fireRate *= 1 - math.clamp(acid, 0, 0.9)
 				end
 				-- Нижняя граница — страховка от опечатки в таблице: fireRateBonus <= −1 дал бы
 				-- ноль или минус, а task.wait от этого завис башню навсегда.

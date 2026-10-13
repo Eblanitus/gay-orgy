@@ -37,6 +37,8 @@ local Sense = require(ServerScriptService:WaitForChild("EnemySense"))
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local DamageDealtRemote = Remotes:WaitForChild("DamageDealt")
 local ExplosionRemote = Remotes:WaitForChild("Explosion")
+-- Кислота и бич Бичехвоста рисует клиент (WhiptailFX через EnemyRender).
+local EnemyFXRemote = Remotes:WaitForChild("EnemyFX")
 
 local alive, flat, naps = Sense.alive, Sense.flat, Sense.naps
 local towersFolder = Sense.towersFolder
@@ -1468,6 +1470,282 @@ TRAITS.carriesMaterial = function(enemy, enemyData, state)
 			else
 				Sense.ClearGoTo(state, "haul")
 			end
+		end
+	end
+end
+
+-- ============================ Бичехвост ============================
+--
+-- Мини-босс солдат: три приёма на три дистанции — кислота издалека, бич со средней,
+-- клешни вплотную. Каждый с замахом стоя (его видно и можно снять в этот миг) и со своей
+-- перезарядкой; после любого приёма — общая пауза abilityGap, чтобы он не сыпал всем
+-- сразу, когда турель подходит под все три. Стан, разгон и перегруппировка приёмы
+-- не начинают.
+
+-- Свободен ли он начать приём.
+local function abilityReady(enemy, state)
+	local now = os.clock()
+	return now >= (state.abilityUntil or 0)
+		and now >= (enemy:GetAttribute("StunnedUntil") or 0)
+		and not (state.holdUntil and now < state.holdUntil)
+		and not state.dash and not state.regrouping
+		and not EnemyTraits.CarriedBy(enemy)
+end
+
+-- Занял себя приёмом на busy секунд плюс общую паузу вида.
+local function abilityTaken(state, enemyData, busy)
+	state.abilityUntil = os.clock() + busy + (enemyData.abilityGap or 0)
+end
+
+-- Ослабленный (атрибут Weakened) бьёт слабее — как его грызня.
+local function weakenedDamage(enemy, damage)
+	local weakened = math.clamp(enemy:GetAttribute("Weakened") or 0, 0, 0.9)
+	return math.max(1, math.floor(damage * (1 - weakened) + 0.5))
+end
+
+local function hitBuilding(building, damage)
+	local hp = building:GetAttribute("HP") or 0
+	building:SetAttribute("HP", math.max(0, hp - damage))
+	DamageDealtRemote:FireAllClients(building:GetPivot().Position, math.min(hp, damage), false)
+end
+
+local function facing(from, to)
+	local direction = flat(to - from)
+	return direction.Magnitude > 1e-3 and direction.Unit or nil
+end
+
+-- Расстояние до постройки — до края её следа, а не до пивота (см. towerDistance выше).
+local function edgeDistance(tower, at)
+	return Grid.DistanceTo(tower, at) or distance(tower:GetPivot().Position, at)
+end
+
+-- Кислота по дуге: турель в range (не ближе minRange), ещё сухая; с залитым элементом —
+-- охотнее (loaded студов «ближе»): она стреляет по-настоящему. Стены сквозь дугу не мешают.
+local function lobTarget(enemy, plan)
+	local at = enemy:GetPivot().Position
+	local now = os.clock()
+	local best, bestScore = nil, math.huge
+	for _, tower in towersFolder:GetChildren() do
+		if Sense.isTurret(tower) then
+			local d = edgeDistance(tower, at)
+			local wet = now < (tower:GetAttribute("AcidUntil") or 0) - plan.refresh
+			if d <= plan.range and d >= plan.minRange and not wet then
+				local score = d - (tower:GetAttribute("Element") and plan.loaded or 0)
+				if score < bestScore then
+					best, bestScore = tower, score
+				end
+			end
+		end
+	end
+	return best
+end
+
+local function topOf(model)
+	local cf, size = model:GetBoundingBox()
+	return cf.Position + Vector3.new(0, size.Y / 2, 0)
+end
+
+TRAITS.acidLob = function(enemy, enemyData, state)
+	local plan = enemyData.acidLob
+	local ready = os.clock() + plan.interval * 0.5
+
+	while alive(enemy) do
+		if not naps(enemy, 0.3) then
+			return
+		end
+		if os.clock() >= ready and abilityReady(enemy, state) then
+			local target = lobTarget(enemy, plan)
+			if target then
+				-- Целится стоя: разворачивается к турели, хвост с кислотой уже над спиной.
+				abilityTaken(state, enemyData, plan.aim)
+				state.holdUntil = os.clock() + plan.aim
+				state.face = facing(enemy:GetPivot().Position, target:GetPivot().Position)
+				if not naps(enemy, plan.aim) then
+					return
+				end
+				state.face = nil
+				ready = os.clock() + plan.interval
+
+				if target.Parent then
+					local from = enemy:GetPivot().Position + Vector3.new(0, EnemyBody.HalfHeight(enemy) * 2, 0)
+					local to = topOf(target)
+					EnemyFXRemote:FireAllClients("lob", from, to, plan.flight, plan.arc, plan.duration)
+					local damage = weakenedDamage(enemy, plan.damage)
+					task.delay(plan.flight, function()
+						if not target.Parent then
+							return
+						end
+						local untilTime = os.clock() + plan.duration
+						target:SetAttribute("AcidUntil", untilTime)
+						target:SetAttribute("AcidSlow", plan.slow)
+						hitBuilding(target, damage)
+						print(("[Бичехвост] залил %s кислотой: темп −%d%% на %.0f сек")
+							:format(target.Name, plan.slow * 100, plan.duration))
+						-- Снимается, только если за это время его не залили снова.
+						task.delay(plan.duration, function()
+							if target.Parent and (target:GetAttribute("AcidUntil") or 0) <= untilTime then
+								target:SetAttribute("AcidSlow", nil)
+								target:SetAttribute("AcidUntil", nil)
+							end
+						end)
+					end)
+				end
+			end
+		end
+	end
+end
+
+-- Куда бить бичом: своя турель, ближняя турель, игрок или стол — что в пределах бича
+-- от морды. Возвращает направление (бьёт по прямой, а не в точку).
+local function lashAim(enemy, plan, state)
+	local at = enemy:GetPivot().Position
+	local reach = bodyReach(enemy) + plan.length
+
+	local focus = state.focusTurret
+	if focus and focus.Parent and edgeDistance(focus, at) <= reach then
+		return facing(at, focus:GetPivot().Position)
+	end
+	local turret, d = Sense.nearestTurret(at)
+	if turret and d <= reach then
+		return facing(at, turret:GetPivot().Position)
+	end
+	for _, player in Players:GetPlayers() do
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if root and distance(root.Position, at) <= reach then
+			return facing(at, root.Position)
+		end
+	end
+	if LabTable.IsAlive() and LabTable.DistanceTo(at) <= reach then
+		return facing(at, LabTable.Position())
+	end
+	return nil
+end
+
+-- Удар по прямой: всё, что стоит на полосе шириной width от морды до конца бича, получает
+-- damage один раз; турели сбиты на stagger секунд. Стол на полосе — тоже. Игрока отбрасывает
+-- его клиент (WhiptailFX): персонажем владеет он, и толчок с сервера дошёл бы рывком.
+local function lash(enemy, enemyData, plan, direction)
+	local at = enemy:GetPivot().Position
+	local start = at + direction * bodyReach(enemy) * 0.6
+	local finish = at + direction * (bodyReach(enemy) + plan.length)
+	local half = plan.width / 2
+	local damage = weakenedDamage(enemy, plan.damage)
+	local samples = {}
+	local step = Grid.CellSize / 2
+	local length = flat(finish - start).Magnitude
+	for i = 0, math.ceil(length / step) do
+		table.insert(samples, start + direction * math.min(i * step, length))
+	end
+
+	local hits = 0
+	local now = os.clock()
+	for _, tower in towersFolder:GetChildren() do
+		for _, point in samples do
+			if edgeDistance(tower, point) <= half then
+				hitBuilding(tower, damage)
+				if Sense.isTurret(tower) then
+					tower:SetAttribute("StaggerUntil", now + plan.stagger)
+				end
+				hits += 1
+				break
+			end
+		end
+	end
+	if LabTable.IsAlive() then
+		for _, point in samples do
+			if LabTable.DistanceTo(point) <= half then
+				LabTable.Bite(damage)
+				hits += 1
+				break
+			end
+		end
+	end
+
+	local lift = EnemyBody.HalfHeight(enemy) * 2
+	-- Конец бича — на полу: клиент кладёт по нему след удара.
+	EnemyFXRemote:FireAllClients("lash", start + Vector3.new(0, lift, 0), Sense.onFloor(finish), plan.width,
+		plan.push, plan.lift)
+	print(("[Бичехвост] бич: %d урона по %d целям"):format(damage, hits))
+end
+
+TRAITS.whip = function(enemy, enemyData, state)
+	local plan = enemyData.whip
+	local ready = os.clock() + plan.cooldown * 0.5
+
+	while alive(enemy) do
+		if not naps(enemy, 0.25) then
+			return
+		end
+		if os.clock() >= ready and abilityReady(enemy, state) then
+			local direction = lashAim(enemy, plan, state)
+			if direction then
+				-- Замах: стоит, разворачивается, бич заносится над спиной.
+				abilityTaken(state, enemyData, plan.windup)
+				state.holdUntil = os.clock() + plan.windup
+				state.face = direction
+				if not naps(enemy, plan.windup) then
+					return
+				end
+				state.face = nil
+				-- Направление зафиксировано на замахе: отошёл за это время — увернулся.
+				lash(enemy, enemyData, plan, direction)
+				ready = os.clock() + plan.cooldown
+			end
+		end
+	end
+end
+
+-- Что рвать клешнями: то, что он грызёт (постройку игрока), свою турель или ближнюю
+-- в досягаемости, иначе стол, если стоит вплотную.
+local function clawTarget(enemy, plan, state)
+	local at = enemy:GetPivot().Position
+	local reach = bodyReach(enemy) + plan.reach
+	local chewed = Sense.chewing[enemy]
+	if chewed and chewed.Parent == towersFolder then
+		return chewed
+	end
+	local focus = state.focusTurret
+	if focus and focus.Parent and edgeDistance(focus, at) <= reach then
+		return focus
+	end
+	local turret, d = Sense.nearestTurret(at)
+	if turret and d <= reach then
+		return turret
+	end
+	if LabTable.IsAlive() and LabTable.BodyGap(enemy, at) <= LabTable.BITE_GAP + plan.reach then
+		return "table"
+	end
+	return nil
+end
+
+TRAITS.pincers = function(enemy, enemyData, state)
+	local plan = enemyData.pincers
+	local ready = os.clock() + plan.cooldown * 0.5
+
+	while alive(enemy) do
+		if not naps(enemy, 0.2) then
+			return
+		end
+		if os.clock() >= ready and abilityReady(enemy, state) and clawTarget(enemy, plan, state) then
+			abilityTaken(state, enemyData, plan.windup)
+			state.holdUntil = os.clock() + plan.windup
+			if not naps(enemy, plan.windup) then
+				return
+			end
+			-- Цель могла уйти за время замаха — бьёт то, что перед ним сейчас.
+			local target = clawTarget(enemy, plan, state)
+			if target then
+				local damage = weakenedDamage(enemy, plan.damage)
+				-- Клиенту: тот же бросок корпуса, что у укуса (EnemyGait «Грызня»).
+				enemy:SetAttribute("Bite", (enemy:GetAttribute("Bite") or 0) + 1)
+				if target == "table" then
+					LabTable.Bite(damage)
+				else
+					hitBuilding(target, damage)
+				end
+				print(("[Бичехвост] клешни: %d по %s"):format(damage, target == "table" and "столу" or target.Name))
+			end
+			ready = os.clock() + plan.cooldown
 		end
 	end
 end

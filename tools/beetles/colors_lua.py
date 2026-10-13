@@ -21,6 +21,7 @@ TEMPLATES = {"standard_beetle": "NormalBeetleTemplate", "mini_beetle": "MiniBeet
              "sprinter": "SprinterTemplate",
              "giant": "GiantTemplate",
              "knitter": "KnitterTemplate",
+             "whiptail": "WhiptailTemplate",
              "facehugger": "FacehuggerTemplate",
              "absorber": "AbsorberTemplate",
              "evolver": "EvolverTemplate",

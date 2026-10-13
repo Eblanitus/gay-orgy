@@ -18,7 +18,7 @@ ENEMY = {"standard_beetle": (0, None, 0), "worker_beetle": (1, None, 0), "mini_b
          "pelican_beetle": (1, None, 0.15),
          "acid_spitter": (1, None, 0), "medic": (1, None, 0.4), "queen": (1, None, -0.2), "larva": (1, "bone", 0),
          "bomber": (2, None, 0), "shield_bearer": (2, None, -0.3), "coordinator": (2, None, 0.15),
-         "ram": (2, None, -0.5), "sprinter": (2, None, 0.6), "giant": (2, None, -1), "knitter": (2, None, 0.1),
+         "ram": (2, None, -0.5), "sprinter": (2, None, 0.6), "giant": (2, None, -1), "knitter": (2, None, 0.1), "whiptail": (2, None, -0.25),
          "facehugger": (3, None, 0.45), "absorber": (3, None, 0), "evolver": (3, None, 0), "carrier": (3, None, -0.4),
          "puppeteer": (3, None, 0.2), "hive_architect": (3, None, -0.3), "mimic": (3, "bone", -0.6),
          "shadow": (3, "tar", 0)}
@@ -44,10 +44,10 @@ def lin(c):
 
 HUE = {"moth": 26, "worker_beetle": 10, "mini_beetle": -12, "hmuryi_bron": 110, "builder_beetle": -8, "pelican_beetle": 8, "acid_spitter": 14,
        "medic": -28, "queen": -6, "bomber": 8, "shield_bearer": -6, "coordinator": -30, "ram": -10, "sprinter": 12,
-       "giant": -3, "knitter": -14, "facehugger": 18, "absorber": 32, "evolver": -10, "carrier": 8, "puppeteer": 22,
+       "giant": -3, "knitter": -14, "whiptail": 12, "facehugger": 18, "absorber": 32, "evolver": -10, "carrier": 8, "puppeteer": 22,
        "hive_architect": -8}
 VAL = {"giant": 0.7}
-SAT = {"moth": 1.8, "giant": 0.6, "bomber": 1.35, "facehugger": 0.6}
+SAT = {"moth": 1.8, "giant": 0.6, "whiptail": 1.1, "bomber": 1.35, "facehugger": 0.6}
 
 
 def palette(src):

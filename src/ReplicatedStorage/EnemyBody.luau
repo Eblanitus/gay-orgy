@@ -65,7 +65,7 @@ end
 -- (front/back) по локальной оси Z модели (голова шаблона смотрит в +Z). Нужна толкучке
 -- (Crowd): шар по ширине пускал голову соседа внутрь брюшка, шар по длине разводил бы
 -- жуков боком на всю длину. Меряются все видимые детали, кроме ног и усиков: они тонкие,
--- переступают и в непроницаемость не входят. Считается один раз и кладётся в атрибуты.
+-- переступают и в непроницаемость не входят (и бич Бичехвоста). Считается один раз и кладётся в атрибуты.
 function EnemyBody.Footprint(model)
 	local cached = model:GetAttribute("FootRadius")
 	if cached then
@@ -81,7 +81,9 @@ function EnemyBody.Footprint(model)
 			local node = part
 			while node and node ~= model do
 				local name = string.lower(node.Name)
-				if string.find(name, "^leg") or string.find(name, "^antenna") then
+				-- Бич Бичехвоста — тонкий хвост дугой над спиной, как ус: не тело.
+				if string.find(name, "^leg") or string.find(name, "^antenna") or string.find(name, "^whip_lash")
+					or string.find(name, "^whip_node") then
 					limb = true
 					break
 				end

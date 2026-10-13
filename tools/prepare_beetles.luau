@@ -1,4 +1,4 @@
--- Шаблоны жуков из .glb: все 26 видов (список — SPECS ниже, файлы — «Модели/Жуки»).
+-- Шаблоны жуков из .glb: все 27 видов (список — SPECS ниже, файлы — «Модели/Жуки»).
 -- Сами .glb собирает tools/beetles/build_all.py (python3, numpy) — правка формы там, не в Blender.
 --
 -- Порядок:
@@ -72,6 +72,8 @@ local SPECS = {
 	{ source = "sprinter", template = "SprinterTemplate", length = 3.13 },
 	{ source = "giant", template = "GiantTemplate", length = 3.53 },
 	{ source = "knitter", template = "KnitterTemplate", length = 2.97 },
+	-- Бичехвост: клешни сидят на голове и ходят вместе с ней.
+	{ source = "whiptail", template = "WhiptailTemplate", length = 3.02, head = { "^pincer_" } },
 	{ source = "facehugger", template = "FacehuggerTemplate", length = 1.82, flap = { freq = 6, angle = 25 } },
 	{ source = "absorber", template = "AbsorberTemplate", length = 3.72 },
 	{ source = "evolver", template = "EvolverTemplate", length = 2.92 },
@@ -238,6 +240,17 @@ local COLORS = {
 		{ 0.36, 0.05, 0.06, "knit_flesh" },
 		{ 0.62, 0.24, 0.22, "knit_strand" },
 		{ 0.07, 0.018, 0.012, "knit_scab" },
+	},
+	WhiptailTemplate = {
+		{ 0.1, 0.037, 0.015, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "AntSeg", "AntNode" },
+		{ 0.035, 0.016, 0.008, "Femur", "KneeJoint", "Tibia", "AnkleJoint", "Tarsus" },
+		{ 0.01, 0.01, 0.012, "EyeLeft", "EyeRight" },
+		{ 0.11, 0.035, 0.014, "pincer_arm" },
+		{ 0.03, 0.012, 0.006, "pincer_tip" },
+		{ 0.2, 0.075, 0.03, "BeetlePlate_tergite" },
+		{ 0.075, 0.03, 0.015, "whip_lash", "whip_node" },
+		{ 0.42, 0.62, 0.06, "whip_gland" },
+		{ 0.55, 0.85, 0.08, "whip_drip", neon = true },
 	},
 	FacehuggerTemplate = {
 		{ 0.3, 0.26, 0.18, "BeetleBodyInner", "ThoraxCore", "ROOT", "HeadBase", "BeetleSternite_tail" },
