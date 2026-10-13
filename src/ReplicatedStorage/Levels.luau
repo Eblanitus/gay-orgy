@@ -23,7 +23,7 @@ local TutorialWaves = require(script.Parent:WaitForChild("TutorialWaves"))
 local Levels = {
 	[1] = { number = 1, name = "Обучение", waves = TutorialWaves, map = "Arena", tutorial = true },
 	[2] = { number = 2, name = "Бункер", waves = Waves, map = "Arena",
-		rules = { towers = { Ballista = true, Bioreactor = true }, maxTier = 1, roulette = false, upgrader = false },
+		rules = { towers = { Ballista = true, Bioreactor = true, CarrierStation = true }, maxTier = 1, roulette = false, upgrader = false },
 		-- Волна одна — поток (Waves.stream): кнопка «Открыть дверь» и жуки до конца.
 		buildDuringWave = true,
 		moths = { fromWave = 1, after = 125, gap = { 15, 40 }, life = 90 } },

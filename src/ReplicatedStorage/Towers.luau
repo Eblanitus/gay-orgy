@@ -434,6 +434,19 @@ local Towers = {
 		footprint = 4,
 		footprintShape = "square",
 	},
+
+	-- Станция носильщиков (по вики): добавляет Биореактору дронов, которые возят трупы
+	-- одновременно. Без реактора на поле ничего не даёт. Не стреляет, элемент не принимает.
+	-- carriers — сколько дронов прибавляет каждая станция (Carriers).
+	CarrierStation = {
+		name = "Станция носильщиков",
+		cost = 25,
+		hp = 120,
+		carriers = 2,
+		footprint = 4,
+		footprintShape = "square",
+		climbHeight = 1.6, -- низкий гараж (заглушка EconomyModels высотой 1.5): жуки его перелезают
+	},
 }
 
 return Towers
