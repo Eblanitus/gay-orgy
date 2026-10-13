@@ -212,6 +212,119 @@ Arena.table = Vector3.zero
 -- смотрел только на его центральную клетку, и турель вставала в край столешницы.
 Arena.tableHalf = Vector3.zero
 
+-- Служебные полосы у стен. За краем пола 1–6 студов до стен и мебели лаборатории — тёмная
+-- плитка, которую игрок видит полом, но в сетку она не входит. Турель, которой не хватает пола
+-- вплотную к стене, раньше упиралась в границу сетки. Теперь след постройки может заходить за край
+-- пола на полосу — до ближней преграды (стена, шкаф, мебель), за вычетом OVERHANG_GAP, и не больше
+-- OVERHANG_MAX. Где преграды нет рядом (проём двери, пустой участок) — запас нулевой, как раньше.
+--
+-- Запас меряет сервер один раз на локацию по габаритам деталей (их коробкам в мировых осях),
+-- полосами по OVERHANG_STEP вдоль каждого края, и кладёт строкой в атрибут Location — клиенту
+-- нужны те же числа для рамки, а деталей у него может ещё не быть. Arena.overhang[сторона] —
+-- запас в студах по номеру полосы.
+local OVERHANG_STEP = 2 -- studs: ширина полосы вдоль края пола
+local OVERHANG_SEEK = 16 -- studs за краем пола, где ещё ищется преграда
+local OVERHANG_INSET = 1 -- studs: грань может заходить на пол на столько (стена ровно по краю)
+local OVERHANG_CEILING = 10 -- studs над полом: всё, что ниже, мешает постройке (шкаф, стена, стеллаж)
+local OVERHANG_GAP = 0.5 -- studs: зазор между следом и преградой
+local OVERHANG_MAX = 6 -- studs: больше ширины полосы постройка не выступает
+local OVERHANG_FOLDERS = { "Walls", "Lab", "Service", "Corridor", "ElementProducer", "ReferenceBoard" }
+local OVERHANG_SIDES = { "minX", "maxX", "minZ", "maxZ" }
+local OVERHANG_ATTRIBUTE = { minX = "OverhangMinX", maxX = "OverhangMaxX", minZ = "OverhangMinZ", maxZ = "OverhangMaxZ" }
+
+Arena.overhang = { minX = {}, maxX = {}, minZ = {}, maxZ = {} }
+
+-- Сервер: запас по полосам каждого края пола [fMinX..fMaxX] x [fMinZ..fMaxZ] с верхом floorY,
+-- строкой «через запятую» на сторону (номер полосы с нуля — по порядку).
+local function measureOverhang(fMinX, fMaxX, fMinZ, fMaxZ, floorY)
+	local faces = { minX = {}, maxX = {}, minZ = {}, maxZ = {} }
+	local function mark(side, face, lo, hi, closer)
+		local minA = if side == "minX" or side == "maxX" then fMinZ else fMinX
+		local maxA = if side == "minX" or side == "maxX" then fMaxZ else fMaxX
+		local limits = faces[side]
+		for band = math.floor((math.max(lo, minA) - minA) / OVERHANG_STEP),
+			math.floor((math.min(hi, maxA) - minA) / OVERHANG_STEP) do
+			local current = limits[band]
+			if current == nil or closer(face, current) then
+				limits[band] = face
+			end
+		end
+	end
+	local function less(a, b)
+		return a < b
+	end
+	local function more(a, b)
+		return a > b
+	end
+
+	for _, name in OVERHANG_FOLDERS do
+		local folder = location:FindFirstChild(name)
+		if folder then
+			for _, part in folder:GetDescendants() do
+				if part:IsA("BasePart") and part.Transparency < 1 then
+					local cf, half = part.CFrame, part.Size / 2
+					local function axis(v)
+						return math.abs(cf.RightVector:Dot(v)) * half.X + math.abs(cf.UpVector:Dot(v)) * half.Y
+							+ math.abs(cf.LookVector:Dot(v)) * half.Z
+					end
+					local c = cf.Position
+					local hx, hy, hz = axis(Vector3.xAxis), axis(Vector3.yAxis), axis(Vector3.zAxis)
+					-- Не плитка пола (верх ниже подошвы) и не потолок над постройкой.
+					if c.Y + hy > floorY + 0.3 and c.Y - hy < floorY + OVERHANG_CEILING then
+						local minX, maxX, minZ, maxZ = c.X - hx, c.X + hx, c.Z - hz, c.Z + hz
+						if minX >= fMaxX - OVERHANG_INSET and minX <= fMaxX + OVERHANG_SEEK then
+							mark("maxX", minX, minZ, maxZ, less)
+						end
+						if maxX <= fMinX + OVERHANG_INSET and maxX >= fMinX - OVERHANG_SEEK then
+							mark("minX", maxX, minZ, maxZ, more)
+						end
+						if minZ >= fMaxZ - OVERHANG_INSET and minZ <= fMaxZ + OVERHANG_SEEK then
+							mark("maxZ", minZ, minX, maxX, less)
+						end
+						if maxZ <= fMinZ + OVERHANG_INSET and maxZ >= fMinZ - OVERHANG_SEEK then
+							mark("minZ", maxZ, minX, maxX, more)
+						end
+					end
+				end
+			end
+		end
+	end
+
+	local edge = { minX = fMinX, maxX = fMaxX, minZ = fMinZ, maxZ = fMaxZ }
+	local bands = {
+		minX = math.floor((fMaxZ - fMinZ) / OVERHANG_STEP), maxX = math.floor((fMaxZ - fMinZ) / OVERHANG_STEP),
+		minZ = math.floor((fMaxX - fMinX) / OVERHANG_STEP), maxZ = math.floor((fMaxX - fMinX) / OVERHANG_STEP),
+	}
+	for _, side in OVERHANG_SIDES do
+		local values = {}
+		for band = 0, bands[side] do
+			local face = faces[side][band]
+			local slack = 0
+			if face then
+				local depth = if side == "minX" or side == "minZ" then edge[side] - face else face - edge[side]
+				slack = math.clamp(depth - OVERHANG_GAP, 0, OVERHANG_MAX)
+			end
+			table.insert(values, string.format("%.2f", slack))
+		end
+		location:SetAttribute(OVERHANG_ATTRIBUTE[side], table.concat(values, ","))
+	end
+end
+
+local function readOverhang()
+	for _, side in OVERHANG_SIDES do
+		local values = {}
+		local text = location:GetAttribute(OVERHANG_ATTRIBUTE[side])
+		if typeof(text) == "string" and text ~= "" then
+			local band = 0
+			for number in string.gmatch(text, "[^,]+") do
+				values[band] = tonumber(number) or 0
+				band += 1
+			end
+		end
+		Arena.overhang[side] = values
+	end
+end
+
 -- Габарит модели в мировых осях: стол может стоять повёрнутым.
 local function worldHalf(model)
 	local cf, size = model:GetBoundingBox()
@@ -312,9 +425,15 @@ local function bind()
 		require(game:GetService("ServerScriptService"):WaitForChild("CraftTableModel")).Apply(craftTable)
 		location:SetAttribute("Table",craftTable:GetPivot().Position)
 		location:SetAttribute("TableHalf", worldHalf(craftTable))
+		measureOverhang(
+			floor.Position.X - floor.Size.X / 2, floor.Position.X + floor.Size.X / 2,
+			floor.Position.Z - floor.Size.Z / 2, floor.Position.Z + floor.Size.Z / 2,
+			floor.Position.Y + floor.Size.Y / 2)
 	else
 		while location:GetAttribute("FloorSize") == nil or location:GetAttribute("Exit") == nil
-			or location:GetAttribute("Table") == nil or location:GetAttribute("TableHalf") == nil do
+			or location:GetAttribute("Table") == nil or location:GetAttribute("TableHalf") == nil
+			or location:GetAttribute("OverhangMinX") == nil or location:GetAttribute("OverhangMaxX") == nil
+			or location:GetAttribute("OverhangMinZ") == nil or location:GetAttribute("OverhangMaxZ") == nil do
 			location.AttributeChanged:Wait()
 		end
 	end
@@ -342,6 +461,7 @@ local function bind()
 	} or nil
 	Arena.table = location:GetAttribute("Table")
 	Arena.tableHalf = location:GetAttribute("TableHalf")
+	readOverhang()
 
 	if IS_SERVER then
 		checkWalls(floorSize)
@@ -414,6 +534,62 @@ function Arena.FitsBuilding(cx, cz, reach)
 		and cz - reach >= 1 and cz + reach <= Arena.rows
 end
 
+-- Запас выступания за край пола (студы) вдоль отрезка [lo, hi] стороны side — самое строгое
+-- значение по полосам, которые отрезок накрывает. Пол вне отрезка не считается.
+local function overhangAlong(side, lo, hi)
+	local alongX = side == "minZ" or side == "maxZ"
+	local minA = if alongX then minX else minZ
+	local maxA = minA + (if alongX then Arena.cols else Arena.rows) * CELL
+	local values = Arena.overhang[side]
+	local best = math.huge
+	for band = math.floor((math.max(lo, minA) - minA) / OVERHANG_STEP),
+		math.floor((math.min(hi, maxA) - minA) / OVERHANG_STEP) do
+		best = math.min(best, values[band] or 0)
+	end
+	return if best == math.huge then 0 else best
+end
+
+-- Границы следа постройки в мире: x0..x1, z0..z1 (края клеток).
+local function footprintBox(cx, cz, reach)
+	return minX + (cx - 1 - reach) * CELL, minX + (cx + reach) * CELL,
+		minZ + (cz - 1 - reach) * CELL, minZ + (cz + reach) * CELL
+end
+
+local OVERHANG_EPS = 1e-3
+
+-- То же, что FitsBuilding, но для башни: след может выступать за край пола на служебную
+-- полосу в пределах запаса (см. OVERHANG_*), центральная клетка остаётся на поле. За два
+-- края сразу (в углу) — нет: угол полосы не измерен, там мебель сходится с двух сторон.
+-- Стену, барьер и статую это не касается — у них остаётся FitsBuilding.
+function Arena.FitsTower(cx, cz, reach)
+	reach = reach or Arena.reach
+	if not Arena.InBounds(cx, cz) then
+		return false
+	end
+	local x0, x1, z0, z1 = footprintBox(cx, cz, reach)
+	local gx1, gz1 = minX + Arena.cols * CELL, minZ + Arena.rows * CELL
+	local overMinX, overMaxX = minX - x0, x1 - gx1
+	local overMinZ, overMaxZ = minZ - z0, z1 - gz1
+	local overX = math.max(overMinX, overMaxX)
+	local overZ = math.max(overMinZ, overMaxZ)
+	if overX > OVERHANG_EPS and overZ > OVERHANG_EPS then
+		return false
+	end
+	if overMinX > OVERHANG_EPS and overMinX > overhangAlong("minX", z0, z1) + OVERHANG_EPS then
+		return false
+	end
+	if overMaxX > OVERHANG_EPS and overMaxX > overhangAlong("maxX", z0, z1) + OVERHANG_EPS then
+		return false
+	end
+	if overMinZ > OVERHANG_EPS and overMinZ > overhangAlong("minZ", x0, x1) + OVERHANG_EPS then
+		return false
+	end
+	if overMaxZ > OVERHANG_EPS and overMaxZ > overhangAlong("maxZ", x0, x1) + OVERHANG_EPS then
+		return false
+	end
+	return true
+end
+
 -- Ближайшая клетка, в которой след помещается целиком. Клиент двигает подсветку по ней,
 -- чтобы у края поля рамка показывала ту клетку, куда постройка реально встанет,
 -- а не ту, в которой курсор.
@@ -421,6 +597,47 @@ function Arena.ClampBuildCell(cx, cz, reach)
 	reach = reach or Arena.reach
 	return math.clamp(cx, 1 + reach, Arena.cols - reach),
 		math.clamp(cz, 1 + reach, Arena.rows - reach)
+end
+
+-- ClampBuildCell для башни: край следа может уйти за край пола на запас полосы (FitsTower).
+-- Клетка двигается по каждой оси отдельно; если курсор тянет за оба края (угол), ослабляется
+-- только та ось, где сдвиг больше, — вторая остаётся строгой.
+function Arena.ClampTowerCell(cx, cz, reach)
+	reach = reach or Arena.reach
+	local strictX, strictZ = Arena.ClampBuildCell(cx, cz, reach)
+
+	local function loosen(c, cols, sideMin, sideMax, otherStrict, alongX)
+		local a0, a1
+		if alongX then
+			-- стороны X; вдоль Z идёт отрезок следа с центром otherStrict
+			a0 = minZ + (otherStrict - 1 - reach) * CELL
+			a1 = minZ + (otherStrict + reach) * CELL
+		else
+			a0 = minX + (otherStrict - 1 - reach) * CELL
+			a1 = minX + (otherStrict + reach) * CELL
+		end
+		local cellsMin = math.min(reach, math.floor(overhangAlong(sideMin, a0, a1) / CELL + OVERHANG_EPS))
+		local cellsMax = math.min(reach, math.floor(overhangAlong(sideMax, a0, a1) / CELL + OVERHANG_EPS))
+		return math.clamp(c, math.max(1, 1 + reach - cellsMin), math.min(cols, cols - reach + cellsMax))
+	end
+
+	local looseX = loosen(cx, Arena.cols, "minX", "maxX", strictZ, true)
+	local looseZ = loosen(cz, Arena.rows, "minZ", "maxZ", strictX, false)
+	local fx, fz = strictX, strictZ
+	local gainX, gainZ = math.abs(looseX - strictX), math.abs(looseZ - strictZ)
+	if gainX > 0 and gainZ > 0 then
+		if gainX >= gainZ then
+			fx = looseX
+		else
+			fz = looseZ
+		end
+	else
+		fx, fz = looseX, looseZ
+	end
+	if Arena.FitsTower(fx, fz, reach) then
+		return fx, fz
+	end
+	return strictX, strictZ
 end
 
 return Arena

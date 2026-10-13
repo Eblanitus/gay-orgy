@@ -303,10 +303,10 @@ function TowerBuilder.Build(cx, cz, towerType, turn)
 		return false, "во время волны строить нельзя"
 	end
 
-	-- Не InBounds, а FitsBuilding: постройка крупнее клетки, и у самого края поля клетка
-	-- свободна, а след уже свисает за край.
+	-- Не InBounds, а FitsTower: постройка крупнее клетки, и у самого края поля клетка
+	-- свободна, а след уже свисает за край. На служебную полосу у стены свисать можно (Arena).
 	local reach = reachOf(towerType)
-	if not Grid.FitsBuilding(cx, cz, reach) then
+	if not Grid.FitsTower(cx, cz, reach) then
 		return false, "постройка сюда не помещается"
 	end
 	if Grid.IsEntranceCell(cx, cz, reach) then
@@ -319,7 +319,7 @@ function TowerBuilder.Build(cx, cz, towerType, turn)
 	if Grid.IsTableCell(cx, cz, reach) then
 		return false, "на столе строить нельзя"
 	end
-	if not Grid.IsFree(cx, cz, reach) then
+	if not Grid.IsFree(cx, cz, reach, true) then
 		return false, "клетка занята"
 	end
 	if not Matter.Spend(towerData.cost) then

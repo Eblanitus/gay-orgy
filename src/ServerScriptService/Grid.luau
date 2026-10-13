@@ -51,6 +51,7 @@ Grid.InBounds = Arena.InBounds
 Grid.ToWorld = Arena.ToWorld
 Grid.ToCell = Arena.ToCell
 Grid.FitsBuilding = Arena.FitsBuilding
+Grid.FitsTower = Arena.FitsTower
 Grid.ClampBuildCell = Arena.ClampBuildCell
 -- Радиус следа по фактическому размеру постройки в студах (Towers[key].footprint).
 Grid.ReachFor = Arena.ReachFor
@@ -262,9 +263,11 @@ end
 -- в 10.2 — и вторая Колба спокойно вставала внутрь первой. Встречное направление
 -- проверять не надо: каждая уже стоящая постройка записала в occupants весь свой след,
 -- поэтому пересечение ловится с любой стороны.
-function Grid.IsFree(cx, cz, reach)
+-- overhang — след башни может выступать за край пола на служебную полосу (Arena.FitsTower).
+function Grid.IsFree(cx, cz, reach, overhang)
 	reach = reach or REACH
-	if not Arena.FitsBuilding(cx, cz, reach) then
+	local fits = if overhang then Arena.FitsTower else Arena.FitsBuilding
+	if not fits(cx, cz, reach) then
 		return false
 	end
 
