@@ -204,6 +204,9 @@ return function(deps)
 		end
 	end
 
+	-- Запас над пределом хода ствола при выборе цели по высоте, рад (см. fireProjectile).
+	local PITCH_REACH_SLACK = math.rad(3)
+
 	-- Ограничения самой турели для Targeting — слепая зона, земля/воздух и радиус кучи.
 	-- Одно место на все три режима стрельбы, чтобы они не разошлись в том, по кому турель бьёт.
 	local function aimFilter(towerData, tower)
@@ -258,6 +261,17 @@ return function(deps)
 			filter.turnAccel = towerData.turnAccel
 			filter.projectileSpeed = towerData.projectileSpeed
 			filter.current = aimState.target -- кого турель ведёт: без этого она мечется по толпе
+
+			-- Потолок хода ствола по вертикали (Колба): цель выше него турель не выбирает вовсе.
+			-- Иначе ствол упирался бы в предел и смотрел ниже цели, а снаряд шёл бы к ней
+			-- под своим углом — то самое расхождение дула и выстрела. Потолок — абсолютный угол
+			-- места: предел хода от покоя (gun.pitchMax) плюс сам угол покоя ствола. Запас
+			-- PITCH_REACH_SLACK — на допуск наводки: цель на волос выше предела ствол ещё берёт.
+			local gun = towerData.gun
+			if gun then
+				filter.pitchOrigin = (tower:GetPivot() * CFrame.new(0, geometry.height, 0)).Position
+				filter.maxPitch = math.rad(gun.restPitch + gun.pitchMax) + PITCH_REACH_SLACK
+			end
 		end
 
 		local target, distance = Targeting.FindTarget(towerPosition, towerData.range,

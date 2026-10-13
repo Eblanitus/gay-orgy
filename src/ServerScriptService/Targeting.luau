@@ -10,7 +10,9 @@
 --   groupRadius  — радиус кучи для strongestGroup (у Мортиры это радиус взрыва);
 --   facing / turnSpeed / turnAccel / projectileSpeed / current (задача #70) — куда сейчас
 --                  смотрит ствол, как быстро он доворачивается, как быстро летит снаряд и кого
---                  турель ведёт сейчас. Нужно только closestReachable.
+--                  турель ведёт сейчас. Нужно только closestReachable;
+--   pitchOrigin / maxPitch — откуда считается угол места и потолок хода ствола вверх (рад):
+--                  жук выше потолка целью не бывает (Колба: ствол выше не поднять).
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local Workspace = game:GetService("Workspace")
@@ -211,6 +213,13 @@ local function enemiesInRange(towerPosition, range, enemiesFolder, filter)
 					-- В секторе — хоть краем тела.
 					inArc = anyPoint(enemy, position, inArcAt, towerPosition, arcCenter, arc)
 				end
+				-- Потолок хода ствола (Колба): жук выше него не цель — ствол туда не поднять.
+				-- Угол места — на пивот жука, туда же целится и ствол (см. TowerFiring).
+				if inArc and filter and filter.maxPitch and filter.pitchOrigin
+					and Aiming.PitchTo(filter.pitchOrigin, position) > filter.maxPitch then
+					inArc = false
+				end
+
 				-- Тень: «турели реагируют с задержкой... Пока турель определила цель — он уже
 				-- прошёл». Задержка у КАЖДОЙ турели своя: вторая турель на пути заново тратит
 				-- время, чтобы его распознать. Ушёл из её поля дольше чем на ShadowForget —
