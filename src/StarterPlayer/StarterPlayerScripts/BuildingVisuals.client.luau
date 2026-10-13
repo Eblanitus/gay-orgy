@@ -12,6 +12,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local towersFolder = Workspace:WaitForChild("Towers")
 local Towers = require(ReplicatedStorage:WaitForChild("Towers"))
+local GraphicsPresets = require(ReplicatedStorage:WaitForChild("GraphicsPresets"))
+local CollectionService = game:GetService("CollectionService")
 -- Доворот башни считается той же формулой, что и на сервере (задача #70).
 local Aiming = require(ReplicatedStorage:WaitForChild("Aiming"))
 -- Цвета полоски HP — из общей палитры интерфейса.
@@ -47,11 +49,13 @@ end
 -- Тени мелочи. Каждую движущуюся деталь с тенью движок пересчитывает в карте теней
 -- каждый кадр (свет и тени ~8 мс в бою). У мелких деталей (болты, катушки, лопасти,
 -- звенья ленты) тень на полу почти не читается, у крупных (ствол, корпус) — остаётся.
--- Мелкая — меньше SHADOW_SMALL от габарита постройки. Только у этого клиента.
+-- Мелкая — меньше SHADOW_SMALL от габарита постройки. Деталь получает метку
+-- GraphicsPresets.SMALL_SHADOW_TAG, тень по уровню графики ставит Graphics.client (на
+-- «Ультра» тени все). Метка только у этого клиента.
 local SHADOW_SMALL = 0.1
 local shadowLimit = setmetatable({}, { __mode = "k" })
 
-local function dropSmallShadow(building, part)
+local function markSmallShadow(building, part)
 	local limit = shadowLimit[building]
 	if not limit then
 		local size = building:GetExtentsSize()
@@ -60,7 +64,7 @@ local function dropSmallShadow(building, part)
 	end
 	local size = part.Size
 	if math.max(size.X, size.Y, size.Z) < limit then
-		part.CastShadow = false
+		CollectionService:AddTag(part, GraphicsPresets.SMALL_SHADOW_TAG)
 	end
 end
 
@@ -110,7 +114,7 @@ local function addSpinner(building, anchor, part)
 	-- «то крутится, то нет» из задачи #71, только для лопастей/сверла/форсунок, а не
 	-- для ствола.
 	local pivot = anchor.CFrame
-	dropSmallShadow(building, part)
+	markSmallShadow(building, part)
 	table.insert(spinning, {
 		part = part,
 		pivot = pivot,
@@ -410,7 +414,7 @@ local function addSaw(building)
 			local belt = part:GetAttribute("Belt")
 			local pusher = part:GetAttribute("Pusher")
 			if inArm or speed or belt or pusher then
-				dropSmallShadow(building, part)
+				markSmallShadow(building, part)
 				local axisPart = speed and building:FindFirstChild(part:GetAttribute("WhirlAxis") or part.Name, true)
 				local drum = belt and building:FindFirstChild(part:GetAttribute("BeltAxis") or "", true)
 				local pushAxis = pusher and building:FindFirstChild(part:GetAttribute("PushAxis") or "", true)
@@ -740,7 +744,7 @@ local function addTracker(building)
 				material = part.Material, -- куда вернуть деталь после вспышки
 				lit = false,
 			})
-			dropSmallShadow(building, part)
+			markSmallShadow(building, part)
 			if entry then
 				-- Стоящую турель trackStep не перерисовывает: опоздавшая деталь встанет
 				-- со следующим кадром, а не останется в позе покоя.
@@ -1022,7 +1026,7 @@ local function addRigTracker(building)
 			rams = under(part, rig.rammerNode),
 			drums = under(part, rig.drumNode),
 		})
-		dropSmallShadow(building, part)
+		markSmallShadow(building, part)
 		if entry then
 			-- Стоящую турель rigStep не перерисовывает: без этого опоздавшая деталь
 			-- осталась бы в позе покоя до следующего доворота или выстрела.

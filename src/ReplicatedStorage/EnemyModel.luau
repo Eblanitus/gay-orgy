@@ -10,6 +10,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local EnemyGait = require(ReplicatedStorage:WaitForChild("EnemyGait"))
 local EnemyBody = require(ReplicatedStorage:WaitForChild("EnemyBody"))
+local GraphicsPresets = require(ReplicatedStorage:WaitForChild("GraphicsPresets"))
+local CollectionService = game:GetService("CollectionService")
 
 local EnemyModel = {}
 
@@ -80,6 +82,8 @@ end
 -- заново; на толпе это заметная доля кадра (замер MicroProfiler: свет и тени ~8 мс в бою).
 -- Лапы, усики и жвалы тонкие, их тень на полу почти не читается — тень корпуса остаётся.
 -- То же у любой детали мельче SHADOW_SMALL от габарита жука (глаза, зубцы, жилки).
+-- Такие детали получают метку GraphicsPresets.SMALL_SHADOW_TAG, а саму тень включает
+-- или выключает Graphics.client по уровню графики (на «Ультра» тени все).
 local SHADOWLESS_GROUPS = { "^leg_", "^antenna_", "^mandible_" }
 local SHADOW_SMALL = 0.12
 
@@ -143,7 +147,7 @@ function EnemyModel.FromTemplate(templateName, scale, recolor)
 			part.CanTouch = false
 			local size = part.Size
 			if math.max(size.X, size.Y, size.Z) < small or inShadowlessGroup(part, model) then
-				part.CastShadow = false
+				CollectionService:AddTag(part, GraphicsPresets.SMALL_SHADOW_TAG)
 			end
 			if recolor then
 				local role
@@ -261,7 +265,7 @@ local function buildPrimitive(enemyData, scale)
 		leg.CanTouch = false
 		leg.Color = legColor
 		leg.Material = material
-		leg.CastShadow = false -- тонкая лапа: см. SHADOWLESS_GROUPS
+		CollectionService:AddTag(leg, GraphicsPresets.SMALL_SHADOW_TAG) -- тонкая лапа: см. SHADOWLESS_GROUPS
 		leg.CFrame = CFrame.lookAt(pair.hip:Lerp(pair.foot, 0.5), pair.foot) * CFrame.Angles(0, math.rad(90), 0)
 		leg.Parent = model
 		table.insert(legs, { part = leg, hip = pair.hip, foot = pair.foot })
