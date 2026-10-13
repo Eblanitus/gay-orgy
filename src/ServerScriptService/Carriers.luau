@@ -190,6 +190,21 @@ local function homePoint(index)
 	return Vector3.new(center.X + math.cos(angle) * ring, floor.Y + Economy.carrierLift, center.Z + math.sin(angle) * ring)
 end
 
+-- Объезд реактора по кругу стоянок: от стоянки до точки, где путь выходит из-под реактора,
+-- прямая шла бы сквозь корпус Завода (след у него крупный). Точки — по дуге через ~30°.
+local function ringDetour(route, from, to)
+	local center = reactor:GetPivot().Position
+	local ring = (Towers.Bioreactor.footprint or 4) / 2 + 1
+	local a0 = math.atan2(from.Z - center.Z, from.X - center.X)
+	local a1 = math.atan2(to.Z - center.Z, to.X - center.X)
+	local turn = (a1 - a0 + math.pi) % (2 * math.pi) - math.pi
+	local steps = math.floor(math.abs(turn) / math.rad(30))
+	for i = 1, steps do
+		local angle = a0 + turn * i / (steps + 1)
+		table.insert(route, Vector3.new(center.X + math.cos(angle) * ring, from.Y, center.Z + math.sin(angle) * ring))
+	end
+end
+
 local function spawnDrone()
 	local model = EconomyModels.Carrier()
 	local drone = { model = model, at = homePoint(#drones + 1) }
@@ -384,6 +399,9 @@ local function assign()
 				for _, point in path do
 					local flat = (point - center) * Vector3.new(1, 0, 1)
 					if #route > 1 or flat.Magnitude > inside then
+						if #route == 1 then
+							ringDetour(route, drone.at, point)
+						end
 						table.insert(route, point)
 					end
 				end

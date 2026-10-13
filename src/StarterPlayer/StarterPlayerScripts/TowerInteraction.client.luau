@@ -514,6 +514,54 @@ local function rebuildCrossSlices(model, shape, thickness)
 	end
 end
 
+-- Восьмиугольник (Биореактор, footprintShape.kind = "octagon"): квадрат side со срезанными
+-- на chamfer углами. Средняя плита, две полосы и четыре угла-клина без нахлёста. Грабли
+-- WedgePart — как у шестигранника выше: базис клина задаётся вручную.
+local function rebuildOctagonSlices(model, shape, thickness)
+	clearSlices(model)
+
+	local rootCFrame = model.PrimaryPart.CFrame
+	local side, c = shape.side, shape.chamfer
+	local half, inner = side / 2, side - 2 * shape.chamfer
+
+	local function slab(size, offset)
+		local part = Instance.new("Part")
+		part.Name = "Slice"
+		part.Size = size
+		part.CFrame = rootCFrame * CFrame.new(offset)
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.Material = Enum.Material.Neon
+		part.Color = Theme.color.build
+		part.Transparency = 1
+		part.Parent = model
+	end
+	slab(Vector3.new(side, thickness, inner), Vector3.zero)
+	slab(Vector3.new(inner, thickness, c), Vector3.new(0, 0, half - c / 2))
+	slab(Vector3.new(inner, thickness, c), Vector3.new(0, 0, -(half - c / 2)))
+
+	for _, sx in { 1, -1 } do
+		for _, sz in { 1, -1 } do
+			-- Прямой угол клина — во внутреннем углу среза, катеты наружу по X и Z.
+			local u = Vector3.new(0, 0, sz)
+			local w = Vector3.new(-sx, 0, 0)
+			local center = Vector3.new(sx * (half - c / 2), 0, sz * (half - c / 2))
+			local wedge = Instance.new("WedgePart")
+			wedge.Name = "Slice"
+			wedge.Size = Vector3.new(thickness, c, c)
+			wedge.CFrame = rootCFrame * CFrame.fromMatrix(center, u:Cross(w), u, w)
+			wedge.Anchored = true
+			wedge.CanCollide = false
+			wedge.CanQuery = false
+			wedge.Material = Enum.Material.Neon
+			wedge.Color = Theme.color.build
+			wedge.Transparency = 1
+			wedge.Parent = model
+		end
+	end
+end
+
 local function setHighlightAppearance(model, color, transparency)
 	for _, part in model:GetChildren() do
 		if part.Name == "Slice" then
@@ -718,8 +766,8 @@ local function refreshBuildChoice()
 	-- то крупнее (Колба — её OctoBase шире 10 студов, задача #63), и рамка не совпадала
 	-- с тем, что реально встанет на поле.
 	-- Форма зоны — по фактической платформе именно этой постройки: у большинства это
-	-- шестигранник по footprint, у Станции FPV-дронов — трапеция её платформы, у Пилы — крест
-	-- (Towers[ключ].footprintShape). Занятость клеток от формы не зависит вовсе — след всегда
+	-- шестигранник по footprint, у Станции FPV-дронов — трапеция её платформы, у Пилы — крест,
+	-- у Биореактора — восьмиугольник (Towers[ключ].footprintShape). Занятость клеток от формы не зависит вовсе — след всегда
 	-- квадратный, по footprint (buildReach выше и Grid на сервере).
 	local footprint = data.footprint or Arena.buildSize
 	local shape = data.footprintShape
@@ -728,6 +776,8 @@ local function refreshBuildChoice()
 		key = ("square:%.2f"):format(footprint)
 	elseif shape and shape.kind == "cross" then
 		key = ("cross:%.2f:%.2f:%.2f"):format(shape.span, shape.arm, shape.side or shape.span)
+	elseif shape and shape.kind == "octagon" then
+		key = ("octagon:%.2f:%.2f"):format(shape.side, shape.chamfer)
 	elseif shape then
 		key = ("trapezoid:%.2f:%.2f:%.2f:%.2f"):format(shape.near, shape.far, shape.depth, shape.offset or 0)
 	else
@@ -738,6 +788,8 @@ local function refreshBuildChoice()
 			rebuildSquareSlice(cellHighlight, footprint, HEX_THICKNESS)
 		elseif shape and shape.kind == "cross" then
 			rebuildCrossSlices(cellHighlight, shape, HEX_THICKNESS)
+		elseif shape and shape.kind == "octagon" then
+			rebuildOctagonSlices(cellHighlight, shape, HEX_THICKNESS)
 		elseif shape then
 			rebuildTrapezoidSlices(cellHighlight, shape, HEX_THICKNESS)
 		else

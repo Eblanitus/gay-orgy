@@ -1,6 +1,8 @@
--- Модели хозяйственных построек экономики — ВРЕМЕННЫЕ ЗАГЛУШКИ из примитивов.
--- Настоящие модели Биореактора, Станции носильщиков и дронов-носильщиков делаются отдельно;
--- чтобы их подключить, достаточно заменить функции ниже (сигнатуры те же).
+-- Модели хозяйственных построек экономики.
+-- Биореактор (Завод Материи, по вики) — настоящая модель в BioreactorModel, дрон-носильщик —
+-- ровер CarrierRig, движение их деталей — клиент BioreactorVisuals. Станция носильщиков пока
+-- ВРЕМЕННАЯ ЗАГЛУШКА из примитивов; чтобы подключить настоящую, достаточно заменить функцию
+-- ниже (сигнатура та же).
 --
 -- Договор для постройки (как у Стены, TowerModels.buildWallModel): Model с PrimaryPart "Root"
 -- в точке (0, 0, 0) модели; пивот ставится на TOWER_Y над полом, низ модели — на -1.6;
@@ -16,6 +18,11 @@
 --   State — "idle" | "out" (едет к трупу) | "wait" (ждёт напарников у туши) | "back" (везёт);
 --   Loaded — везёт ли груз; Crew — сколько дронов тянет эту тушу вместе.
 -- Деталь "Cargo" (если есть) Carriers показывает только с грузом.
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local Economy = require(ReplicatedStorage:WaitForChild("Economy"))
+local CarrierRig = require(ServerScriptService:WaitForChild("CarrierRig"))
+
 local EconomyModels = {}
 
 local BASE_Y = -1.6 -- низ постройки в координатах модели (как у Стены и Колбы)
@@ -51,21 +58,34 @@ local function rootOf(model)
 	return root
 end
 
--- Биореактор: стальной корпус, приёмный лоток спереди, зелёная колонна с материей.
+-- Биореактор: деталь корпуса одной строкой (те же правила, что у TowerModels.addPart).
+local function reactorPart(model, name, size, cframe, color, material, shape)
+	local p = Instance.new("Part")
+	p.Name = name
+	if shape then
+		p.Shape = shape
+	end
+	p.Size = size
+	p.CFrame = cframe
+	p.Color = color
+	p.Material = material
+	p.Anchored = true
+	p.CanCollide = false
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Parent = model
+	return p
+end
+
+local buildBioreactor = require(ServerScriptService:WaitForChild("BioreactorModel"))({
+	addPart = reactorPart,
+	addRoot = rootOf,
+})
+
+-- Биореактор (Завод Материи): восьмиугольная платформа, приёмный конвейер, прижимной валец,
+-- портал шредера, шнек, шламовый насос, экстракционная колонна (BioreactorModel).
 function EconomyModels.Bioreactor(towerData)
-	local model = Instance.new("Model")
-	model.Name = towerData.name
-	rootOf(model)
-	local side = (towerData.footprint or 4) - 0.4
-	local steel = Color3.fromRGB(88, 94, 102)
-	local body = part(model, "Body", Vector3.new(side, 2.2, side), CFrame.new(0, BASE_Y + 1.1, 0), steel, Enum.Material.Metal)
-	body.CanCollide = true
-	part(model, "Hopper", Vector3.new(side * 0.8, 0.5, 1), CFrame.new(0, BASE_Y + 2.45, side / 2 - 0.5),
-		Color3.fromRGB(60, 62, 66), Enum.Material.DiamondPlate)
-	part(model, "Column", Vector3.new(1.4, 4.2, 1.4), CFrame.new(0, BASE_Y + 4.3, -0.4),
-		Color3.fromRGB(90, 220, 120), Enum.Material.Neon, 0.25)
-	part(model, "Cap", Vector3.new(1.8, 0.4, 1.8), CFrame.new(0, BASE_Y + 6.6, -0.4), steel, Enum.Material.Metal)
-	return model
+	return buildBioreactor(towerData)
 end
 
 -- Станция носильщиков: низкий гараж с тремя док-площадками.
@@ -84,22 +104,15 @@ function EconomyModels.CarrierStation(towerData)
 	return model
 end
 
--- Дрон-носильщик: плоская «таблетка» робота-пылесоса и груз сверху.
+-- Дрон-носильщик: ровер с опрокидным кузовом (CarrierRig). Ужат до CARRIER_SCALE: путь
+-- Carriers ищет по занятости клеток без запаса на ширину тела — ровер шириной ~1.4 студа
+-- не задевает постройки, мимо которых проходит центр.
+local CARRIER_SCALE = 0.42
+local CARRIER_BED = 4 -- высота дна кузова полноразмерного ровера (полотно конвейера Завода)
+
 function EconomyModels.Carrier()
-	local model = Instance.new("Model")
+	local model = CarrierRig.Build(CARRIER_BED, CARRIER_SCALE, Economy.carrierLift)
 	model.Name = "Носильщик"
-	local root = rootOf(model)
-	root.CFrame = CFrame.new()
-	part(model, "Body", Vector3.new(1.4, 0.5, 1.4), CFrame.new(0, 0, 0), Color3.fromRGB(70, 74, 80), Enum.Material.Metal)
-	part(model, "Lamp", Vector3.new(0.3, 0.15, 0.3), CFrame.new(0, 0.32, 0.45), Color3.fromRGB(90, 220, 120), Enum.Material.Neon)
-	local cargo = part(model, "Cargo", Vector3.new(1.1, 0.6, 1.1), CFrame.new(0, 0.55, 0), Color3.fromRGB(110, 96, 70),
-		Enum.Material.Slate, 1)
-	cargo.CanQuery = false
-	for _, item in model:GetDescendants() do
-		if item:IsA("BasePart") then
-			item.CanQuery = false
-		end
-	end
 	return model
 end
 
