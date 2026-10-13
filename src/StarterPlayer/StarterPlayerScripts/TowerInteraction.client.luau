@@ -791,6 +791,8 @@ end
 
 -- Луч пускается только по полу арены: попадание в жука, стену или уже стоящую башню
 -- не должно уводить подсветку в сторону от клетки, куда целится игрок.
+-- Насколько за край пола (студы) курсор ещё считается стройкой: ширина служебной полосы у стены.
+local STRIP_REACH = 8
 local floorOnly = RaycastParams.new()
 floorOnly.FilterType = Enum.RaycastFilterType.Include
 floorOnly.FilterDescendantsInstances = { arenaFloor }
@@ -1068,13 +1070,25 @@ RunService.RenderStepped:Connect(function()
 	local mouse = UserInputService:GetMouseLocation()
 	local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
 	local hit = Workspace:Raycast(ray.Origin, ray.Direction * 1000, floorOnly)
+	local point = hit and hit.Position
+	if not point and ray.Direction.Y < -0.01 then
+		-- Курсор над служебной полосой у стены: ArenaFloor под ним нет, но след башни может
+		-- на неё выступать. Берётся точка на плоскости пола, не дальше STRIP_REACH от края.
+		local plane = ray.Origin + ray.Direction * ((Arena.floorY - ray.Origin.Y) / ray.Direction.Y)
+		local offset = plane - arenaFloor.Position
+		local half = arenaFloor.Size / 2
+		if math.abs(offset.X) <= half.X + STRIP_REACH and math.abs(offset.Z) <= half.Z + STRIP_REACH then
+			point = plane
+		end
+	end
 
-	if hit then
-		-- Клетка поджимается к тем, в которых постройка целиком помещается на поле:
-		-- у самого края арены рамка должна показывать то место, куда башня встанет,
+	if point then
+		-- Клетка поджимается к тем, в которых постройка помещается на поле (или выступает на
+		-- служебную полосу у стены в пределах запаса): у самого края арены рамка должна
+		-- показывать то место, куда башня встанет,
 		-- а не то, куда сервер откажется её ставить.
-		local cellX, cellZ = Arena.ToCell(hit.Position)
-		hoveredX, hoveredZ = Arena.ClampBuildCell(cellX, cellZ, buildReach)
+		local cellX, cellZ = Arena.ToCell(point)
+		hoveredX, hoveredZ = Arena.ClampTowerCell(cellX, cellZ, buildReach)
 		-- Запрет считается по всему следу постройки, а не по одной клетке — ровно так же,
 		-- как это делают Grid.IsEntranceCell/IsExitCell/IsFree на сервере, и тем же радиусом.
 		local forbidden = (math.abs(hoveredX - entranceX) <= buildReach and math.abs(hoveredZ - entranceZ) <= buildReach)
