@@ -1,17 +1,17 @@
--- Модель наземного дрона-носильщика Биореактора (по вики: ровер с опрокидным кузовом).
--- Подключена в EconomyModels.Carrier; ездит им Carriers.
+-- Модель дрона-носильщика Биореактора: квадрокоптер с подвесным грузовым контейнером.
+-- Подключена в EconomyModels.Carrier; летает ею Carriers по тому же пути, по которому раньше ездил ровер.
 --
--- Root анкорнут, остальное приварено к нему (как у FPV-дрона, DroneRig). Кузов и колёса
--- висят на Motor6D, а не на сварке: опрокидывание кузова и вращение колёс ведёт клиент
--- (BioreactorVisuals), меняя C0 у себя.
+-- Root анкорнут, остальное приварено к нему (как у FPV-дрона, DroneRig). Что должно двигаться само,
+-- висит на Motor6D: винты — «RotorJoint» (крутятся всё время), контейнер — «BinHinge» (качается на
+-- подвесе и опрокидывается, когда груз сдан). Это ведёт клиент (BioreactorVisuals), меняя C0 у себя.
 --
--- Договор EconomyModels: пивот — центр корпуса на полу, Carriers ставит его на высоту пола
--- + Economy.carrierLift, поэтому вся модель опущена на lift. Перед — -Z (LookVector).
--- Деталь Cargo — груз в кузове: Carriers показывает её, только когда дрон везёт тушу.
+-- Договор EconomyModels: пивот — центр корпуса, Carriers ставит его на высоту пола + Economy.carrierLift.
+-- Перед — -Z (LookVector). Деталь Cargo — груз в контейнере и прямой ребёнок модели: Carriers
+-- показывает её, только когда дрон везёт тушу.
 --
--- Геометрия записана в студах полноразмерного ровера (дно кузова на высоте полотна
--- конвейера Завода, 4 студа) и при сборке ужимается в scale раз: Carriers ищет путь по
--- занятости клеток без запаса на ширину тела, и широкий ровер задевал бы постройки.
+-- Геометрия записана в студах полноразмерного дрона (пол — y = 0) и при сборке ужимается в scale раз.
+-- Размах винтов после ужатия около 1.4 студа: Carriers ищет путь по занятости клеток без запаса на
+-- ширину тела, поэтому дрон не шире ровера. Низ контейнера висит над полом на HOVER·scale студа.
 local CarrierRig = {}
 
 local dark = Color3.fromRGB(46, 49, 55)
@@ -19,13 +19,27 @@ local mid = Color3.fromRGB(70, 75, 83)
 local light = Color3.fromRGB(98, 104, 114)
 local black = Color3.fromRGB(24, 25, 28)
 local GLOW = Color3.fromRGB(80, 235, 175) -- акцент Биореактора: дрон — его изделие
+local GLASS = Color3.fromRGB(150, 200, 230)
+local CARGO = Color3.fromRGB(96, 78, 58)
 local metal, plastic, neon = Enum.Material.Metal, Enum.Material.SmoothPlastic, Enum.Material.Neon
 
--- Габарит полноразмерного ровера в студах (до ужатия).
-CarrierRig.LENGTH = 6.2
-CarrierRig.WIDTH = 3.3
-local WHEEL_R = 0.85
-local WHEEL_Z = 2.1
+-- Размеры полноразмерного дрона в студах (до ужатия).
+local HOVER = 1.6 -- низ контейнера над полом
+local POD_W, POD_D = 1.4, 1.5 -- контейнер в плане
+local POD_TOP = HOVER + 1.3 -- верх контейнера: там ось шарнира
+local HULL_BOTTOM = POD_TOP + 0.3 -- низ корпуса; между ним и осью — ярмо
+local HULL_H = 0.8
+local HULL_TOP = HULL_BOTTOM + HULL_H
+local HULL_CENTER = HULL_BOTTOM + HULL_H / 2
+local ARM_Y = 3.75 -- высота моторов над полом
+local ARM = 1.1 -- моторы стоят на этом расстоянии от оси по X и по Z
+local ROTOR_R = 0.6 -- радиус винта
+local HUB_Y = ARM_Y + 0.27 -- ступица винта — над мотором
+local BLADE = 2 * ROTOR_R - 0.1
+
+-- Ось цилиндра в Roblox — локальный X, поэтому «стоймя» и «вперёд» приходится доворачивать.
+local UP_AXIS = CFrame.Angles(0, 0, math.rad(90))
+local FORWARD_AXIS = CFrame.Angles(0, math.rad(90), 0)
 
 -- Ужатие и опускание текущей сборки (ставит buildTemplate).
 local SCALE = 1
@@ -75,7 +89,7 @@ end
 
 local templates = {}
 
-local function buildTemplate(height, scale, lift)
+local function buildTemplate(scale, lift)
 	SCALE = scale
 	LIFT = Vector3.new(0, lift, 0)
 	local model = Instance.new("Model")
@@ -93,92 +107,112 @@ local function buildTemplate(height, scale, lift)
 	root.Parent = model
 	model.PrimaryPart = root
 
-	local function body(name, size, position, color, material, shape)
-		local part = addPart(model, name, size, CFrame.new(position), color, material or metal, shape)
+	-- Деталь, приваренная к Root. turn — поворот детали (для цилиндров по оси).
+	local function body(name, size, position, color, material, shape, turn)
+		local part = addPart(model, name, size, CFrame.new(position) * (turn or CFrame.identity), color, material or metal, shape)
 		weld(part, root)
 		return part
 	end
 
-	-- ===== ШАССИ =====
-	local L = CarrierRig.LENGTH
-	local bodyTop = height - 0.55 -- под рамой кузова
-	local bodyH = bodyTop - 0.55
-	body("Hull", Vector3.new(2.6, bodyH, L - 0.2), Vector3.new(0, 0.55 + bodyH / 2, 0), dark)
-	body("Skirt", Vector3.new(2.8, 0.35, L), Vector3.new(0, 0.75, 0), mid)
+	-- ===== КОРПУС =====
+	body("Hull", Vector3.new(1.6, HULL_H, 1.8), Vector3.new(0, HULL_CENTER, 0), dark)
+	body("Skirt", Vector3.new(1.5, 0.08, 1.7), Vector3.new(0, HULL_BOTTOM - 0.04, 0), mid)
+	body("Deck", Vector3.new(1.5, 0.08, 1.7), Vector3.new(0, HULL_TOP + 0.04, 0), mid)
+	-- Щели вентиляции на крыше: гладкий почти чёрный пластик.
+	for _, z in { -0.5, 0, 0.5 } do
+		body("Vent", Vector3.new(0.9, 0.02, 0.1), Vector3.new(0, HULL_TOP + 0.09, z), black, plastic)
+	end
+	-- Рёбра жёсткости на бортах: тот же ритм мелких деталей, что у остальных моделей.
 	for _, side in { 1, -1 } do
-		body("SidePlate", Vector3.new(0.08, bodyH - 0.9, L - 1.6), Vector3.new(side * 1.33, 0.55 + bodyH / 2 + 0.2, 0), mid)
-		body("SideGlow", Vector3.new(0.06, 0.1, L - 2.2), Vector3.new(side * 1.38, 1.25, 0), GLOW, neon)
-		-- Рёбра жёсткости на борту: тот же ритм мелких деталей, что у остальных моделей.
-		for _, z in { -1.8, -0.9, 0, 0.9, 1.8 } do
-			body("Rib", Vector3.new(0.1, bodyH - 1.2, 0.16), Vector3.new(side * 1.4, 0.55 + bodyH / 2 + 0.2, z), dark)
-		end
-		for _, z in { WHEEL_Z, -WHEEL_Z } do
-			body("Fender", Vector3.new(0.6, 0.22, 2.1), Vector3.new(side * 1.5, WHEEL_R * 2 + 0.15, z), mid)
+		for _, z in { -0.5, 0.5 } do
+			body("Rib", Vector3.new(0.08, 0.5, 0.12), Vector3.new(side * 0.84, HULL_CENTER, z), dark)
 		end
 	end
-	-- Нос (перед — -Z): сенсорная планка и низкая световая полоса, как у референса AGV.
-	body("Nose", Vector3.new(2.6, 0.9, 1.3), Vector3.new(0, bodyTop + 0.2, -(L / 2 - 0.65)), mid)
-	-- Сенсорный купол на носу: стекло, как у линз камер на остальных моделях.
-	body("Sensor", Vector3.new(1.1, 0.4, 0.9), Vector3.new(0, bodyTop + 0.85, -(L / 2 - 0.65)), Color3.fromRGB(150, 200, 230),
-		Enum.Material.Glass)
-	body("SensorBar", Vector3.new(2.0, 0.18, 0.1), Vector3.new(0, bodyTop + 0.25, -L / 2 - 0.01), GLOW, neon)
-	body("Bumper", Vector3.new(2.9, 0.35, 0.3), Vector3.new(0, 0.95, -L / 2 - 0.05), black, plastic)
-	body("BumperGlow", Vector3.new(2.4, 0.08, 0.06), Vector3.new(0, 1.2, -L / 2 - 0.22), GLOW, neon)
-	-- Задний бампер — им ровер упирается в лоток.
-	body("RearBumper", Vector3.new(2.9, 0.35, 0.3), Vector3.new(0, 0.95, L / 2 + 0.05), black, plastic)
+	-- Сенсорный купол на крыше и камера в носу (перед — -Z) со светящимся объективом.
+	body("Sensor", Vector3.new(0.5, 0.5, 0.5), Vector3.new(0, HULL_TOP + 0.12, -0.2), GLASS, Enum.Material.Glass,
+		Enum.PartType.Ball)
+	body("Cam", Vector3.new(0.3, 0.34, 0.34), Vector3.new(0, HULL_CENTER, -1.0), black, plastic, Enum.PartType.Cylinder,
+		FORWARD_AXIS)
+	body("Lens", Vector3.new(0.05, 0.22, 0.22), Vector3.new(0, HULL_CENTER, -1.18), GLOW, neon, Enum.PartType.Cylinder,
+		FORWARD_AXIS)
 
-	-- ===== КОЛЁСА =====
-	for _, side in { 1, -1 } do
-		for _, z in { WHEEL_Z, -WHEEL_Z } do
-			local at = CFrame.new(side * 1.45, WHEEL_R, z)
-			local wheel = addPart(model, "Wheel", Vector3.new(0.5, WHEEL_R * 2, WHEEL_R * 2), at, black, plastic,
-				Enum.PartType.Cylinder)
-			local hub = addPart(model, "Hub", Vector3.new(0.52, 0.8, 0.8), at, light, metal, Enum.PartType.Cylinder)
-			weld(hub, wheel)
-			-- Спица на ступице: видно, что колесо крутится.
-			local spoke = addPart(model, "Spoke", Vector3.new(0.54, 0.16, 1.2), at, mid, metal)
-			weld(spoke, wheel)
-			local joint = motor("WheelJoint", root, wheel, at)
-			joint:SetAttribute("Radius", WHEEL_R)
+	-- ===== РАМА, МОТОРЫ, ВИНТЫ =====
+	-- Четыре луча «иксом»: у каждого мотор, над ним винт. Соседние винты крутятся в разные стороны.
+	for index, corner in { { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } } do
+		local sx, sz = corner[1], corner[2]
+		local from = Vector3.new(sx * 0.5, ARM_Y, sz * 0.5) -- от корпуса
+		local to = Vector3.new(sx * ARM, ARM_Y, sz * ARM) -- к мотору
+		local arm = addPart(model, "Arm" .. index, Vector3.new(0.2, 0.14, (to - from).Magnitude + 0.1),
+			CFrame.lookAt((from + to) / 2, to), mid, metal)
+		weld(arm, root)
+
+		body("Motor" .. index, Vector3.new(0.4, 0.42, 0.42), to, dark, metal, Enum.PartType.Cylinder, UP_AXIS)
+		-- Подсветка под мотором: акцент, как у глаза и контейнера.
+		body("Led" .. index, Vector3.new(0.06, 0.26, 0.26), Vector3.new(to.X, ARM_Y - 0.23, to.Z), GLOW, neon,
+			Enum.PartType.Cylinder, UP_AXIS)
+
+		-- Ступица винта — на Motor6D «RotorJoint»: клиент крутит её вокруг вертикальной оси (X детали — вверх).
+		local hubAt = Vector3.new(to.X, HUB_Y, to.Z)
+		local hub = addPart(model, "Hub" .. index, Vector3.new(0.14, 0.18, 0.18), CFrame.new(hubAt) * UP_AXIS, light, metal,
+			Enum.PartType.Cylinder)
+		local rotor = motor("RotorJoint", root, hub, CFrame.new(hubAt) * UP_AXIS)
+		rotor:SetAttribute("Spin", (sx * sz > 0) and 1 or -1)
+
+		-- Лопасти и диск-размытие приварены к ступице и крутятся вместе с ней.
+		local function onHub(name, size, cframe, color, material, shape)
+			local part = addPart(model, name, size, cframe, color, material, shape)
+			weld(part, hub)
+			return part
 		end
+		onHub("Blade", Vector3.new(0.12, 0.04, BLADE), CFrame.new(hubAt), mid, metal)
+		onHub("Blade", Vector3.new(BLADE, 0.04, 0.12), CFrame.new(hubAt), mid, metal)
+		local disc = onHub("Disc", Vector3.new(0.02, 2 * ROTOR_R, 2 * ROTOR_R), CFrame.new(hubAt) * UP_AXIS, dark, plastic,
+			Enum.PartType.Cylinder)
+		disc.Transparency = 0.7
 	end
 
-	-- ===== КУЗОВ =====
-	-- Шарнир — у заднего нижнего края: кузов поднимается передом, туша ссыпается назад.
-	local BIN_FRONT, BIN_BACK = -1.7, L / 2 - 0.3
-	local binLength = BIN_BACK - BIN_FRONT
-	local binMid = (BIN_FRONT + BIN_BACK) / 2
-	local base = addPart(model, "BinBase", Vector3.new(2.9, 0.3, binLength), CFrame.new(0, height - 0.35, binMid), mid, metal)
-	local hinge = motor("BinHinge", root, base, CFrame.new(0, height - 0.5, BIN_BACK))
+	-- ===== ЯРМО, ОСЬ, КОНТЕЙНЕР =====
+	body("Axle", Vector3.new(POD_W + 0.3, 0.16, 0.16), Vector3.new(0, POD_TOP, 0), dark, metal, Enum.PartType.Cylinder)
+	body("Yoke", Vector3.new(0.5, HULL_BOTTOM - POD_TOP, 0.5), Vector3.new(0, (HULL_BOTTOM + POD_TOP) / 2, 0), mid)
+
+	-- Контейнер висит на шарнире по центру верхней плиты: BinHinge. Клиент качает его и опрокидывает.
+	local base = addPart(model, "BinBase", Vector3.new(POD_W, 0.16, POD_D), CFrame.new(0, POD_TOP - 0.08, 0), mid, metal)
+	local hinge = motor("BinHinge", root, base, CFrame.new(0, POD_TOP, 0))
 	hinge:SetAttribute("TipAngle", 48)
-	local function bin(name, size, position, color, material)
-		local part = addPart(model, name, size, CFrame.new(position), color, material or metal)
+	local function bin(name, size, position, color, material, shape)
+		local part = addPart(model, name, size, CFrame.new(position), color, material or metal, shape)
 		weld(part, base)
 		return part
 	end
-	bin("Bed", Vector3.new(2.7, 0.2, binLength - 0.2), Vector3.new(0, height - 0.1, binMid), black, Enum.Material.DiamondPlate)
+
+	local wallTop = POD_TOP - 0.16
+	local wallH = wallTop - HOVER
+	local wallY = (wallTop + HOVER) / 2
 	for _, side in { 1, -1 } do
-		bin("BinSide", Vector3.new(0.15, 0.95, binLength), Vector3.new(side * 1.42, height + 0.35, binMid), light)
-		bin("BinRib", Vector3.new(0.2, 0.15, binLength + 0.1), Vector3.new(side * 1.45, height + 0.8, binMid), dark)
+		bin("PodSide", Vector3.new(0.1, wallH, POD_D), Vector3.new(side * (POD_W / 2 - 0.05), wallY, 0), mid)
 	end
-	bin("BinFront", Vector3.new(2.9, 1.25, 0.18), Vector3.new(0, height + 0.5, BIN_FRONT), light)
-	bin("BinFrontGlow", Vector3.new(1.8, 0.1, 0.06), Vector3.new(0, height + 0.95, BIN_FRONT - 0.1), GLOW, neon)
-	bin("BinLip", Vector3.new(2.9, 0.22, 0.14), Vector3.new(0, height + 0.02, BIN_BACK - 0.05), dark)
-	-- Груз: ком биомассы на дне кузова. Видно только с грузом (Carriers).
-	local cargo = bin("Cargo", Vector3.new(2.3, 0.9, binLength - 1.0), Vector3.new(0, height + 0.45, binMid),
-		Color3.fromRGB(96, 78, 58), Enum.Material.Slate)
+	for _, side in { 1, -1 } do
+		bin("PodEnd", Vector3.new(POD_W, wallH, 0.1), Vector3.new(0, wallY, side * (POD_D / 2 - 0.05)), mid)
+	end
+	bin("PodGrate", Vector3.new(POD_W - 0.1, 0.06, POD_D - 0.1), Vector3.new(0, HOVER + 0.03, 0), black,
+		Enum.Material.DiamondPlate)
+	-- Груз: ком биомассы на решётке. Видно только с грузом (Carriers).
+	local cargo = bin("Cargo", Vector3.new(POD_W - 0.3, 0.7, POD_D - 0.3), Vector3.new(0, HOVER + 0.41, 0), CARGO,
+		Enum.Material.Slate)
 	cargo.Transparency = 1
+	-- Светящаяся полоса на переднем борту контейнера.
+	bin("PodGlow", Vector3.new(POD_W - 0.5, 0.06, 0.04), Vector3.new(0, POD_TOP - 0.45, -(POD_D / 2) - 0.02), GLOW, neon)
 
 	return model
 end
 
--- Новый дрон: клон шаблона. height — высота дна кузова полноразмерного ровера, scale —
--- ужатие, lift — на сколько пивот (центр корпуса) выше пола. Ставить — PivotTo.
-function CarrierRig.Build(height, scale, lift)
-	local id = ("%.2f:%.3f:%.3f"):format(height, scale, lift)
+-- Новый дрон: клон шаблона. scale — ужатие, lift — на сколько пивот (центр корпуса) выше пола.
+-- Ставить — PivotTo.
+function CarrierRig.Build(scale, lift)
+	local id = ("%.3f:%.3f"):format(scale, lift)
 	local template = templates[id]
 	if not template then
-		template = buildTemplate(height, scale, lift)
+		template = buildTemplate(scale, lift)
 		templates[id] = template
 	end
 	return template:Clone()
