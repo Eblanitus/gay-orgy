@@ -108,12 +108,19 @@ local function buildTemplate(height, scale, lift)
 	for _, side in { 1, -1 } do
 		body("SidePlate", Vector3.new(0.08, bodyH - 0.9, L - 1.6), Vector3.new(side * 1.33, 0.55 + bodyH / 2 + 0.2, 0), mid)
 		body("SideGlow", Vector3.new(0.06, 0.1, L - 2.2), Vector3.new(side * 1.38, 1.25, 0), GLOW, neon)
+		-- Рёбра жёсткости на борту: тот же ритм мелких деталей, что у остальных моделей.
+		for _, z in { -1.8, -0.9, 0, 0.9, 1.8 } do
+			body("Rib", Vector3.new(0.1, bodyH - 1.2, 0.16), Vector3.new(side * 1.4, 0.55 + bodyH / 2 + 0.2, z), dark)
+		end
 		for _, z in { WHEEL_Z, -WHEEL_Z } do
 			body("Fender", Vector3.new(0.6, 0.22, 2.1), Vector3.new(side * 1.5, WHEEL_R * 2 + 0.15, z), mid)
 		end
 	end
 	-- Нос (перед — -Z): сенсорная планка и низкая световая полоса, как у референса AGV.
 	body("Nose", Vector3.new(2.6, 0.9, 1.3), Vector3.new(0, bodyTop + 0.2, -(L / 2 - 0.65)), mid)
+	-- Сенсорный купол на носу: стекло, как у линз камер на остальных моделях.
+	body("Sensor", Vector3.new(1.1, 0.4, 0.9), Vector3.new(0, bodyTop + 0.85, -(L / 2 - 0.65)), Color3.fromRGB(150, 200, 230),
+		Enum.Material.Glass)
 	body("SensorBar", Vector3.new(2.0, 0.18, 0.1), Vector3.new(0, bodyTop + 0.25, -L / 2 - 0.01), GLOW, neon)
 	body("Bumper", Vector3.new(2.9, 0.35, 0.3), Vector3.new(0, 0.95, -L / 2 - 0.05), black, plastic)
 	body("BumperGlow", Vector3.new(2.4, 0.08, 0.06), Vector3.new(0, 1.2, -L / 2 - 0.22), GLOW, neon)
