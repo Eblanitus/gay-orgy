@@ -50,6 +50,20 @@ Economy.pickupTime = 0.6
 Economy.assignInterval = 0.5
 Economy.carrierLift = 0.35
 
+-- Дрон смертен: жук, у которого дрон оказался под жвалами на пути, кусает его уроном своей
+-- грызни (Enemies[вид].chewDamage, chewRate) — специально за дронами никто не охотится.
+-- carrierHp — запас прочности; carrierBiteReach — сколько studs сверх длины морды жука
+-- (FootFront + FootRadius) до центра дрона ещё считается «под жвалами»; carrierBiteCheck —
+-- как часто, сек, проверяются укусы. Погибший дрон взрывается (вид взрыва FPV-дрона, радиус
+-- carrierBlastRadius, цвет carrierBlastColor — без урона, только толчок незакреплённого),
+-- груз падает на место трупом-обрезком, а взамен через carrierRespawn сек выезжает новый.
+Economy.carrierHp = 30
+Economy.carrierBiteReach = 0.6
+Economy.carrierBiteCheck = 0.2
+Economy.carrierBlastRadius = 4
+Economy.carrierBlastColor = Color3.fromRGB(80, 235, 175) -- акцент Биореактора, как у самого дрона
+Economy.carrierRespawn = 12
+
 -- Радиус, в котором клиент убирает лежащие останки без своей туши (лепёшка, клочья, лужица),
 -- когда их подобрали, studs при масштабе 3.
 Economy.scrapRadius = 2.5
