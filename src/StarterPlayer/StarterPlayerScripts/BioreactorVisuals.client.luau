@@ -1,4 +1,4 @@
--- Биореактор на клиенте: всё, что в нём двигается, и контейнеры с винтами дронов-носильщиков.
+-- Биореактор на клиенте: всё, что в нём двигается, и кузова с колёсами дронов-носильщиков.
 -- Сервер ставит только атрибуты (Processing на реакторе — Bioreactor, Loaded на дроне —
 -- Carriers) и двигает дрона целиком;
 -- гонять CFrame каждой детали с сервера значило бы реплицировать их каждый кадр ради картинки
@@ -8,8 +8,7 @@
 --   Slide, SlideWrap, SlideDir, SlidePhase — едут по прямой и возвращаются (планки ленты, пузыри);
 --   Roll, RollAxis, RollDir — крутятся вокруг своей оси (валец, валы шредера, шнек).
 -- Пока реактор перерабатывает груз (Processing > 0), всё идёт быстрее.
--- Дрон сдал груз (Loaded стал false) — контейнер опрокидывается и опускается обратно.
--- Винты дрона крутятся всё время, контейнер качается на подвесе (на ходу — сильнее).
+-- Дрон сдал груз (Loaded стал false) — кузов опрокидывается и опускается обратно.
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
@@ -21,12 +20,9 @@ local GRIND_SLIDE = 1.6 -- во сколько раз быстрее лента 
 local TIP_TIME = 0.5 -- сек на подъём кузова
 local TIP_HOLD = 1.1 -- сек от сдачи груза до команды «опустить»
 local WAIT_ANCHOR = 15
-local ROTOR_SPIN = 20 -- рад/с: винты крутятся, даже когда дрон висит у туши
-local SWAY = 0.05 -- рад: качание контейнера на подвесе
-local SWAY_PER_SPEED = 0.004 -- рад на студ/с: на ходу контейнер качается сильнее
 
 local reactors = {} -- [model] = { anchor, leaves = { [part] = leaf } }
-local drones = {} -- [model] = { root, hinge, hingeBase, tip, rotors = { { joint, base, angle, spin } }, phase, last }
+local drones = {} -- [model] = { root, hinge, hingeBase, tip, wheels = { { joint, base, angle, radius } }, last }
 
 local function addLeaf(entry, part)
 	if not part:IsA("BasePart") or entry.leaves[part] then
@@ -100,19 +96,18 @@ local function attachDrone(model)
 			tip = 0,
 			tipUntil = 0,
 			loaded = model:GetAttribute("Loaded") == true,
-			rotors = {},
-			phase = math.random() * 2 * math.pi, -- у каждого дрона качание не в такт
+			wheels = {},
 			last = root.Position,
 		}
-		local function addRotor(joint)
-			if joint:IsA("Motor6D") and joint.Name == "RotorJoint" then
-				table.insert(entry.rotors, { joint = joint, base = joint.C0, angle = 0, spin = joint:GetAttribute("Spin") or 1 })
+		local function addWheel(joint)
+			if joint:IsA("Motor6D") and joint.Name == "WheelJoint" then
+				table.insert(entry.wheels, { joint = joint, base = joint.C0, angle = 0, radius = joint:GetAttribute("Radius") or 0.8 })
 			end
 		end
 		for _, joint in root:GetChildren() do
-			addRotor(joint)
+			addWheel(joint)
 		end
-		root.ChildAdded:Connect(addRotor)
+		root.ChildAdded:Connect(addWheel)
 		drones[model] = entry
 	end)
 end
@@ -151,7 +146,7 @@ RunService.RenderStepped:Connect(function(dt)
 		if not model.Parent or not entry.root.Parent then
 			drones[model] = nil
 		else
-			-- Контейнер: груз сдан — поднимается, держится и опускается обратно.
+			-- Кузов: груз сдан — поднимается, держится и опускается обратно.
 			local loaded = model:GetAttribute("Loaded") == true
 			if entry.loaded and not loaded then
 				entry.tipUntil = now + TIP_HOLD
@@ -161,20 +156,17 @@ RunService.RenderStepped:Connect(function(dt)
 			if entry.tip ~= want then
 				local step = dt / TIP_TIME
 				entry.tip = want > entry.tip and math.min(entry.tip + step, 1) or math.max(entry.tip - step, 0)
+				entry.hinge.C0 = entry.hingeBase * CFrame.Angles(entry.tipAngle * smooth(entry.tip), 0, 0)
 			end
-			-- Качание на подвесе: на ходу амплитуда больше (скорость — по смещению за кадр).
+			-- Колёса крутятся по пройденному пути (вперёд — по LookVector, назад — обратно).
 			local position = entry.root.Position
-			local speed = (position - entry.last).Magnitude / math.max(dt, 1e-3)
+			local moved = (position - entry.last):Dot(entry.root.CFrame.LookVector)
 			entry.last = position
-			entry.phase += dt
-			local swing = SWAY + math.min(speed, 16) * SWAY_PER_SPEED
-			local pitch = swing * math.sin(entry.phase * 2.6)
-			local roll = swing * 0.6 * math.sin(entry.phase * 1.9 + 1)
-			entry.hinge.C0 = entry.hingeBase * CFrame.Angles(entry.tipAngle * smooth(entry.tip) + pitch, 0, roll)
-			-- Винты крутятся сами, даже когда дрон стоит.
-			for _, rotor in entry.rotors do
-				rotor.angle = (rotor.angle + rotor.spin * ROTOR_SPIN * dt) % (2 * math.pi)
-				rotor.joint.C0 = rotor.base * CFrame.Angles(rotor.angle, 0, 0)
+			if math.abs(moved) > 1e-4 then
+				for _, wheel in entry.wheels do
+					wheel.angle = (wheel.angle + moved / wheel.radius) % (2 * math.pi)
+					wheel.joint.C0 = wheel.base * CFrame.Angles(wheel.angle, 0, 0)
+				end
 			end
 		end
 	end
