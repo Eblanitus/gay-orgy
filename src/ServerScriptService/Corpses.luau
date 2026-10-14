@@ -290,4 +290,29 @@ function Corpses.Take(record)
 	return record.value or 0
 end
 
+-- Груз погибшего носильщика упал на поле (Carriers): та же материя снова лежит и ждёт, кто
+-- её увезёт. Тела уже нет (тушу забрали при погрузке) — запись «несъедобная», как клочья,
+-- и возит её один дрон. Видимый ком груза ставит сам Carriers.
+function Corpses.Drop(position, value)
+	if value <= 0 then
+		return nil
+	end
+	nextId += 1
+	local record = {
+		id = nextId,
+		position = position,
+		alive = true,
+		remains = "gib",
+		scale = 1,
+		bornAt = os.clock(),
+		swampy = false,
+		edible = false,
+		value = value,
+		integrity = Economy.integrity.gib or 0,
+		crew = 1,
+	}
+	remember(record)
+	return record
+end
+
 return Corpses

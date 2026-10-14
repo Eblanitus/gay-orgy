@@ -7,12 +7,16 @@
 -- Станцию носильщиков на поле. Нет реактора — нет и дронов: Станции без него молчат.
 -- Числа движения — Economy (carrierSpeed и прочие).
 --
--- Упрощения (в вики открыто или не про это): дроны неуязвимы, жуки их не задевают;
--- элемент в реакторе/станции дронов не меняет; путь считается от реактора в момент выезда
+-- Дрон смертен: жук, у которого он оказался под жвалами, кусает его (охоты за дронами нет —
+-- только то, что попалось на пути). Погибший взрывается, его груз падает на поле обрезком
+-- (Corpses.Drop) и ждёт следующего дрона, бригада без него разворачивается домой, а взамен
+-- через Economy.carrierRespawn выезжает новый. Числа — Economy (carrierHp и прочие).
+--
+-- Упрощения (в вики открыто или не про это): элемент в реакторе/станции дронов не меняет; путь считается от реактора в момент выезда
 -- и на ходу не пересчитывается — новая постройка на пути его не остановит.
 --
 -- Точки подключения для модели и интерфейса: модель дрона — EconomyModels.Carrier
--- (атрибуты State, Loaded, Crew; деталь Cargo), папка Workspace.Carriers; на реакторе —
+-- (атрибуты State, Loaded, Crew, HP, MaxHP; деталь Cargo), папка Workspace.Carriers; на реакторе —
 -- атрибуты Carriers (всего дронов) и Unreachable (трупов без проезда).
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -25,8 +29,15 @@ local Grid = require(ServerScriptService:WaitForChild("Grid"))
 local Corpses = require(ServerScriptService:WaitForChild("Corpses"))
 local Bioreactor = require(ServerScriptService:WaitForChild("Bioreactor"))
 local EconomyModels = require(ServerScriptService:WaitForChild("EconomyModels"))
+local Impulse = require(ServerScriptService:WaitForChild("Impulse"))
+local Enemies = require(ReplicatedStorage:WaitForChild("Enemies"))
+
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local ExplosionRemote = Remotes:WaitForChild("Explosion")
+local DamageDealtRemote = Remotes:WaitForChild("DamageDealt")
 
 local towersFolder = Workspace:WaitForChild("Towers")
+local enemiesFolder = Workspace:WaitForChild("Enemies")
 
 local folder = Workspace:FindFirstChild("Carriers")
 if not folder then
@@ -40,6 +51,9 @@ local Carriers = {}
 local reactor = nil -- модель Биореактора на поле (он один, Towers.Bioreactor.limit)
 local drones = {} -- { model, state, path, index, at, job, share, retire }
 local jobs = {} -- [record] = { record, members = {дроны}, arrived = число }
+local pending = 0 -- погибших, чья замена ещё не выехала (Economy.carrierRespawn)
+local epoch = 0 -- растёт при сбросе: замена из прежнего забега/реактора не выезжает
+local dropped = {} -- [record] = видимый ком упавшего груза (Corpses.Drop)
 
 -- ===== Проезд: одна волна от реактора на всю сетку =====
 --
@@ -207,9 +221,11 @@ end
 
 local function spawnDrone()
 	local model = EconomyModels.Carrier()
-	local drone = { model = model, at = homePoint(#drones + 1) }
+	local drone = { model = model, at = homePoint(#drones + 1), hp = Economy.carrierHp }
 	model:PivotTo(CFrame.new(drone.at))
 	model:SetAttribute("Loaded", false)
+	model:SetAttribute("MaxHP", Economy.carrierHp)
+	model:SetAttribute("HP", Economy.carrierHp)
 	model.Parent = folder
 	table.insert(drones, drone)
 	setState(drone, "idle")
@@ -272,9 +288,10 @@ local function wanted()
 end
 
 -- Число дронов под реактор и Станции: новых — сразу, лишних — по мере возвращения.
+-- Погибшие, чья замена ещё в пути, считаются за живых: иначе замена выехала бы сразу.
 local function syncCount()
 	local need = wanted()
-	local active = 0
+	local active = pending
 	for _, drone in drones do
 		if not drone.retire then
 			active += 1
@@ -283,6 +300,11 @@ local function syncCount()
 	while active < need do
 		spawnDrone()
 		active += 1
+	end
+	-- Лишние: сперва отменяются ещё не выехавшие замены, потом уходят дроны.
+	while active > need and pending > 0 do
+		pending -= 1
+		active -= 1
 	end
 	for i = #drones, 1, -1 do
 		if active <= need then
@@ -307,6 +329,8 @@ local function dropAll()
 		removeDrone(drone)
 	end
 	table.clear(jobs)
+	pending = 0
+	epoch += 1
 end
 
 local function adoptReactor(model)
@@ -470,6 +494,142 @@ local function arrive(drone)
 	end
 end
 
+-- ===== Гибель дронов =====
+
+-- Бригада осталась без участника: туша снова свободна (её возьмёт полная бригада на
+-- следующей раздаче), остальные разворачиваются домой порожняком — ждать некого.
+local function breakJob(job)
+	if jobs[job.record] == job then
+		jobs[job.record] = nil
+	end
+	for _, member in table.clone(job.members) do
+		member.job = nil
+		if member.state == "out" or member.state == "wait" then
+			sendBack(member, false)
+		end
+	end
+end
+
+-- Груз погибшего падает на место: запись трупа (её снова повезут) и видимый ком из кузова.
+local function dropCargo(drone, position, value)
+	local floor = Grid.ToWorld(Grid.ToCell(position))
+	local record = Corpses.Drop(Vector3.new(position.X, floor.Y, position.Z), value)
+	if not record then
+		return
+	end
+	local cargo = drone.model:FindFirstChild("Cargo")
+	if cargo and cargo:IsA("BasePart") then
+		local lump = cargo:Clone()
+		lump.Name = "DroppedCargo"
+		lump.Anchored = true
+		lump.CanCollide = false
+		lump.CanQuery = false
+		lump.Transparency = 0
+		lump.CFrame = CFrame.new(position.X, floor.Y + lump.Size.Y / 2, position.Z)
+			* drone.model:GetPivot().Rotation
+		lump.Parent = folder
+		dropped[record] = lump
+	end
+end
+
+local function killDrone(drone)
+	if not table.find(drones, drone) then
+		return
+	end
+	local position = drone.model:GetPivot().Position
+	local share = drone.share or 0
+	drone.share = nil
+	if drone.job then
+		local job = drone.job
+		leaveJob(drone)
+		breakJob(job)
+	end
+	if share > 0 and drone.model:GetAttribute("Loaded") then
+		dropCargo(drone, position, share)
+	end
+
+	-- Взрыв — тот же, что у подорвавшегося FPV-дрона (CombatFX рисует, GameAudio — звук
+	-- SoundBank.Blast.drone). Урона нет: только толчок незакреплённого вокруг.
+	ExplosionRemote:FireAllClients(position, Economy.carrierBlastRadius, Economy.carrierBlastColor)
+	Impulse.Blast(position, Economy.carrierBlastRadius)
+	print(("[Носильщики] дрон взорван%s"):format(share > 0 and (", груз %.0f упал"):format(share) or ""))
+
+	local retired = drone.retire
+	removeDrone(drone)
+	if retired then
+		return -- его и так убирали: замена не нужна
+	end
+	pending += 1
+	local myEpoch = epoch
+	task.delay(Economy.carrierRespawn, function()
+		if epoch == myEpoch and pending > 0 then
+			pending -= 1
+			syncCount()
+		end
+	end)
+end
+
+local function hurtDrone(drone, damage, from)
+	drone.hp = math.max(0, drone.hp - damage)
+	drone.model:SetAttribute("HP", drone.hp)
+	DamageDealtRemote:FireAllClients(drone.model:GetPivot().Position, damage, false)
+	if from then
+		-- Укус виден так же, как грызня постройки (EnemySpawner.markBite).
+		from:SetAttribute("Bite", (from:GetAttribute("Bite") or 0) + 1)
+	end
+	if drone.hp <= 0 then
+		killDrone(drone)
+	end
+end
+
+-- Укусы: наземный жук кусает ближайшего дрона, оказавшегося у него под жвалами, с той же
+-- частотой и силой, что грызёт постройки (Холод и Кислота ослабляют так же). Летуны, свои
+-- (очищенные) и оглушённые не кусают.
+local lastBite = setmetatable({}, { __mode = "k" })
+
+local function bites()
+	if #drones == 0 then
+		return
+	end
+	local now = os.clock()
+	for _, enemy in enemiesFolder:GetChildren() do
+		if enemy:IsA("Model") and not enemy:GetAttribute("Flying") and not enemy:GetAttribute("Ally")
+			and (enemy:GetAttribute("HP") or 0) > 0 and now >= (enemy:GetAttribute("StunnedUntil") or 0) then
+			local data = Enemies[enemy:GetAttribute("Type")]
+			local damage = data and data.chewDamage or 0
+			local attackSlow = math.clamp(enemy:GetAttribute("AttackSlowPercent") or 0, 0, 0.9)
+			local rate = (data and data.chewRate or 1) * (1 - attackSlow)
+			if damage > 0 and now - (lastBite[enemy] or -math.huge) >= 1 / rate then
+				local at = enemy:GetPivot().Position
+				local reach = (enemy:GetAttribute("FootFront") or 0) + (enemy:GetAttribute("FootRadius") or 1.5)
+					+ Economy.carrierBiteReach
+				local best, bestDistance = nil, reach
+				for _, drone in drones do
+					local distance = ((drone.model:GetPivot().Position - at) * Vector3.new(1, 0, 1)).Magnitude
+					if distance <= bestDistance then
+						best, bestDistance = drone, distance
+					end
+				end
+				if best then
+					lastBite[enemy] = now
+					local weakened = math.clamp(enemy:GetAttribute("Weakened") or 0, 0, 0.9)
+					hurtDrone(best, math.max(1, math.floor(damage * (1 - weakened) + 0.5)), enemy)
+				end
+			end
+		end
+	end
+end
+
+-- Упавший груз увезли, съели или стёрли сбросом поля — ком убирается.
+local function sweepDropped()
+	for record, lump in dropped do
+		if not record.alive then
+			dropped[record] = nil
+			lump:Destroy()
+		end
+	end
+end
+
 -- Движение: по точкам пути с постоянной скоростью, груз — медленнее.
 RunService.Heartbeat:Connect(function(dt)
 	for _, drone in table.clone(drones) do
@@ -529,6 +689,17 @@ task.spawn(function()
 		if not ok then
 			warn("[Носильщики] " .. tostring(err))
 		end
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(Economy.carrierBiteCheck)
+		local ok, err = pcall(bites)
+		if not ok then
+			warn("[Носильщики] " .. tostring(err))
+		end
+		sweepDropped()
 	end
 end)
 
